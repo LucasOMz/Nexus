@@ -12,6 +12,7 @@ import { renderTemplates } from "./admin_etiquetas.js";
 import { renderBackups } from "./admin_backups.js";
 import { renderAuth } from "./admin_auth.js";
 import { renderOCS } from "./admin_ocs.js";
+import { renderReconciliacao } from "./admin_ocs_reconciliacao.js";
 import { renderBanco } from "./admin_banco.js";
 import { renderAuditoria } from "./admin_auditoria.js";
 import { renderPlantas } from "./admin_plantas.js";
@@ -526,6 +527,7 @@ export async function renderAdmin(root) {
     ["backups", "Backups"],
     ["auth", "Autenticação (AD)"],
     ["ocs", "OCS Inventory"],
+    ["reconciliacao", "Reconciliação OCS"],
     ["banco", "Conexão com DBA"],
   ];
 
@@ -557,5 +559,6 @@ export async function renderAdmin(root) {
   else if (abaAtiva === "backups") await renderBackups(alvo);
   else if (abaAtiva === "auth") await renderAuth(alvo);
   else if (abaAtiva === "ocs") await renderOCS(alvo);
+  else if (abaAtiva === "reconciliacao") await renderReconciliacao(alvo);
   else if (abaAtiva === "banco") await renderBanco(alvo);
 }

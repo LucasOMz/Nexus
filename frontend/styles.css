@@ -1351,3 +1351,12 @@ text.chart-value { font-size: 11px; font-weight: 600; fill: var(--md-sys-color-o
   color: var(--md-sys-color-on-surface-variant);
 }
 .leitura-hora { margin-left: auto; font-size: 11.5px; }
+
+/* Reconciliacao OCS: comparacao lado a lado */
+.div-lado { display: inline-flex; gap: 5px; align-items: baseline; }
+.div-seta { color: var(--md-sys-color-on-surface-variant); font-weight: 700; }
+.linha-divergencia code {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 12.5px; padding: 1px 6px; border-radius: 4px;
+  background: var(--md-sys-color-surface-container-high);
+}

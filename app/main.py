@@ -41,6 +41,7 @@ from app.routers import (
     movimentacoes,
     notificacoes,
     ocs,
+    ocs_reconciliacao,
     plantas,
     produtos,
     qrcode,
@@ -214,6 +215,7 @@ if INSTALADO:
     app.include_router(notificacoes.router, prefix=API)
     app.include_router(reportes.router, prefix=API)
     app.include_router(ocs.router, prefix=API)
+    app.include_router(ocs_reconciliacao.router, prefix=API)
     app.include_router(banco.router, prefix=API)
     app.include_router(transferencias.router, prefix=API)
 
