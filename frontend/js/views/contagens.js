@@ -16,6 +16,7 @@ import { state } from "../state.js";
 import { ctx } from "../context.js";
 import { el, icon, toast, dialog, confirmSheet, emptyState, skeleton, fmtDate, mostrarErro } from "../ui.js";
 import { loadLookups, optionsOf } from "../lookups.js";
+import { abrirLeitura } from "./contagem_leitura.js";
 
 const PAGE_SIZE = 20;
 let page = 1;
@@ -130,6 +131,11 @@ function cartao(c, root) {
     ),
 
     el("div", { class: "row wrap", style: "gap:8px;margin-top:12px" },
+      // "Ler" vem primeiro: numa contagem em andamento é o que se faz.
+      (c.status === "aberta" || c.status === "em_contagem") && state.canWrite
+        ? el("button", { class: "btn filled", onclick: () => iniciarLeitura(c, root),
+            html: icon("scanner", 16) + " Ler" })
+        : null,
       el("button", { class: "btn tonal",
         onclick: () => verDivergencias(c.id),
         html: icon("relatorios", 16) + " Divergências" }),
@@ -198,6 +204,25 @@ async function abrirNova(root) {
       } },
     ],
   });
+}
+
+/**
+ * Abre o modo leitura.
+ *
+ * Relê a contagem antes: entre a lista e o toque, ela pode ter sido finalizada
+ * em outro aparelho. Melhor avisar do que deixar o técnico escanear para
+ * receber erro a cada bip.
+ */
+async function iniciarLeitura(c, root) {
+  try {
+    const atual = await api.get(`/contagens/${c.id}`);
+    if (atual.status !== "aberta" && atual.status !== "em_contagem") {
+      toast("Esta contagem não aceita mais leituras");
+      renderContagens(root);
+      return;
+    }
+    abrirLeitura(atual);
+  } catch (e) { mostrarErro(e); }
 }
 
 async function finalizar(c, root) {
