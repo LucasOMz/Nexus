@@ -1,0 +1,14 @@
+.git
+.gitignore
+.venv
+venv
+__pycache__
+*.pyc
+*.db
+*.sqlite3
+.env
+.pytest_cache
+.coverage
+htmlcov
+tests
+frontend/node_modules

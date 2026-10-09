@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Ambiente
+.env
+
+# Banco local
+*.db
+*.sqlite3
+
+# Dependências locais (dev) e arquivos gerados
+.vendor/
+.tmp/
+media/
+backups/
+.ruff_cache/
+
+# Node/frontend (se usar build)
+node_modules/
+dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Logs
+*.log
+logs/

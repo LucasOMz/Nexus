@@ -1,0 +1,3 @@
+# Gere a primeira migração com:
+#   alembic revision --autogenerate -m "initial"
+#   alembic upgrade head

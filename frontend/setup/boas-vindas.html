@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bem-vindo — Gestão Patrimonial</title>
+<!-- Caminhos absolutos: esta página é servida na RAIZ (/), e um caminho
+     relativo buscaria /setup.css, que não existe. -->
+<link rel="stylesheet" href="/instalacao/setup.css">
+</head>
+<body>
+<main class="caixa boas-vindas">
+
+  <div class="bv-hero">
+    <div class="bv-icone">GP</div>
+    <h1>Gestão Patrimonial</h1>
+    <p class="bv-sub">Inventário de TI e impressoras com QR Code</p>
+  </div>
+
+  <div class="bv-corpo">
+    <h2>Bem-vindo!</h2>
+    <p class="desc">
+      Este sistema ainda não foi configurado. Antes de começar a usar, o
+      assistente de <b>configuração inicial</b> vai definir o essencial —
+      leva cerca de três minutos.
+    </p>
+
+    <div class="bv-lista">
+      <div class="bv-item">
+        <span class="bv-num">1</span>
+        <span><b>Banco de dados</b><br>
+          <span class="dica">Onde os dados ficam guardados: arquivo local ou um servidor
+          PostgreSQL, MySQL ou SQL Server.</span></span>
+      </div>
+      <div class="bv-item">
+        <span class="bv-num">2</span>
+        <span><b>Empresa</b><br>
+          <span class="dica">Nome, logotipo e ícone da aba — o sistema passa a ter a
+          cara da sua empresa.</span></span>
+      </div>
+      <div class="bv-item">
+        <span class="bv-num">3</span>
+        <span><b>Administrador e primeira planta</b><br>
+          <span class="dica">O acesso principal do sistema e a localidade inicial do
+          inventário.</span></span>
+      </div>
+      <div class="bv-item">
+        <span class="bv-num">4</span>
+        <span><b>Integrações</b> <span class="bv-opcional">opcional</span><br>
+          <span class="dica">Active Directory para o login de rede, e OCS Inventory
+          para importar o parque de máquinas.</span></span>
+      </div>
+    </div>
+
+    <div class="bv-acao">
+      <a class="btn filled grande" href="/instalacao">Configuração Inicial</a>
+    </div>
+
+    <p class="bv-nota">
+      Você pode parar no meio e voltar depois — nada é gravado até a última etapa.
+      Ao concluir, esta tela deixa de aparecer.
+    </p>
+  </div>
+
+  <footer class="bv-rodape">
+    <span class="muted">Servidor local</span>
+    <span class="muted">·</span>
+    <span class="muted">Configuração inicial pendente</span>
+  </footer>
+
+</main>
+</body>
+</html>

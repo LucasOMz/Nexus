@@ -1,0 +1,24 @@
+# =====================================================================
+# Drivers OPCIONAIS de banco de dados.
+#
+# Ficam SEPARADOS do requirements.txt de propósito: eles precisam COMPILAR no
+# Linux (e o pyodbc ainda depende das bibliotecas ODBC do sistema). Se
+# entrassem na lista principal, uma falha de compilação derrubaria a
+# instalação inteira — foi o que já aconteceu com o `uvicorn[standard]` no
+# Raspberry Pi, que precisa compilar o uvloop.
+#
+# Instale quando for usar MySQL/SQL Server:
+#
+#     .venv/bin/python -m pip install -r requirements-drivers.txt
+#
+# No Windows os dois têm pacote pronto — não compilam nada.
+# =====================================================================
+
+# MySQL / MariaDB — o pymysql já está no requirements.txt principal (é Python
+# puro e não quebra instalação nenhuma). Este arquivo cobre só o SQL Server.
+
+# SQL Server. Precisa, ALÉM dele, do driver ODBC da Microsoft instalado no
+# sistema:
+#   Windows: https://learn.microsoft.com/sql/connect/odbc/download-odbc-driver-for-sql-server
+#   Debian/Raspberry: sudo apt install unixodbc-dev
+pyodbc>=5.1

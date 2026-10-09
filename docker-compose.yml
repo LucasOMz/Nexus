@@ -1,0 +1,73 @@
+# =====================================================================
+# Gestão Patrimonial Unificada — stack completa (api + postgres + nginx)
+# Suba tudo com:  docker compose up -d --build
+#
+# IMPORTANTE: os volumes abaixo guardam os dados que NÃO podem se perder.
+# Sem eles, fotos/termos/anexos e backups vivem dentro do container e
+# desaparecem ao recriar a stack (docker compose up --build).
+# =====================================================================
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-estoque}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-estoque}
+      POSTGRES_DB: ${POSTGRES_DB:-estoque}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-estoque} -d ${POSTGRES_DB:-estoque}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-estoque}:${POSTGRES_PASSWORD:-estoque}@db:5432/${POSTGRES_DB:-estoque}
+      JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET no stack}
+      QR_HMAC_SECRET: ${QR_HMAC_SECRET:?defina QR_HMAC_SECRET no stack}
+      # Aceita segredos antigos de QR, para não invalidar etiquetas já coladas.
+      QR_HMAC_SECRETS_ANTERIORES: ${QR_HMAC_SECRETS_ANTERIORES:-}
+      QR_EXIGIR_ASSINATURA: ${QR_EXIGIR_ASSINATURA:-true}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://seu-dominio.com}
+      ENV: production
+      AUTO_CREATE_TABLES: "true"
+      PRINT_AGENT_URL: ${PRINT_AGENT_URL:-http://raspberry:9100}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@empresa.com}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-admin123}
+      # Backups: pasta persistente DENTRO do container (volume abaixo).
+      BACKUP_DIR: /app/backups
+      BACKUP_RETER: ${BACKUP_RETER:-30}
+    volumes:
+      # Fotos, termos e anexos. NUNCA remova este volume.
+      - media:/app/media
+      # Backups do banco. Para gravar em pasta de rede, troque por bind mount
+      # do compartilhamento já montado no host, ex.:
+      #   - /mnt/backups/estoque:/app/backups
+      - backups:/app/backups
+    ports:
+      - "${API_PORT:-8000}:8000"
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - certs:/etc/letsencrypt
+
+volumes:
+  pgdata:
+  certs:
+  media:
+  backups:

@@ -1,0 +1,26 @@
+{
+  "name": "Gestão Patrimonial Unificada",
+  "short_name": "Patrimônio",
+  "description": "Inventário de TI e Impressoras com QR Code assinado e impressão térmica.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#FEF7FF",
+  "theme_color": "#6750A4",
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "/icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+# Configuração do ruff (CI): foco em bugs reais (F), erros (E) e import sorting (I).
+line-length = 100
+target-version = "py311"
+
+[lint]
+select = ["E", "F", "W", "I"]
+ignore = [
+    "E501",  # comprimento de linha (formatamos manualmente)
+    "E203",  # whitespace antes de ':' (compatível com black)
+]
