@@ -528,7 +528,7 @@ export async function renderAdmin(root) {
     ["dispositivos", "Impressão"],
     ["etiquetas", "Etiquetas"],
     ["fotos", "Banco de Fotos"],
-    ["auditoria", "Auditoria"],
+    ["auditoria", "Logs"],
     ["backups", "Backups"],
     ["auth", "Autenticação (AD)"],
     ["ocs", "OCS Inventory"],
@@ -564,8 +564,11 @@ export async function renderAdmin(root) {
   const GRUPOS = [
     ["Pessoas e acessos", ["usuarios", "plantas", "auth"]],
     ["Patrimônio", ["dispositivos", "etiquetas", "fotos"]],
-    ["Integrações", ["ocs", "reconciliacao"]],
-    ["Sistema", ["auditoria", "backups", "banco"]],
+    // "Auditoria" reúne o que serve para CONFERIR: a trilha do que foi feito
+    // (Logs) e a conferência do que existe na rede (Reconciliação).
+    ["Auditoria", ["auditoria", "reconciliacao"]],
+    // "Sistema" ficou com a configuração e a manutenção da própria ferramenta.
+    ["Sistema", ["ocs", "backups", "banco"]],
   ];
 
   // Aba fora de qualquer grupo não pode sumir: cai em "Outros".

@@ -1,5 +1,5 @@
 /**
- * Administração → Auditoria.
+ * Administração → Auditoria → Logs.
  * Histórico imutável: quem fez, o que, quando e de qual IP.
  * @module views/admin_auditoria
  */
