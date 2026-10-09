@@ -21,6 +21,11 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 const fotoUrl = (id) => `/api/v1/admin/fotos/${id}/arquivo?token=${encodeURIComponent(state.access)}`;
 
 let meta = { modulos: [], inventarios: [] };
+
+// As opções da Administração começam OCULTAS e aparecem ao clicar numa
+// categoria. Fica no módulo (e não na função) para sobreviver ao redesenho:
+// navegar entre abas não deve fechar a barra que a pessoa acabou de abrir.
+let barraAberta = false;
 let abaAtiva = "usuarios";
 
 // ---------------------------------------------------------------------------
@@ -536,13 +541,147 @@ export async function renderAdmin(root) {
   const pedida = new URLSearchParams((location.hash.split("?")[1] || "")).get("aba");
   if (pedida && abas.some(([chave]) => chave === pedida)) abaAtiva = pedida;
 
-  const tabsEl = el("div", { class: "tabs" });
-  abas.forEach(([chave, rotulo]) => {
-    tabsEl.append(el("button", {
-      class: chave === abaAtiva ? "active" : "",
-      onclick: () => { abaAtiva = chave; renderAdmin(document.getElementById("view")); },
-    }, rotulo));
+  // -------------------------------------------------------------------------
+  // Categorias no topo; as opções aparecem logo ABAIXO delas, ao clicar.
+  //
+  // A barra começa oculta: o painel abre limpo, só com as quatro categorias.
+  // Quem sabe onde quer ir clica e vê as opções; quem não sabe usa a busca.
+  // -------------------------------------------------------------------------
+  const AJUDA_ABA = {
+    usuarios: ["pessoas", "acesso", "permissao", "login", "papel", "senha"],
+    plantas: ["localidades", "unidade", "filial", "cnpj", "site"],
+    dispositivos: ["impressoras", "zpl", "tspl", "rede", "termica"],
+    etiquetas: ["template", "layout", "qr", "design", "modelo"],
+    fotos: ["imagem", "galeria", "midia", "anexo"],
+    auditoria: ["log", "historico", "trilha", "quem fez", "rastro"],
+    backups: ["copia", "restaurar", "seguranca", "dump", "salvar"],
+    auth: ["ad", "active directory", "ldap", "senha", "dominio", "login de rede"],
+    ocs: ["inventario automatico", "servidor", "token", "sincronizacao", "agente"],
+    reconciliacao: ["divergencia", "fantasma", "perdido", "rede", "comparar"],
+    banco: ["dba", "conexao", "postgresql", "servidor", "sqlite", "mysql"],
+  };
+
+  const GRUPOS = [
+    ["Pessoas e acessos", ["usuarios", "plantas", "auth"]],
+    ["Patrimônio", ["dispositivos", "etiquetas", "fotos"]],
+    ["Integrações", ["ocs", "reconciliacao"]],
+    ["Sistema", ["auditoria", "backups", "banco"]],
+  ];
+
+  // Aba fora de qualquer grupo não pode sumir: cai em "Outros".
+  const agrupadas = new Set(GRUPOS.flatMap(([, ks]) => ks));
+  const semGrupo = abas.map(([k]) => k).filter((k) => !agrupadas.has(k));
+  const grupos = semGrupo.length ? [...GRUPOS, ["Outros", semGrupo]] : GRUPOS;
+
+  const rotuloDe = (chave) => (abas.find(([c]) => c === chave) || [, chave])[1];
+  const grupoDaAba = (chave) => grupos.find(([, ks]) => ks.includes(chave));
+
+  const busca = el("input", {
+    type: "search",
+    class: "busca-abas",
+    placeholder: "Buscar opção…",
+    "aria-label": "Buscar opção de administração",
   });
+  const filaCategorias = el("div", { class: "categorias-admin" });
+  const barra = el("div", { class: "opcoes-admin" });
+
+  // Qual categoria está aberta. Fica no módulo para sobreviver ao redesenho:
+  // navegar entre abas não deve fechar a barra que a pessoa acabou de abrir.
+  let categoriaAberta = barraAberta ? (grupoDaAba(abaAtiva) || grupos[0])[0] : null;
+
+  function irPara(chave) {
+    abaAtiva = chave;
+    barraAberta = true;
+    const g = grupoDaAba(chave);
+    if (g) categoriaAberta = g[0];
+    renderAdmin(document.getElementById("view"));
+  }
+
+  function casa(chave, termo) {
+    const alvo = `${rotuloDe(chave)} ${(AJUDA_ABA[chave] || []).join(" ")}`.toLowerCase();
+    return alvo.includes(termo);
+  }
+
+  function pintarCategorias() {
+    const termo = busca.value.trim().toLowerCase();
+    filaCategorias.innerHTML = "";
+
+    for (const [titulo, chaves] of grupos) {
+      const temResultado = !termo || chaves.some((k) => casa(k, termo));
+      filaCategorias.append(el("button", {
+        class: [
+          "categoria-admin",
+          titulo === categoriaAberta ? "ativa" : "",
+          temResultado ? "" : "sem-resultado",
+        ].filter(Boolean).join(" "),
+        onclick: () => {
+          if (termo) return;   // durante a busca, a categoria não navega
+          // Clicar na categoria que já está aberta fecha a barra.
+          if (barraAberta && categoriaAberta === titulo) {
+            barraAberta = false;
+            categoriaAberta = null;
+            pintar();
+            return;
+          }
+          categoriaAberta = titulo;
+          barraAberta = true;
+          const primeira = chaves[0];
+          // Só navega se a aba aberta não for desta categoria — assim abrir a
+          // barra não troca de tela sem necessidade.
+          if (primeira && grupoDaAba(abaAtiva)?.[0] !== titulo) irPara(primeira);
+          else pintar();
+        },
+      },
+        el("span", {}, titulo),
+        el("span", { class: "categoria-conta" }, String(chaves.length)),
+      ));
+    }
+  }
+
+  function pintarBarra() {
+    const termo = busca.value.trim().toLowerCase();
+    // Visível ao clicar numa categoria, ou sempre que houver busca ativa.
+    const visivel = barraAberta || Boolean(termo);
+    barra.classList.toggle("oculto", !visivel);
+    barra.innerHTML = "";
+    if (!visivel) return;
+
+    const itens = [];
+    for (const [titulo, chaves] of grupos) {
+      for (const k of chaves) {
+        if (termo && !casa(k, termo)) continue;
+        if (!termo && titulo !== categoriaAberta) continue;
+        itens.push([k, titulo]);
+      }
+    }
+
+    if (!itens.length) {
+      barra.append(el("div", { class: "barra-vazia" }, "Nenhuma opção encontrada."));
+      return;
+    }
+
+    barra.append(
+      el("div", { class: "barra-rotulo" }, termo ? "Resultados" : categoriaAberta),
+      el("div", { class: "barra-trilho" },
+        ...itens.map(([chave, titulo]) => el("button", {
+          class: `opcao-admin${chave === abaAtiva ? " ativa" : ""}`,
+          title: termo ? titulo : undefined,
+          onclick: () => irPara(chave),
+        },
+          rotuloDe(chave),
+          // Na busca, mostra a categoria de origem: sem isso a pessoa não sabe
+          // onde aquela opção mora.
+          termo ? el("span", { class: "opcao-origem" }, titulo) : null,
+        ))),
+    );
+  }
+
+  function pintar() { pintarCategorias(); pintarBarra(); }
+
+  busca.addEventListener("input", pintar);
+  pintar();
+
+  const tabsEl = el("div", { class: "tabs-wrap" }, busca, filaCategorias, barra);
 
   const alvo = el("div");
   root.insertBefore(tabsEl, conteudo);

@@ -1360,3 +1360,206 @@ text.chart-value { font-size: 11px; font-weight: 600; fill: var(--md-sys-color-o
   font-size: 12.5px; padding: 1px 6px; border-radius: 4px;
   background: var(--md-sys-color-surface-container-high);
 }
+
+/* ------------------------------------------------------------------ */
+/* Administracao: busca e agrupamento das abas                         */
+/* ------------------------------------------------------------------ */
+.tabs-wrap { margin-bottom: 20px; }
+.busca-abas {
+  width: 100%; max-width: 420px;
+  padding: 10px 14px; font-size: 14px; font-family: inherit;
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: 999px;
+  background: var(--md-sys-color-surface-container-lowest);
+  color: var(--md-sys-color-on-surface);
+  margin-bottom: 14px;
+}
+.busca-abas:focus {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 1px;
+  border-color: var(--md-sys-color-primary);
+}
+.grupos-abas { display: flex; flex-direction: column; gap: 14px; }
+.grupo-titulo {
+  font-size: 11.5px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .5px;
+  color: var(--md-sys-color-on-surface-variant);
+  margin-bottom: 6px;
+}
+.grupo-abas .tabs { flex-wrap: wrap; }
+@media print { .busca-abas { display: none; } }
+
+/* ------------------------------------------------------------------ */
+/* Administracao: categorias em cima, opcoes na barra de baixo         */
+/* ------------------------------------------------------------------ */
+.categorias-admin {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  padding-bottom: 4px;
+}
+.categoria-admin {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 16px; cursor: pointer;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 999px;
+  background: var(--md-sys-color-surface-container-lowest);
+  color: var(--md-sys-color-on-surface);
+  font-family: inherit; font-size: 14px; font-weight: 500;
+  transition: background .15s, border-color .15s;
+}
+.categoria-admin:hover { border-color: var(--md-sys-color-outline); }
+.categoria-admin.ativa {
+  background: var(--inv-accent-container);
+  color: var(--inv-accent-on-container);
+  border-color: var(--inv-accent);
+  font-weight: 600;
+}
+.categoria-admin.sem-resultado { opacity: .35; }
+.categoria-conta {
+  font-size: 11.5px; font-weight: 600;
+  min-width: 20px; text-align: center;
+  padding: 1px 6px; border-radius: 999px;
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface-variant);
+}
+.categoria-admin.ativa .categoria-conta {
+  background: rgba(0, 0, 0, .14); color: inherit;
+}
+
+/* Barra inferior: fixa, com rolagem lateral nas opcoes. */
+.barra-opcoes-admin {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 90;
+  background: var(--md-sys-color-surface-container-lowest);
+  border-top: 1px solid var(--md-sys-color-outline-variant);
+  box-shadow: 0 -6px 20px rgba(0, 0, 0, .10);
+  padding: 9px 14px 11px;
+}
+.barra-rotulo {
+  font-size: 10.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .5px;
+  color: var(--md-sys-color-on-surface-variant);
+  margin-bottom: 7px;
+}
+.barra-trilho {
+  display: flex; gap: 8px;
+  overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: thin;
+  padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+.barra-trilho::-webkit-scrollbar { height: 6px; }
+.barra-trilho::-webkit-scrollbar-thumb {
+  background: var(--md-sys-color-outline-variant); border-radius: 999px;
+}
+.opcao-admin {
+  flex: 0 0 auto;              /* nao encolhe: e o que faz rolar de lado */
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 9px 16px; cursor: pointer; white-space: nowrap;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 999px;
+  background: var(--md-sys-color-surface-container);
+  color: var(--md-sys-color-on-surface);
+  font-family: inherit; font-size: 13.5px;
+}
+.opcao-admin:hover { background: var(--md-sys-color-surface-container-high); }
+.opcao-admin.ativa {
+  background: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
+  border-color: var(--md-sys-color-primary);
+  font-weight: 600;
+}
+.opcao-origem {
+  font-size: 10.5px; opacity: .7; text-transform: uppercase; letter-spacing: .3px;
+}
+.barra-vazia {
+  padding: 14px; text-align: center; font-size: 13px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+/* Espaco para a barra nao cobrir o fim do conteudo. */
+body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
+
+@media print {
+  .busca-abas, .categorias-admin, .barra-opcoes-admin { display: none !important; }
+  body:has(.barra-opcoes-admin) #view { padding-bottom: 0; }
+}
+
+/* ------------------------------------------------------------------ */
+/* Administracao: categorias e opcoes (a barra fica OCULTA ate clicar) */
+/* ------------------------------------------------------------------ */
+.categorias-admin { display: flex; gap: 8px; flex-wrap: wrap; }
+.categoria-admin {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 16px; cursor: pointer;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 999px;
+  background: var(--md-sys-color-surface-container-lowest);
+  color: var(--md-sys-color-on-surface);
+  font-family: inherit; font-size: 14px; font-weight: 500;
+  transition: background .15s, border-color .15s;
+}
+.categoria-admin:hover { border-color: var(--md-sys-color-outline); }
+.categoria-admin.ativa {
+  background: var(--inv-accent-container);
+  color: var(--inv-accent-on-container);
+  border-color: var(--inv-accent);
+  font-weight: 600;
+}
+.categoria-admin.sem-resultado { opacity: .35; }
+.categoria-conta {
+  font-size: 11.5px; font-weight: 600;
+  min-width: 20px; text-align: center;
+  padding: 1px 6px; border-radius: 999px;
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface-variant);
+}
+.categoria-admin.ativa .categoria-conta { background: rgba(0, 0, 0, .14); color: inherit; }
+
+/* Logo abaixo das categorias — e oculta ate clicar numa delas. */
+.opcoes-admin {
+  margin-top: 12px; padding: 11px 12px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--shape-sm);
+  background: var(--md-sys-color-surface-container-low);
+}
+.barra-rotulo {
+  font-size: 10.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .5px;
+  color: var(--md-sys-color-on-surface-variant);
+  margin-bottom: 8px;
+}
+.barra-trilho {
+  display: flex; gap: 8px;
+  overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: thin;
+  padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+.barra-trilho::-webkit-scrollbar { height: 6px; }
+.barra-trilho::-webkit-scrollbar-thumb {
+  background: var(--md-sys-color-outline-variant); border-radius: 999px;
+}
+.opcao-admin {
+  flex: 0 0 auto;              /* nao encolhe: e o que faz rolar de lado */
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 9px 16px; cursor: pointer; white-space: nowrap;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 999px;
+  background: var(--md-sys-color-surface-container-lowest);
+  color: var(--md-sys-color-on-surface);
+  font-family: inherit; font-size: 13.5px;
+}
+.opcao-admin:hover { background: var(--md-sys-color-surface-container-high); }
+.opcao-admin.ativa {
+  background: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
+  border-color: var(--md-sys-color-primary);
+  font-weight: 600;
+}
+.opcao-origem {
+  font-size: 10.5px; opacity: .7; text-transform: uppercase; letter-spacing: .3px;
+}
+.barra-vazia {
+  padding: 12px; text-align: center; font-size: 13px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+@media print { .busca-abas, .categorias-admin, .opcoes-admin { display: none !important; } }

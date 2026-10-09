@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Verificação do helper `el()` do frontend.
  *
  * REGRESSÃO QUE ISTO PROTEGE: `el("button", { disabled: false })` gerava
@@ -617,7 +617,67 @@ verificar("tela inexistente cai no menu",
   varrer("frontend");
   verificar("nenhum FAB com nome de propriedade errado", ruins.length === 0);
   if (ruins.length) console.log("       " + ruins.join(", "));
-}if (falhas) {
+}
+
+// 37) A busca da Administracao nao pode esconder aba nenhuma.
+//     As abas sao agrupadas para apresentacao; se uma ficar de fora dos grupos,
+//     ela sai da tela sem aviso. Aqui toda aba de `abas` precisa estar num
+//     grupo — o fallback "Outros" existe como rede, nao como desculpa.
+{
+  const chaves = [...blocoAbas[1].matchAll(/\["(\w+)",/g)].map((m) => m[1]);
+  const blocoGrupos = /const GRUPOS = \[([\s\S]*?)\n  \];/.exec(fonteAdmin);
+  const nosGrupos = blocoGrupos
+    ? [...blocoGrupos[1].matchAll(/"(\w+)"/g)].map((m) => m[1])
+    : [];
+  const faltando = chaves.filter((k) => !nosGrupos.includes(k));
+
+  verificar("toda aba da administracao esta num grupo", faltando.length === 0);
+  if (faltando.length) console.log("       fora dos grupos: " + faltando.join(", "));
+
+  verificar("o fallback 'Outros' existe para aba nova",
+    /\["Outros", semGrupo\]/.test(fonteAdmin));
+  verificar("a busca filtra por rotulo E palavras-chave",
+    // A variavel pode se chamar k ou chave: o que importa e a busca consultar
+    // o rótulo E as palavras-chave da aba.
+    /AJUDA_ABA\[/.test(fonteAdmin) && /busca\.value\.trim\(\)\.toLowerCase\(\)/.test(fonteAdmin));
+  verificar("existe o campo de busca das abas",
+    /class: "busca-abas"/.test(fonteAdmin));
+  verificar("busca sem resultado avisa em vez de ficar vazio",
+    /Nenhuma opção encontrada/.test(fonteAdmin));
+}
+
+﻿// 38) A administracao navega por CATEGORIAS, com as opcoes logo ABAIXO delas.
+//     A barra comeca OCULTA: o painel abre limpo, so com as categorias, e as
+//     opcoes aparecem quando se clica numa delas.
+{
+  const blocoGrupos = /const GRUPOS = \[([\s\S]*?)\n  \];/.exec(fonteAdmin);
+  verificar("existem categorias declaradas", Boolean(blocoGrupos));
+  verificar("as categorias ficam alinhadas no topo",
+    /class: "categorias-admin"/.test(fonteAdmin));
+  verificar("as opcoes ficam logo abaixo das categorias",
+    /el\("div", \{ class: "tabs-wrap" \}, busca, filaCategorias, barra\)/.test(fonteAdmin)
+    && !/document\.body\.append\(barra\)/.test(fonteAdmin));
+  verificar("a barra comeca OCULTA",
+    /let barraAberta = false;/.test(fonteAdmin)
+    && /if \(barraAberta && categoriaAberta === titulo\)/.test(fonteAdmin));
+  verificar("clicar na categoria abre as opcoes dela",
+    /categoriaAberta = titulo;[\s\S]{0,80}barraAberta = true;/.test(fonteAdmin));
+  verificar("clicar de novo na mesma categoria fecha a barra",
+    /if \(barraAberta && categoriaAberta === titulo\) \{[\s\S]{0,120}barraAberta = false;/.test(fonteAdmin));
+  verificar("a barra sobrevive ao redesenho",
+    /let barraAberta = false;/.test(fonteAdmin)
+    && /categoriaAberta = barraAberta \?/.test(fonteAdmin));
+  verificar("so as opcoes da categoria ativa aparecem sem busca",
+    /if \(!termo && titulo !== categoriaAberta\) continue;/.test(fonteAdmin));
+  verificar("o trilho de opcoes rola de lado",
+    /\.barra-trilho \{[\s\S]{0,220}overflow-x: auto/.test(fonteCss)
+    && /\.opcao-admin \{[\s\S]{0,160}flex: 0 0 auto/.test(fonteCss));
+  verificar("a barra some na impressao",
+    /@media print \{[^}]*\.opcoes-admin \{ display: none/.test(fonteCss));
+  verificar("durante a busca a categoria nao navega",
+    /if \(termo\) return;/.test(fonteAdmin));
+}
+if (falhas) {
   console.log(`${falhas} DE ${casos} CASOS FALHARAM`);
   process.exit(1);
 }
