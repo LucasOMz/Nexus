@@ -13,6 +13,7 @@ import { renderBackups } from "./admin_backups.js";
 import { renderAuth } from "./admin_auth.js";
 import { renderOCS } from "./admin_ocs.js";
 import { renderReconciliacao } from "./admin_ocs_reconciliacao.js";
+import { renderLgpd } from "./admin_lgpd.js";
 import { renderChecklist } from "./admin_checklist.js";
 import { renderBanco } from "./admin_banco.js";
 import { renderAuditoria } from "./admin_auditoria.js";
@@ -572,6 +573,7 @@ export async function renderAdmin(root) {
     ["auth", "Autenticação (AD)"],
     ["ocs", "OCS Inventory"],
     ["reconciliacao", "Reconciliação OCS"],
+    ["lgpd", "Privacidade (LGPD)"],
     ["banco", "Conexão com DBA"],
   ];
 
@@ -608,6 +610,10 @@ export async function renderAdmin(root) {
     // "Auditoria" reúne o que serve para CONFERIR: a trilha do que foi feito
     // (Logs) e a conferência do que existe na rede (Reconciliação).
     ["Auditoria", ["auditoria", "reconciliacao"]],
+    // "Privacidade" separada da Auditoria: uma é a trilha do que foi feito; a
+    // outra é por quanto tempo isso pode ser guardado, e com que fundamento.
+    // Quem responde por LGPD procura por privacidade, não por auditoria.
+    ["Privacidade", ["lgpd"]],
     // "Sistema" ficou com a configuração e a manutenção da própria ferramenta:
     // como se entra (AD), de onde vêm os dados (OCS), a cópia de segurança e a
     // conexão com o banco.
@@ -746,5 +752,6 @@ export async function renderAdmin(root) {
   else if (abaAtiva === "auth") await renderAuth(alvo);
   else if (abaAtiva === "ocs") await renderOCS(alvo);
   else if (abaAtiva === "reconciliacao") await renderReconciliacao(alvo);
+  else if (abaAtiva === "lgpd") await renderLgpd(alvo);
   else if (abaAtiva === "banco") await renderBanco(alvo);
 }

@@ -39,6 +39,7 @@ from app.routers import (
     contagens,
     contratos,
     dashboard,
+    descarte,
     emprestimos,
     etiquetas,
     financeiro,
@@ -277,6 +278,7 @@ if INSTALADO:
     app.include_router(busca.router, prefix=API)
     app.include_router(contratos.router, prefix=API)
     app.include_router(lgpd.router, prefix=API)
+    app.include_router(descarte.router, prefix=API)
     app.include_router(transferencias.router, prefix=API)
 
 

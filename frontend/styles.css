@@ -2129,3 +2129,16 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   font-size: 10.5px; font-weight: 600;
   letter-spacing: .3px; text-transform: uppercase;
 }
+
+/* Texto do certificado — monoespaçado porque é um DOCUMENTO: o alinhamento
+   faz parte da leitura, e a largura fixa ajuda a conferir campo a campo. */
+.certificado-texto {
+  margin: 14px 0 0; padding: 16px;
+  background: var(--md-sys-color-surface-container-high);
+  border-radius: var(--shape-sm);
+  font-family: ui-monospace, "Courier New", monospace;
+  font-size: 12px; line-height: 1.55;
+  white-space: pre-wrap; word-break: break-word;
+  max-height: 50vh; overflow-y: auto;
+  color: var(--md-sys-color-on-surface);
+}
