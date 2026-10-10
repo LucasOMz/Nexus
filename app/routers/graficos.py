@@ -286,16 +286,6 @@ def _parque(db: Session, dominio: Dominio) -> dict:
         .all()
     )
 
-    # A mensalidade é do CONTRATO. Quando ele cobre ativos de outro domínio,
-    # a parte deste é proporcional — ratear o total aqui faria os dois
-    # inventários mostrarem a mesma despesa.
-    total_ativos_contrato = dict(
-        db.query(Ativo.contrato_id, func.count(Ativo.id))
-        .filter(Ativo.deleted_at.is_(None), Ativo.contrato_id.isnot(None))
-        .group_by(Ativo.contrato_id)
-        .all()
-    )
-
     custo_mensal = 0.0
     top = []
     for numero, mensal, quantos in contratos:
