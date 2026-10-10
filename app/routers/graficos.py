@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.core.deps import get_current_user, require_module
 from app.core.permissoes import pode_inventario
 from app.database import get_db
+from app.models.contrato import Contrato
 from app.models.core import (
     Ativo,
     Categoria,
@@ -208,6 +209,13 @@ def graficos(
             [(f"{m or getattr(t, 'value', t)}", 1) for m, t, _e in rows]
         )
 
+    # 10) Parque: comprado x locado, e o custo mensal.
+    #
+    # Depois da locação, "valor do parque" deixou de ser um número só. Somar
+    # patrimônio com mensalidade daria um valor sem significado — por isso o
+    # relatório separa as duas naturezas, como o financeiro já faz.
+    parque = _parque(db, dominio)
+
     return {
         "dominio": dominio.value,
         "status": status,
@@ -218,6 +226,103 @@ def graficos(
         "garantias": garantias,
         "movimentacoes_mes": movimentacoes_mes,
         "manutencoes_status": manutencoes_status,
+        "parque": parque,
         "extra": extra,
         "atualizado_em": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _parque(db: Session, dominio: Dominio) -> dict:
+    """Composição do parque por forma de aquisição, e o custo da locação.
+
+    Comprado e locado têm naturezas diferentes: um é patrimônio que perde
+    valor, o outro é serviço pago todo mês. O gráfico precisa dos dois
+    separados — é o que o gestor usa para decidir renovação.
+    """
+    from app.models.enums import FormaAquisicao
+
+    linhas = (
+        db.query(Ativo.forma_aquisicao, func.count(Ativo.id))
+        .filter(Ativo.deleted_at.is_(None), Ativo.dominio == dominio)
+        .group_by(Ativo.forma_aquisicao)
+        .all()
+    )
+    contagem = {}
+    for forma, quantos in linhas:
+        chave = getattr(forma, "value", forma) or "comprado"
+        contagem[chave] = quantos
+
+    comprados = contagem.get("comprado", 0)
+    locados = contagem.get("locado", 0)
+
+    # Valor patrimonial: só o comprado. Um locado não é bem da empresa.
+    valor_comprado = (
+        db.query(func.coalesce(func.sum(Ativo.valor), 0))
+        .filter(
+            Ativo.deleted_at.is_(None),
+            Ativo.dominio == dominio,
+            Ativo.forma_aquisicao != FormaAquisicao.LOCADO,
+        )
+        .scalar()
+        or 0
+    )
+
+    # Custo mensal: a soma das mensalidades dos contratos que cobrem ativos
+    # DESTE domínio. Contar o contrato inteiro inflaria um inventário que
+    # talvez seja só metade dele.
+    contratos = (
+        db.query(
+            Contrato.numero,
+            Contrato.valor_mensal,
+            func.count(Ativo.id).label("quantos"),
+        )
+        .join(Ativo, (Ativo.contrato_id == Contrato.id) & (Ativo.deleted_at.is_(None)))
+        .filter(
+            Contrato.deleted_at.is_(None),
+            Ativo.dominio == dominio,
+            Contrato.valor_mensal.isnot(None),
+        )
+        .group_by(Contrato.id)
+        .all()
+    )
+
+    # A mensalidade é do CONTRATO. Quando ele cobre ativos de outro domínio,
+    # a parte deste é proporcional — ratear o total aqui faria os dois
+    # inventários mostrarem a mesma despesa.
+    total_ativos_contrato = dict(
+        db.query(Ativo.contrato_id, func.count(Ativo.id))
+        .filter(Ativo.deleted_at.is_(None), Ativo.contrato_id.isnot(None))
+        .group_by(Ativo.contrato_id)
+        .all()
+    )
+
+    custo_mensal = 0.0
+    top = []
+    for numero, mensal, quantos in contratos:
+        valor = float(mensal or 0)
+        custo_mensal += valor
+        top.append({
+            "contrato": numero,
+            "mensal": round(valor, 2),
+            "ativos": quantos,
+            # Custo por equipamento DESTE inventário — é o número que a
+            # gestão compara entre contratos.
+            "por_ativo": round(valor / quantos, 2) if quantos else 0,
+        })
+
+    top.sort(key=lambda x: x["mensal"], reverse=True)
+
+    return {
+        "comprados": comprados,
+        "locados": locados,
+        # Composição para o gráfico de rosca.
+        "composicao": _serie([
+            ("comprado", comprados),
+            ("locado", locados),
+        ], {"comprado": "Comprado", "locado": "Locado"}),
+        "valor_patrimonial": round(float(valor_comprado), 2),
+        "custo_mensal": round(custo_mensal, 2),
+        "custo_12_meses": round(custo_mensal * 12, 2),
+        # Os maiores contratos: é onde a renovação vale negociação.
+        "top_contratos": top[:8],
     }

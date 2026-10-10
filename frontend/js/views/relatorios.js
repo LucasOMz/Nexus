@@ -23,6 +23,87 @@ async function download(url, filename) {
   } catch { toast("Sem conexão"); }
 }
 
+// ---------------------------------------------------------------------------
+// Parque: comprado x locado
+// ---------------------------------------------------------------------------
+/**
+ * Bloco do parque por forma de aquisição.
+ *
+ * Depois da locação, "valor do parque" deixou de ser um número só. Somar
+ * patrimônio com mensalidade daria um valor sem significado — por isso os
+ * dois aparecem **separados**, e nunca somados.
+ */
+function blocoParque(p) {
+  if (!p) return el("div");
+
+  const dinheiro = (v) => Number(v || 0).toLocaleString("pt-BR", {
+    style: "currency", currency: "BRL", maximumFractionDigits: 0,
+  });
+
+  const semLocacao = !p.locados;
+  const semCompra = !p.comprados;
+
+  const cartoes = [
+    el("div", { class: "chart-card" },
+      el("h3", {}, "Composição do parque"),
+      el("p", { class: "chart-sub" }, "Quanto é nosso e quanto é alugado"),
+      el("div", { html: donut(p.composicao || []) }),
+    ),
+    el("div", { class: "chart-card" },
+      el("h3", {}, "Financeiro"),
+      el("p", { class: "chart-sub" }, "As duas naturezas, separadas"),
+      el("div", { class: "parque-numeros" },
+        el("div", {},
+          el("div", { class: "dica" }, "Patrimônio (comprado)"),
+          el("b", {}, dinheiro(p.valor_patrimonial)),
+          el("div", { class: "muted", style: "font-size:12px" },
+            semCompra ? "Nenhum equipamento comprado" : `${p.comprados} ativo(s)`)),
+        el("div", {},
+          el("div", { class: "dica" }, "Custo mensal (locado)"),
+          el("b", {}, dinheiro(p.custo_mensal)),
+          el("div", { class: "muted", style: "font-size:12px" },
+            semLocacao ? "Nenhum contrato ativo" : `${p.locados} ativo(s)`)),
+        el("div", {},
+          el("div", { class: "dica" }, "Locação — próximos 12 meses"),
+          el("b", {}, dinheiro(p.custo_12_meses))),
+      ),
+      // A frase que evita a leitura errada: sem ela, alguém soma os dois e
+      // conclui que o parque vale patrimônio + mensalidade.
+      el("p", { class: "muted", style: "font-size:12px;margin:12px 0 0" },
+        "Equipamento locado não é patrimônio da empresa: ele não entra no "
+        + "valor patrimonial nem deprecia. O custo dele é a mensalidade."),
+    ),
+  ];
+
+  // O ranking só faz sentido se houver locação.
+  if (!semLocacao && (p.top_contratos || []).length) {
+    const linhas = p.top_contratos.map((c) => el("tr", {},
+      el("td", { style: "font-weight:600" }, c.contrato),
+      el("td", {}, String(c.ativos)),
+      el("td", {}, dinheiro(c.mensal)),
+      el("td", {}, dinheiro(c.por_ativo)),
+    ));
+    cartoes.push(el("div", { class: "chart-card", style: "grid-column:1/-1" },
+      el("h3", {}, "Maiores contratos de locação"),
+      el("p", { class: "chart-sub" },
+        "Onde a renovação vale negociação. O custo por equipamento usa só "
+        + "este inventário."),
+      el("div", { class: "table-wrap" },
+        el("table", {},
+          el("thead", {}, el("tr", {},
+            el("th", {}, "Contrato"), el("th", {}, "Ativos"),
+            el("th", {}, "Mensal"), el("th", {}, "Por equipamento"))),
+          el("tbody", {}, ...linhas))),
+    ));
+  }
+
+  return el("div", {},
+    el("h2", { class: "section-title", style: "margin:24px 0 12px" },
+      "Parque: comprado e locado"),
+    el("div", { class: "charts-grid" }, ...cartoes),
+  );
+}
+
 function chartCard(titulo, subtitulo, svgHtml) {
   const card = el("div", { class: "chart-card" },
     el("h3", {}, titulo),
@@ -207,6 +288,10 @@ async function renderGraficos(container) {
     const kpis = linhaKpis(stats);
     container.innerHTML = "";
     if (kpis) container.append(kpis);
+    // O parque vem ANTES dos gráficos de composição: é o número que a
+    // gestão procura primeiro depois da locação — quanto é nosso e quanto
+    // é alugado.
+    container.append(blocoParque(g.parque));
     container.append(grid);
   } catch (e) {
     falhar(`Não foi possível montar os gráficos: ${e.message}`);

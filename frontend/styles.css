@@ -2142,3 +2142,8 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   max-height: 50vh; overflow-y: auto;
   color: var(--md-sys-color-on-surface);
 }
+
+/* Números do bloco do parque — dois valores lado a lado, cada um com o seu
+   rótulo. Empilhados, "patrimônio" e "custo mensal" seriam lidos como uma
+   soma. */
+.parque-numeros { display: flex; flex-direction: column; gap: 12px; }
