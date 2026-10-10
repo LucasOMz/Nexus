@@ -41,6 +41,7 @@ from app.routers import (
     financeiro,
     graficos,
     manutencoes,
+    monitor_impressoras,
     movimentacoes,
     notificacoes,
     ocs,
@@ -211,6 +212,7 @@ if INSTALADO:
     app.include_router(admin.router, prefix=API)
     app.include_router(emprestimos.router, prefix=API)
     app.include_router(etiquetas.router, prefix=API)
+    app.include_router(monitor_impressoras.router, prefix=API)
     app.include_router(checklist.router, prefix=API)
     app.include_router(financeiro.router, prefix=API)
     app.include_router(backups.router, prefix=API)

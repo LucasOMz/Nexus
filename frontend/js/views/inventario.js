@@ -18,6 +18,7 @@ const TILES = [
   { path: "movimentacoes", modulo: "movimentacoes", rotulo: "Transferências", icone: "movimentacoes", desc: "Entradas, saídas e transferências" },
   { path: "manutencoes", modulo: "manutencoes", rotulo: "Manutenções", icone: "manutencoes", desc: "Ordens, custos e anexos" },
   { path: "scanner", modulo: "scanner", rotulo: "Leitura", icone: "scanner", desc: "Leitor de QR Code e baixa por patrimônio" },
+  { path: "monitor", modulo: "monitor", rotulo: "Monitor de impressoras", icone: "print", desc: "Contador e tonner lidos direto da impressora" },
   { path: "emprestimos", modulo: "emprestimos", rotulo: "Empréstimos", icone: "calendario", desc: "Reserva, retirada com termo, devolução e vistoria" },
   { path: "financeiro", modulo: "financeiro", rotulo: "Financeiro", icone: "relatorios", desc: "Valor do parque, garantias, custo por departamento e por página" },
   { path: "contagens", modulo: "contagens", rotulo: "Contagens", icone: "contagens", desc: "Inventário cíclico: conferência física e divergências" },

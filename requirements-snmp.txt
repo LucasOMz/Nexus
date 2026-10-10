@@ -1,0 +1,19 @@
+# =====================================================================
+# Monitoramento de impressoras por SNMP — dependência OPCIONAL.
+#
+# Fica SEPARADA do requirements.txt porque não é Python puro: depende do
+# pyasn1 e arrasta vários pacotes. Uma falha ao instalar aqui derrubaria a
+# instalação inteira do sistema — inclusive para quem nunca vai usar SNMP.
+#
+# O run.ps1 / run.sh tentam instalar isto automaticamente e NÃO interrompem
+# se falhar. Para instalar à mão:
+#
+#     .venv/bin/python -m pip install -r requirements-snmp.txt      (Linux)
+#     .venv\Scripts\python.exe -m pip install -r requirements-snmp.txt  (Windows)
+#
+# Sem esta biblioteca o sistema funciona normalmente: a tela do Monitor de
+# impressoras avisa que a leitura por SNMP está indisponível, e o resto
+# (cadastro, contador manual, relatórios) continua igual.
+# =====================================================================
+
+pysnmp>=7.1

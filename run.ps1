@@ -71,6 +71,23 @@ Depois rode:  .\run.ps1 -Setup
             Write-Host "        para SQL Server:  $venvPy -m pip install -r requirements-drivers.txt" -ForegroundColor DarkGray
         }
     }
+
+    # SNMP: monitoramento de impressoras (contador e tonner lidos da maquina).
+    # Opcional pelo mesmo motivo dos drivers: nao e Python puro e arrasta
+    # dependencias. Falhar aqui NAO pode impedir a instalacao do sistema.
+    $snmp = Join-Path $PSScriptRoot "requirements-snmp.txt"
+    if (Test-Path $snmp) {
+        Write-Host "[setup] Instalando SNMP de impressoras (opcional) ..." -ForegroundColor DarkGray
+        try {
+            & $venvPy -m pip install -r $snmp --quiet
+            if ($LASTEXITCODE -ne 0) { throw "pip retornou $LASTEXITCODE" }
+            Write-Host "        ok" -ForegroundColor DarkGray
+        } catch {
+            Write-Host "        nao instalado (opcional). O sistema funciona normalmente;" -ForegroundColor DarkGray
+            Write-Host "        sem ele, o Monitor de impressoras avisa que o SNMP esta indisponivel." -ForegroundColor DarkGray
+            Write-Host "        Para instalar depois:  $venvPy -m pip install -r requirements-snmp.txt" -ForegroundColor DarkGray
+        }
+    }
 }
 
 <#

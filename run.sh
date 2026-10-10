@@ -50,6 +50,33 @@ instalar_dependencias() {
     "alembic>=1.14" "email-validator>=2.2" "ldap3>=2.9" "cryptography>=43"
 }
 
+# Dependências OPCIONAIS — a falha NÃO interrompe nada.
+#
+# SNMP de impressoras: contador e tonner lidos direto da máquina. Não é
+# Python puro e arrasta dependências; se falhar aqui, quem nunca vai usar
+# SNMP não pode ficar sem sistema.
+instalar_opcionais() {
+  if [ -f requirements-snmp.txt ]; then
+    echo "[setup] Instalando SNMP de impressoras (opcional) ..."
+    if "$PY" -m pip install -r requirements-snmp.txt --quiet; then
+      echo "        ok"
+    else
+      echo "        não instalado (opcional). O sistema funciona normalmente;"
+      echo "        sem ele, o Monitor de impressoras avisa que o SNMP está indisponível."
+      echo "        Para instalar depois:  $PY -m pip install -r requirements-snmp.txt"
+    fi
+  fi
+  if [ -f requirements-drivers.txt ]; then
+    echo "[setup] Instalando drivers opcionais de banco ..."
+    if "$PY" -m pip install -r requirements-drivers.txt --quiet; then
+      echo "        ok"
+    else
+      echo "        não instalados (opcional). O MySQL já funciona;"
+      echo "        para SQL Server:  $PY -m pip install -r requirements-drivers.txt"
+    fi
+  fi
+}
+
 if [ ! -x "$PY" ]; then
   # Sem .venv: tenta aproveitar um .vendor que funcione NESTA máquina.
   # (o .vendor traz binários compilados para outra plataforma — por isso a
@@ -75,6 +102,9 @@ if ! tem_dependencias "$PY"; then
     exit 1
   fi
 fi
+
+# Opcionais: tentados DEPOIS que o essencial está garantido, e sem interromper.
+instalar_opcionais
 
 # Confere de novo: se ainda faltar, é melhor dizer agora do que falhar no fim.
 if ! tem_dependencias "$PY"; then
