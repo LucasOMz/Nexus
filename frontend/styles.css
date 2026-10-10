@@ -1563,3 +1563,41 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   color: var(--md-sys-color-on-surface-variant);
 }
 @media print { .busca-abas, .categorias-admin, .opcoes-admin { display: none !important; } }
+
+/* ------------------------------------------------------------------ */
+/* Campos de marcacao dos templates de etiqueta                         */
+/* ------------------------------------------------------------------ */
+/* Seguem o MESMO padrao de .opcao (usado na Administracao e no setup).  */
+/* Antes, .switch so tinha "display:inline-flex" e .perm-item nao tinha  */
+/* base nenhuma: o navegador desenhava a caixa nativa, sem tamanho nem   */
+/* cor do sistema, e a tela destoava do resto.                           */
+.switch,
+.perm-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; cursor: pointer;
+  border-radius: var(--shape-xs);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  background: var(--md-sys-color-surface-container-lowest);
+  transition: border-color .15s, background .15s;
+  font-size: 13.5px; line-height: 1.35;
+}
+.switch { width: 100%; }
+.switch:hover,
+.perm-item:hover { border-color: var(--md-sys-color-outline); }
+.switch:has(input:checked),
+.perm-item:has(input:checked),
+.perm-item.checked {
+  border-color: var(--md-sys-color-primary);
+  background: var(--md-sys-color-surface-container-high);
+}
+.switch input[type="checkbox"],
+.perm-item input[type="checkbox"] {
+  flex: 0 0 auto; width: 18px; height: 18px; margin: 0;
+  accent-color: var(--md-sys-color-primary); cursor: pointer;
+}
+/* Varios switches seguidos ficam colados: espaca um do outro. */
+.field:has(> .switch) + .field:has(> .switch) { margin-top: -6px; }
+.perm-grid {
+  display: grid; gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+}

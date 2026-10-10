@@ -21,6 +21,7 @@ MODULOS: dict[str, str] = {
     "movimentacoes": "Movimentações",
     "manutencoes": "Manutenções",
     "scanner": "Leitura (Scanner)",
+    "financeiro": "Painel financeiro",
     "contagens": "Inventário cíclico (contagem)",
     "relatorios": "Relatórios",
     "cadastros": "Cadastros",
@@ -50,21 +51,21 @@ def permissoes_padrao(papel: str) -> dict[str, Any]:
     if papel == "ti":
         return {
             "inventarios": todos_inv,
-            "modulos": ["ativos", "produtos", "movimentacoes", "manutencoes", "scanner", "contagens", "relatorios", "impressao", "calendario", "reporte"],
+            "modulos": ["ativos", "produtos", "movimentacoes", "manutencoes", "scanner", "contagens", "financeiro", "relatorios", "impressao", "calendario", "reporte"],
             "pode_escrever": True,
             "pode_excluir": False,
         }
     if papel == "auditor":
         return {
             "inventarios": todos_inv,
-            "modulos": ["ativos", "produtos", "movimentacoes", "manutencoes", "contagens", "relatorios", "calendario", "reporte"],
+            "modulos": ["ativos", "produtos", "movimentacoes", "manutencoes", "contagens", "financeiro", "relatorios", "calendario", "reporte"],
             "pode_escrever": False,
             "pode_excluir": False,
         }
     # leitor — o calendário é visível para TODOS (cada um vê a sua planta).
     return {
         "inventarios": todos_inv,
-        "modulos": ["ativos", "produtos", "movimentacoes", "manutencoes", "scanner", "contagens", "calendario", "reporte"],
+        "modulos": ["ativos", "produtos", "movimentacoes", "manutencoes", "scanner", "contagens", "financeiro", "calendario", "reporte"],
         "pode_escrever": False,
         "pode_excluir": False,
     }

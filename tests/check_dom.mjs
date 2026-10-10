@@ -677,6 +677,24 @@ verificar("tela inexistente cai no menu",
   verificar("durante a busca a categoria nao navega",
     /if \(termo\) return;/.test(fonteAdmin));
 }
+﻿
+// 39) As caixas de marcacao dos templates de etiqueta seguem o padrao do site.
+//     Antes, .switch so tinha "display:inline-flex" e .perm-item nao tinha base
+//     nenhuma: o navegador desenhava a caixa nativa e a tela destoava do resto.
+{
+  const bloco = /\.switch,\s*\n\.perm-item \{([\s\S]*?)\n\}/.exec(fonteCss);
+  verificar("marcacao de etiqueta tem base propria", Boolean(bloco));
+  verificar("a marcacao usa borda e raio do sistema",
+    Boolean(bloco) && /border-radius: var\(--shape-xs\)/.test(bloco[1])
+    && /border: 1px solid var\(--md-sys-color-outline-variant\)/.test(bloco[1]));
+  verificar("a marcacao marca o estado escolhido",
+    /\.switch:has\(input:checked\),[\s\S]{0,120}\.perm-item\.checked \{[\s\S]{0,120}border-color: var\(--md-sys-color-primary\)/.test(fonteCss));
+  verificar("a caixa tem tamanho e cor do sistema",
+    /\.switch input\[type="checkbox"\],[\s\S]{0,140}width: 18px; height: 18px/.test(fonteCss)
+    && /accent-color: var\(--md-sys-color-primary\)/.test(fonteCss));
+  verificar("os campos ficam em grade, nao empilhados",
+    /\.perm-grid \{[\s\S]{0,120}grid-template-columns: repeat\(auto-fill/.test(fonteCss));
+}
 if (falhas) {
   console.log(`${falhas} DE ${casos} CASOS FALHARAM`);
   process.exit(1);

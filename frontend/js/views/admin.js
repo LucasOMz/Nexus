@@ -562,13 +562,17 @@ export async function renderAdmin(root) {
   };
 
   const GRUPOS = [
-    ["Pessoas e acessos", ["usuarios", "plantas", "auth"]],
+    // "Autenticação (AD)" saiu daqui: ela configura COMO se entra no sistema,
+    // que é assunto de infraestrutura, não de cadastro de pessoas.
+    ["Pessoas e acessos", ["usuarios", "plantas"]],
     ["Patrimônio", ["dispositivos", "etiquetas", "fotos"]],
     // "Auditoria" reúne o que serve para CONFERIR: a trilha do que foi feito
     // (Logs) e a conferência do que existe na rede (Reconciliação).
     ["Auditoria", ["auditoria", "reconciliacao"]],
-    // "Sistema" ficou com a configuração e a manutenção da própria ferramenta.
-    ["Sistema", ["ocs", "backups", "banco"]],
+    // "Sistema" ficou com a configuração e a manutenção da própria ferramenta:
+    // como se entra (AD), de onde vêm os dados (OCS), a cópia de segurança e a
+    // conexão com o banco.
+    ["Sistema", ["auth", "ocs", "backups", "banco"]],
   ];
 
   // Aba fora de qualquer grupo não pode sumir: cai em "Outros".

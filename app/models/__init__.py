@@ -24,6 +24,13 @@ from app.models.core import (
     Transferencia,
     Usuario,
 )
+from app.models.emprestimo import (
+    ChecklistItem,
+    Emprestimo,
+    EmprestimoItem,
+    MomentoChecklist,
+)
+from app.models.emprestimo import SituacaoEmprestimo as SituacaoEmprestimoCiclo
 from app.models.enums import (
     Conectividade,
     Dominio,
@@ -49,6 +56,11 @@ __all__ = [
     "Categoria",
     "Conectividade",
     "ConfiguracaoSistema",
+    "ChecklistItem",
+    "Emprestimo",
+    "EmprestimoItem",
+    "MomentoChecklist",
+    "SituacaoEmprestimoCiclo",
     "Contagem",
     "ContagemItem",
     "CreatedAtModel",

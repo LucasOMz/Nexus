@@ -35,7 +35,9 @@ from app.routers import (
     config_sistema,
     contagens,
     dashboard,
+    emprestimos,
     etiquetas,
+    financeiro,
     graficos,
     manutencoes,
     movimentacoes,
@@ -206,7 +208,9 @@ if INSTALADO:
     app.include_router(relatorios.router, prefix=API, dependencies=[Depends(require_module("relatorios"))])
     app.include_router(graficos.router, prefix=API)
     app.include_router(admin.router, prefix=API)
+    app.include_router(emprestimos.router, prefix=API)
     app.include_router(etiquetas.router, prefix=API)
+    app.include_router(financeiro.router, prefix=API)
     app.include_router(backups.router, prefix=API)
     app.include_router(config_sistema.router, prefix=API)
     app.include_router(auditoria.router, prefix=API)
