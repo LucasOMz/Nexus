@@ -21,6 +21,8 @@ from sqlalchemy import String, cast, or_
 from sqlalchemy.orm import Session
 
 from app.models.core import Ativo, Planta, Produto, Usuario
+from app.models.impressora import AtivoImpressora
+from app.models.ti import AtivoTI
 
 # Quantos resultados por grupo. A busca mostra os primeiros de cada tipo; quem
 # quer a lista completa vai para a tela do módulo.
@@ -78,6 +80,23 @@ def _contem(coluna, termo: str):
     return cast(coluna, String).ilike(f"%{termo}%")
 
 
+def _detalhe_do_ativo(a, termo: str) -> str:
+    """Linha de apoio do resultado, com o hostname em primeiro quando casou.
+
+    A ordem responde à pergunta que a pessoa faz ao olhar a lista: "por que
+    este apareceu?". Se ela digitou o hostname, ele tem que estar à vista —
+    caso contrário o resultado parece aleatório, mesmo estando certo.
+    """
+    host = (getattr(a, "hostname", None) or "").strip()
+    alvo = (termo or "").strip().lower()
+    casou_no_host = bool(alvo and host and alvo in host.lower())
+
+    campos = [host, a.modelo, a.numero_serie, a.marca] if casou_no_host else [
+        a.modelo, a.numero_serie, a.marca, host,
+    ]
+    return " · ".join(x for x in campos if x)
+
+
 def buscar(db: Session, termo: str, planta_id: int | None = None) -> Resultado:
     """Procura o termo nas entidades visíveis.
 
@@ -95,12 +114,22 @@ def buscar(db: Session, termo: str, planta_id: int | None = None) -> Resultado:
     if planta_id is not None:
         q = q.filter(Ativo.planta_id == planta_id)
     ativos = (
-        q.filter(
+        q.outerjoin(AtivoTI, AtivoTI.ativo_id == Ativo.id)
+        .outerjoin(AtivoImpressora, AtivoImpressora.ativo_id == Ativo.id)
+        .filter(
             or_(
                 _contem(Ativo.patrimonio, limpo),
                 _contem(Ativo.numero_serie, limpo),
                 _contem(Ativo.modelo, limpo),
                 _contem(Ativo.marca, limpo),
+                # O HOSTNAME não está no ativo: vive na ficha técnica, em TI
+                # ou em impressora. Sem as duas junções, buscar "NTAT" não
+                # achava nada — e é por esse nome que a máquina é conhecida
+                # na rede, mais do que pelo patrimônio.
+                _contem(AtivoTI.hostname, limpo),
+                _contem(AtivoImpressora.hostname, limpo),
+                _contem(AtivoTI.ip, limpo),
+                _contem(AtivoImpressora.ip, limpo),
             )
         )
         .order_by(Ativo.patrimonio)
@@ -110,10 +139,12 @@ def buscar(db: Session, termo: str, planta_id: int | None = None) -> Resultado:
     r.grupos["Ativos"] = [
         Achado(
             grupo="Ativos",
-            titulo=a.patrimonio,
-            # O detalhe mostra o que ajuda a escolher entre parecidos: modelo
-            # e série são o que distingue dois ativos do mesmo lote.
-            detalhe=" · ".join(x for x in (a.modelo, a.numero_serie, a.marca) if x),
+            # O patrimônio identifica; sem ele, o hostname é o que sobra.
+            titulo=a.patrimonio or getattr(a, "hostname", None) or f"Ativo {a.id}",
+            # O detalhe mostra o que ajuda a escolher entre parecidos — e o
+            # hostname vem PRIMEIRO quando foi ele que casou, senão a pessoa
+            # não entende por que aquele resultado apareceu.
+            detalhe=_detalhe_do_ativo(a, limpo),
             rota=f"#/ativos/{a.id}",
         )
         for a in ativos

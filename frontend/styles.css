@@ -1,4 +1,4 @@
-﻿/* =====================================================================
+/* =====================================================================
    Nexus — Material Design 3 (Material You)
    Tema VERMELHO: fundo branco no claro, escuro avermelhado no dark.
    Tokens em CSS Variables, shapes 12/16/24, transições 200-300ms.
@@ -1088,9 +1088,13 @@ text.chart-value { font-size: 11px; font-weight: 600; fill: var(--md-sys-color-o
 /* do topo, o item ativo da barra, os chips selecionados e o titulo.    */
 
 /* Faixa no alto da pagina — a marca mais visivel, e nao ocupa espaco. */
-.topbar { position: relative; }
+/* `sticky` (e nao `relative`): a barra precisa ficar no topo enquanto a
+   pagina rola. Como esta regra vem DEPOIS da definicao base, um `relative`
+   aqui vencia por ordem de cascata e anulava o `sticky` de cima — a barra
+   sumia ao rolar. O `relative` so era necessario para ancorar o ::after. */
+.topbar { position: sticky; }
 .topbar::after {
-  content: ";
+  content: "";
   position: absolute; left: 0; right: 0; bottom: 0;
   height: 3px;
   background: var(--inv-accent);
@@ -1192,6 +1196,21 @@ text.chart-value { font-size: 11px; font-weight: 600; fill: var(--md-sys-color-o
   background: var(--inv-accent-container); color: var(--inv-accent-on-container);
 }
 .busca-modelo { font-size: 12px; color: var(--md-sys-color-on-surface-variant); margin-left: auto; }
+
+/* Hostname no seletor de ativo — a MESMA pílula do `busca-host` acima, para
+   as duas buscas de ativo falarem a mesma língua. */
+/* `.casou` marca quando o texto digitado está NO hostname: é a resposta a
+   "por que este resultado apareceu?", que faltava e fazia duvidar da busca. */
+.seletor-host {
+  font-size: 11.5px; font-weight: 600; padding: 1px 8px; border-radius: 999px;
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface-variant);
+}
+.seletor-host.casou {
+  background: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container);
+  outline: 1.5px solid var(--md-sys-color-primary);
+}
 .busca-vazia {
   padding: 12px; font-size: 13px;
   color: var(--md-sys-color-on-surface-variant); text-align: center;
@@ -2066,4 +2085,47 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   padding: 9px 16px;
   border-top: 1px solid var(--md-sys-color-outline-variant);
   font-size: 11.5px; color: var(--md-sys-color-on-surface-variant);
+}
+
+/* ------------------------------------------------------------------ */
+/* Contratos                                                           */
+/* ------------------------------------------------------------------ */
+.cartao-contrato {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  padding: 14px 16px; margin-bottom: 10px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--shape-md);
+  background: var(--md-sys-color-surface-container-lowest);
+  color: var(--md-sys-color-on-surface);
+  font-family: inherit; font-size: 14px;
+  transition: border-color .15s, background .15s;
+}
+.cartao-contrato:hover {
+  border-color: var(--md-sys-color-primary);
+  background: var(--md-sys-color-surface-container-low);
+}
+
+/* Lista de vínculo de equipamentos ao contrato */
+.vinculo-lista {
+  max-height: 300px; overflow-y: auto; margin-top: 12px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--shape-sm);
+  padding: 6px;
+}
+.vinculo-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 8px 10px; border-radius: var(--shape-xs); cursor: pointer;
+  font-size: 13.5px;
+}
+.vinculo-item:hover { background: var(--md-sys-color-surface-container-high); }
+
+/* Chip de "Locado" na lista de ativos.
+   Discreto de propósito: é informação de contexto, não alerta. Mas precisa
+   ser visível — muda o que o ativo significa no financeiro. */
+.chip.locado {
+  margin-left: 8px;
+  background: var(--inv-accent-container);
+  color: var(--inv-accent-on-container);
+  font-size: 10.5px; font-weight: 600;
+  letter-spacing: .3px; text-transform: uppercase;
 }

@@ -8,6 +8,7 @@ from pydantic import ConfigDict, Field
 from app.models.enums import (
     Conectividade,
     Dominio,
+    FormaAquisicao,
     StatusAtivo,
     TipoImpressao,
     TipoItem,
@@ -71,6 +72,16 @@ class AtivoBase(SemVazios):
     observacoes: str | None = None
     foto_id: int | None = None
 
+    # --- Como o equipamento chegou ao parque ------------------------------
+    # O padrão COMPRADO preserva o comportamento anterior: todo ativo
+    # cadastrado por um cliente que não conhece o campo continua comprado,
+    # que é o que ele sempre foi.
+    forma_aquisicao: FormaAquisicao = FormaAquisicao.COMPRADO
+    # Contrato do qual o ativo faz parte (locação/comodato/compra em lote).
+    contrato_id: int | None = None
+    # Preço de compra ao fim da locação, quando o contrato já o define.
+    valor_residual: float | None = Field(default=None, ge=0)
+
 
 class AtivoCreate(AtivoBase):
     dominio: Dominio
@@ -122,6 +133,13 @@ class AtivoOut(AtivoBase, DatasComFuso):
     # Sigla da planta — aparece na coluna "Planta" da tela de Ativos.
     planta_id: int | None = None
     planta_sigla: str | None = None
+    # Nome de rede, venha de TI ou de impressora. Vem da propriedade
+    # `Ativo.hostname`, que resolve qual das duas fichas está preenchida.
+    #
+    # Existe para a busca por hostname MOSTRAR o que casou: quem digita
+    # "NTAT" precisa ver que o resultado é aquela máquina, e não desconfiar
+    # de um item cujo texto não contém o que foi digitado.
+    hostname: str | None = None
     # --- Empréstimo (preenchido enquanto o ativo está emprestado) ---------
     numero_chamado: str | None = None
     emprestado_em: date | None = None

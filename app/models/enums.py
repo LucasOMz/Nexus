@@ -73,3 +73,27 @@ class TipoSuprimento(StrEnum):
     CILINDRO = "cilindro"
     PAPEL = "papel"
     OUTRO = "outro"
+
+
+class FormaAquisicao(StrEnum):
+    """Como o equipamento chegou ao parque.
+
+    Muda o que faz sentido calcular: comprado deprecia e tem valor
+    patrimonial; locado custa mensalidade e **não** é patrimônio da empresa
+    (depreciá-lo mediria um bem que não é dela).
+
+    O padrão é COMPRADO de propósito: todo ativo cadastrado antes deste campo
+    existir foi tratado como comprado, e assim continua correto sem migração
+    de dado.
+    """
+
+    COMPRADO = "comprado"
+    LOCADO = "locado"
+
+
+class TipoContrato(StrEnum):
+    LOCACAO = "locacao"
+    # Comodato: o equipamento é cedido sem mensalidade. Existe para o caso de
+    # fornecedor que empresta em troca de exclusividade de suprimentos.
+    COMODATO = "comodato"
+    COMPRA = "compra"

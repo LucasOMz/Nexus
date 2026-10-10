@@ -68,30 +68,67 @@ async function telaResumo(caixa) {
   const g = r.garantias || {};
   caixa.innerHTML = "";
 
-  caixa.append(
-    el("div", { class: "resumo-numeros" },
-      numero(r.ativos ?? 0, "Ativos"),
-      numero(dinheiro(r.valor_aquisicao), "Valor de compra"),
-      numero(dinheiro(r.valor_atual), "Valor hoje", "ok"),
-      numero(dinheiro(r.valor_depreciado), "Já depreciado", "aviso"),
-      numero(`${r.percentual_depreciado ?? 0}%`, "Depreciado"),
-      numero(dinheiro(r.custo_manutencao), "Manutenção"),
-      numero(dinheiro(r.tco_total), "TCO total"),
-      numero(r.garantias_vencendo ?? 0, "Garantias vencendo",
-        (r.garantias_vencendo ?? 0) > 0 ? "erro" : ""),
-    ),
-    el("p", { class: "muted", style: "font-size:12.5px;margin-top:14px" },
-      "O valor de hoje usa depreciação linear: 20% ao ano para TI, 10% para impressoras."),
-  );
+  const comp = r.comprado || {};
+  const loc = r.locado || {};
 
-  caixa.append(el("h3", { style: "margin:24px 0 10px" }, "Garantias por situação"));
-  caixa.append(el("div", { class: "resumo-numeros" },
-    numero(g.vigente ?? 0, "Vigentes", "ok"),
-    numero(g.atencao ?? 0, "Atenção (90 dias)"),
-    numero(g.vencendo ?? 0, "Vencendo (30 dias)", (g.vencendo ?? 0) > 0 ? "erro" : ""),
-    numero(g.vencida ?? 0, "Vencidas"),
-    numero(g.nao_informada ?? 0, "Sem data"),
-  ));
+  caixa.append(
+    el("p", { class: "muted", style: "font-size:12.5px;margin:0 0 12px" },
+      "Comprado e locado têm naturezas diferentes: um é patrimônio que perde "
+      + "valor, o outro é serviço pago todo mês. Por isso os números vêm "
+      + "separados — somá-los daria um valor que não corresponde a nada."),
+
+    // --- Comprado: patrimônio -------------------------------------------
+    el("h3", { style: "margin:6px 0 10px" }, "Comprado (patrimônio)"),
+    (comp.ativos ?? 0) === 0
+      ? el("p", { class: "muted" },
+          "Nenhum equipamento comprado. Todo o parque é locado — não há "
+          + "patrimônio a depreciar.")
+      : el("div", { class: "resumo-numeros" },
+          numero(comp.ativos ?? 0, "Ativos"),
+          numero(dinheiro(comp.valor_aquisicao), "Valor de compra"),
+          numero(dinheiro(comp.valor_atual), "Valor hoje", "ok"),
+          numero(dinheiro(comp.valor_depreciado), "Já depreciado", "aviso"),
+          numero(`${comp.percentual_depreciado ?? 0}%`, "Depreciado"),
+          numero(dinheiro(comp.custo_manutencao), "Manutenção"),
+          numero(dinheiro(comp.tco), "TCO"),
+        ),
+
+    // --- Locado: serviço -------------------------------------------------
+    // O bloco só aparece se houver locação: um painel cheio de zeros sugere
+    // problema onde não há.
+    (loc.ativos ?? 0) > 0
+      ? el("div", {},
+          el("h3", { style: "margin:26px 0 10px" }, "Locado (serviço)"),
+          el("div", { class: "resumo-numeros" },
+            numero(loc.ativos ?? 0, "Ativos"),
+            numero(dinheiro(loc.custo_mensal), "Custo mensal"),
+            numero(dinheiro(loc.custo_12_meses), "Próximos 12 meses", "aviso"),
+            numero(dinheiro(loc.custo_acumulado), "Pago até hoje"),
+            numero(dinheiro(loc.custo_manutencao), "Manutenção"),
+            numero(dinheiro(loc.tco), "TCO"),
+            Number(loc.residual_total) > 0
+              ? numero(dinheiro(loc.residual_total), "Opção de compra")
+              : null,
+          ),
+          el("p", { class: "muted", style: "font-size:12.5px;margin-top:10px" },
+            "Equipamento locado não deprecia: ele não é patrimônio da empresa. "
+            + "O custo é o que já foi pago de mensalidade."),
+        )
+      : null,
+
+    // --- Garantias (só fazem sentido no comprado) ------------------------
+    el("h3", { style: "margin:26px 0 10px" }, "Garantias por situação"),
+    el("div", { class: "resumo-numeros" },
+      numero(g.vigente ?? 0, "Vigentes", "ok"),
+      numero(g.atencao ?? 0, "Atenção (90 dias)"),
+      numero(g.vencendo ?? 0, "Vencendo (30 dias)", (g.vencendo ?? 0) > 0 ? "erro" : ""),
+      numero(g.vencida ?? 0, "Vencidas"),
+      numero(g.nao_informada ?? 0, "Sem data"),
+    ),
+    el("p", { class: "muted", style: "font-size:12.5px;margin-top:10px" },
+      "A depreciação é linear: 20% ao ano para TI, 10% para impressoras. "
+      + "Só se aplica ao que é comprado."),
+  );
 }
 
 async function telaGarantias(caixa) {

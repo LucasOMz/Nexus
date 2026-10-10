@@ -36,6 +36,7 @@ from app.routers import (
     checklist,
     config_sistema,
     contagens,
+    contratos,
     dashboard,
     emprestimos,
     etiquetas,
@@ -229,6 +230,7 @@ if INSTALADO:
     app.include_router(ocs_reconciliacao.router, prefix=API)
     app.include_router(banco.router, prefix=API)
     app.include_router(busca.router, prefix=API)
+    app.include_router(contratos.router, prefix=API)
     app.include_router(transferencias.router, prefix=API)
 
 

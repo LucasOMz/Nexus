@@ -12,6 +12,48 @@ import { api } from "./api.js";
 import { state } from "./state.js";
 import { el, icon } from "./ui.js";
 
+/**
+ * Linha de detalhe de um ativo na busca.
+ *
+ * ## Por que o hostname aparece destacado
+ *
+ * O hostname vive na ficha técnica, não no ativo — então quem digitava "NTAT"
+ * via `TP98000011212 / Latitude 3420 · Dell · TAT` e **nada** indicava o
+ * motivo de aquele item ter aparecido. O resultado estava certo e a pessoa
+ * duvidava dele.
+ *
+ * Quando o termo digitado está no hostname, ele vem **antes** e em destaque:
+ * é a resposta à pergunta "por que este resultado?".
+ *
+ * Exportada para os outros seletores de ativo usarem a MESMA regra — foi o
+ * pedido de ser padrão, e não um caso isolado.
+ */
+export function subtituloDoAtivo(a, termo = "") {
+  const alvo = (termo || "").trim().toLowerCase();
+  const host = (a.hostname || "").trim();
+  const casouNoHost = Boolean(alvo && host && host.toLowerCase().includes(alvo));
+
+  const partes = [];
+  if (host) {
+    partes.push(el("span", {
+      class: casouNoHost ? "seletor-host casou" : "seletor-host",
+    }, host));
+  }
+  if (a.modelo) partes.push(el("span", {}, a.modelo));
+  if (a.marca) partes.push(el("span", {}, a.marca));
+  if (a.planta_sigla) partes.push(el("span", {}, a.planta_sigla));
+
+  if (!partes.length) return el("span", { class: "seletor-item-sub" }, "sem detalhes");
+
+  // Junta com " · " sem transformar os separadores em texto solto.
+  const conteudo = [];
+  partes.forEach((p, i) => {
+    if (i) conteudo.push(document.createTextNode(" · "));
+    conteudo.push(p);
+  });
+  return el("span", { class: "seletor-item-sub" }, ...conteudo);
+}
+
 const ESPERA_MS = 300; // aguarda a digitação parar antes de consultar
 
 /**
@@ -81,9 +123,7 @@ export function seletorDeAtivo({ ativoFixo = null } = {}) {
       itens.forEach((a) => {
         const linha = el("button", { type: "button", class: "seletor-item" },
           el("span", { class: "seletor-item-nome" }, a.patrimonio),
-          el("span", { class: "seletor-item-sub" },
-            `${a.modelo || "sem modelo"}${a.marca ? ` · ${a.marca}` : ""}`
-            + `${a.planta_sigla ? ` · ${a.planta_sigla}` : ""}`),
+          subtituloDoAtivo(a, termo),
         );
         linha.addEventListener("click", () => escolher(a));
         resultados.append(linha);

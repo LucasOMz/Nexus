@@ -1,4 +1,4 @@
-﻿"""Notificações do dia — o que o usuário precisa saber agora.
+"""Notificações do dia — o que o usuário precisa saber agora.
 
 Fonte principal: **empréstimos**. Avisa no dia em que o equipamento precisa ser
 devolvido, quando está atrasado e quando a devolução está próxima.
@@ -111,11 +111,98 @@ def listar(
     for item in _ocs_pendencias(db, user):
         itens.insert(0, item)
 
+    # --- Contratos de locação perto do fim ---------------------------------
+    # No FIM da lista, e não no topo: os avisos do topo são de empréstimo
+    # atrasado, que se resolve hoje. Contrato vencendo é negociação, e cabe
+    # melhor depois.
+    itens.extend(_contratos_vencendo(db, user))
+
     return {
         "total": len(itens),
         "urgentes": sum(1 for i in itens if i["nivel"] in ("erro", "urgente")),
         "itens": itens,
     }
+
+
+def _contratos_vencendo(db: Session, user: Usuario) -> list[dict]:
+    """Avisa sobre contratos de locação perto do fim.
+
+    ## Um aviso por CONTRATO, não por ativo
+
+    Um contrato com 50 notebooks geraria 50 itens idênticos — e o sino vira
+    ruído que ninguém olha. O que vence é o **contrato**; os equipamentos
+    vão junto.
+
+    ## Por que este aviso importa mais que os outros
+
+    Devolver equipamento locado depois do prazo costuma gerar multa, e a
+    renovação tem que ser negociada com antecedência. É o aviso com maior
+    custo por ser ignorado.
+
+    Só contratos com `fim` definido entram: prazo indeterminado não vence.
+    """
+    from app.models.contrato import Contrato
+    from app.models.enums import TipoContrato
+
+    # Janela de 90 dias: além disso não é decisão de agora, e encheria a
+    # lista de coisas para depois.
+    limite = date.today() + timedelta(days=90)
+
+    q = (
+        db.query(Contrato)
+        .filter(
+            Contrato.deleted_at.is_(None),
+            Contrato.fim.isnot(None),
+            Contrato.fim <= limite,
+            Contrato.tipo.in_([TipoContrato.LOCACAO, TipoContrato.COMODATO]),
+        )
+    )
+    q = aplicar_filtro(q, Contrato, user.planta_id)
+
+    saida = []
+    for c in q.order_by(Contrato.fim).all():
+        dias = (c.fim - date.today()).days
+
+        if dias < 0:
+            nivel, titulo = "erro", f"Contrato {c.numero} venceu há {abs(dias)} dia(s)"
+        elif dias == 0:
+            nivel, titulo = "erro", f"Contrato {c.numero} vence HOJE"
+        elif dias <= 30:
+            nivel, titulo = "urgente", f"Contrato {c.numero} vence em {dias} dia(s)"
+        else:
+            nivel, titulo = "info", f"Contrato {c.numero} vence {_texto_dias(dias)}"
+
+        quantos = (
+            db.query(Ativo)
+            .filter(Ativo.contrato_id == c.id, Ativo.deleted_at.is_(None))
+            .count()
+        )
+        fornecedor = getattr(c.fornecedor, "nome", None) if c.fornecedor else None
+
+        detalhe = (
+            f"{c.fim.strftime('%d/%m/%Y')} · {quantos} equipamento(s)"
+            + (f" · {fornecedor}" if fornecedor else "")
+        )
+        if dias < 0:
+            detalhe += ". Devolver atrasado pode gerar multa."
+        elif dias <= 30:
+            detalhe += ". Renove ou devolva antes do prazo."
+        else:
+            detalhe += ". Vale começar a negociação da renovação."
+
+        saida.append({
+            "tipo": "contrato_vencendo",
+            "nivel": nivel,
+            "titulo": titulo,
+            "detalhe": detalhe,
+            "contrato_id": c.id,
+            "contrato_numero": c.numero,
+            "fim": c.fim.isoformat(),
+            "dias": dias,
+            # Para onde clicar leva.
+            "rota": f"#/contratos/{c.id}",
+        })
+    return saida
 
 
 def _ocs_pendencias(db: Session, user: Usuario) -> list[dict]:

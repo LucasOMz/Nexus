@@ -5,6 +5,7 @@ from datetime import date, datetime
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from app.models.contrato import Contrato
     from app.models.impressora import AtivoImpressora, SuprimentoImpressora
     from app.models.ti import AtivoTI
 
@@ -32,6 +33,7 @@ from app.models.base import (
 )
 from app.models.enums import (
     Dominio,
+    FormaAquisicao,
     PapelUsuario,
     StatusAtivo,
     StatusManut,
@@ -324,6 +326,23 @@ class Ativo(BaseModel, Base):
         planta = getattr(self, "planta", None)
         return planta.sigla if planta is not None else None
 
+    @property
+    def hostname(self) -> str | None:
+        """Nome de rede do ativo, venha ele de TI ou de impressora.
+
+        Existe para a tela não precisar saber o domínio: o hostname mora na
+        ficha técnica (`AtivoTI` ou `AtivoImpressora`), e quem busca digita
+        "NTAT" sem pensar em qual das duas está preenchida.
+
+        Tem que virar `selectinload(Ativo.ti/impressora)` na consulta — sem
+        isso, cada linha da lista dispara duas consultas (N+1).
+        """
+        for ficha in (getattr(self, "ti", None), getattr(self, "impressora", None)):
+            nome = (getattr(ficha, "hostname", None) or "").strip() if ficha else ""
+            if nome:
+                return nome
+        return None
+
     dominio: Mapped[Dominio] = mapped_column(sa_enum(Dominio), nullable=False, index=True)
     tipo_item: Mapped[TipoItem] = mapped_column(sa_enum(TipoItem), default=TipoItem.ATIVO, nullable=False)
     patrimonio: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
@@ -337,7 +356,22 @@ class Ativo(BaseModel, Base):
     departamento_id: Mapped[int | None] = mapped_column(ForeignKey("departamentos.id"), index=True)
     data_aquisicao: Mapped[date | None] = mapped_column(Date)
     data_garantia: Mapped[date | None] = mapped_column(Date, index=True)
+    # `valor` só significa algo quando o ativo é COMPRADO — é o preço pago.
+    # Num locado ele fica nulo: não houve compra, e preenchê-lo com "o que
+    # custaria" inflaria o patrimônio com bem que não é da empresa.
     valor: Mapped[float | None] = mapped_column(Numeric(14, 2))
+
+    # --- Como o equipamento chegou ao parque ------------------------------
+    # Padrão COMPRADO: todo ativo cadastrado antes deste campo existir foi
+    # tratado como comprado, e assim continua correto sem migrar dado.
+    forma_aquisicao: Mapped[FormaAquisicao] = mapped_column(
+        sa_enum(FormaAquisicao), default=FormaAquisicao.COMPRADO, nullable=False, index=True
+    )
+    # Contrato do qual o ativo faz parte (locação/comodato/compra em lote).
+    contrato_id: Mapped[int | None] = mapped_column(ForeignKey("contratos.id"), index=True)
+    # Preço de compra ao fim da locação. Preenchido desde o início quando o
+    # contrato já diz quanto custa — é o que permite planejar o buyout.
+    valor_residual: Mapped[float | None] = mapped_column(Numeric(14, 2))
     observacoes: Mapped[str | None] = mapped_column(Text)
     qr_payload: Mapped[str | None] = mapped_column(Text)
     # Foto principal do ativo, escolhida no Banco de Fotos (estilo Zabbix).
@@ -381,6 +415,9 @@ class Ativo(BaseModel, Base):
     impressora: Mapped[AtivoImpressora | None] = relationship(
         back_populates="ativo", cascade="all, delete-orphan", uselist=False
     )
+    # Sem `cascade`: o contrato existe por si. Apagar um ativo não pode
+    # apagar o contrato que cobre outros cinquenta.
+    contrato: Mapped[Contrato | None] = relationship(back_populates="ativos")
     suprimentos: Mapped[list[SuprimentoImpressora]] = relationship(
         back_populates="ativo", cascade="all, delete-orphan"
     )

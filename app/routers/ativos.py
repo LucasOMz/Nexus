@@ -23,7 +23,7 @@ from app.core.permissoes import permissoes_efetivas, pode_inventario
 from app.core.planta import aplicar_filtro, exigir_planta, planta_ativa
 from app.database import get_db
 from app.models.core import Ativo, Movimentacao, Termo, Usuario
-from app.models.enums import Dominio, StatusAtivo, TipoMov
+from app.models.enums import Dominio, FormaAquisicao, StatusAtivo, TipoMov
 from app.models.impressora import AtivoImpressora, LeituraContador, SuprimentoImpressora
 from app.models.ti import AtivoTI
 from app.routers.dashboard import dashboard_stats
@@ -106,6 +106,11 @@ def list_ativos(
     categoria_id: int | None = Query(default=None),
     departamento_id: int | None = Query(default=None),
     localizacao_id: int | None = Query(default=None),
+    # Filtrar por comprado/locado. Com a maioria do parque em locação, "ver
+    # só os locados" é a pergunta que a lista provoca — o chip mostra a
+    # natureza, mas sem filtro não dá para isolar.
+    forma_aquisicao: FormaAquisicao | None = Query(default=None),
+    contrato_id: int | None = Query(default=None),
     search: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     size: int = Query(default=20, ge=1, le=200),
@@ -133,20 +138,31 @@ def list_ativos(
         q = q.filter(Ativo.departamento_id == departamento_id)
     if localizacao_id is not None:
         q = q.filter(Ativo.localizacao_id == localizacao_id)
+    if forma_aquisicao is not None:
+        q = q.filter(Ativo.forma_aquisicao == forma_aquisicao)
+    if contrato_id is not None:
+        q = q.filter(Ativo.contrato_id == contrato_id)
     if search:
         like = f"%{search}%"
-        # O hostname vive na ficha técnica (AtivoTI), não no ativo. Sem a junção,
-        # procurar por "DTAT0001" não achava nada — e é por esse nome que a
-        # máquina é conhecida na rede.
-        q = q.outerjoin(AtivoTI, AtivoTI.ativo_id == Ativo.id).filter(
-            or_(
-                Ativo.patrimonio.ilike(like),
-                Ativo.numero_serie.ilike(like),
-                Ativo.modelo.ilike(like),
-                Ativo.marca.ilike(like),
-                AtivoTI.hostname.ilike(like),
-                AtivoTI.ip.ilike(like),
-                AtivoTI.mac_address.ilike(like),
+        # O hostname vive na FICHA TÉCNICA, não no ativo: em TI (`AtivoTI`) ou
+        # em impressora (`AtivoImpressora`). Sem as duas junções, procurar por
+        # "NTAT" (notebook) ou "RTAT0001" (impressora) não achava nada — e é
+        # por esses nomes que as máquinas são conhecidas na rede.
+        q = (
+            q.outerjoin(AtivoTI, AtivoTI.ativo_id == Ativo.id)
+            .outerjoin(AtivoImpressora, AtivoImpressora.ativo_id == Ativo.id)
+            .filter(
+                or_(
+                    Ativo.patrimonio.ilike(like),
+                    Ativo.numero_serie.ilike(like),
+                    Ativo.modelo.ilike(like),
+                    Ativo.marca.ilike(like),
+                    AtivoTI.hostname.ilike(like),
+                    AtivoTI.ip.ilike(like),
+                    AtivoTI.mac_address.ilike(like),
+                    AtivoImpressora.hostname.ilike(like),
+                    AtivoImpressora.ip.ilike(like),
+                )
             )
         )
     if sort and sort.lstrip("-") in _SORT_FIELDS:

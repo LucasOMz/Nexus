@@ -8,12 +8,14 @@ depreciação é derivada — guardá-la só criaria dado velho para manter.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import Response
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user
 from app.core.planta import aplicar_filtro, planta_ativa
 from app.database import get_db
+from app.models.contrato import Contrato
 from app.models.core import Ativo, Departamento, Manutencao, Movimentacao, Produto, Usuario
 from app.models.impressora import LeituraContador
 from app.services import financeiro
@@ -67,8 +69,36 @@ def _montar(db: Session, ativos: list[Ativo]) -> list[dict]:
     consum = _custos_de_consumivel(db, None)
     deps = {d.id: (d.sigla or d.nome) for d in db.query(Departamento).all()}
 
+    # --- Locação ---------------------------------------------------------
+    # O valor mensal é do CONTRATO, não do equipamento: um contrato cobre 50
+    # notebooks por um valor único. O custo por ativo é o rateio.
+    contratos = {
+        c.id: c
+        for c in db.query(Contrato).filter(Contrato.deleted_at.is_(None)).all()
+    }
+    # Quantos ativos vivos cada contrato cobre — o divisor do rateio. Contado
+    # de uma vez para todos os contratos: contar por ativo faria uma consulta
+    # por linha da lista.
+    cobertos = dict(
+        db.query(Ativo.contrato_id, func.count(Ativo.id))
+        .filter(Ativo.deleted_at.is_(None), Ativo.contrato_id.isnot(None))
+        .group_by(Ativo.contrato_id)
+        .all()
+    )
+
     saida = []
     for a in ativos:
+        forma = getattr(a.forma_aquisicao, "value", a.forma_aquisicao) or "comprado"
+        contrato = contratos.get(a.contrato_id)
+        quantos = cobertos.get(a.contrato_id) or 0
+
+        # Rateio calculado na hora. Se um equipamento for devolvido, a
+        # mensalidade não cai e o custo dos que ficaram SOBE — um valor
+        # gravado mentiria a partir da primeira devolução.
+        valor_mensal = None
+        if contrato is not None and contrato.valor_mensal and quantos:
+            valor_mensal = float(contrato.valor_mensal) / quantos
+
         saida.append({
             "ativo_id": a.id,
             "patrimonio": a.patrimonio,
@@ -81,6 +111,18 @@ def _montar(db: Session, ativos: list[Ativo]) -> list[dict]:
             "departamento": deps.get(a.departamento_id),
             "custo_manutencao": manut.get(a.id, 0.0),
             "custo_consumiveis": consum.get(a.id, 0.0),
+            # --- Locação --------------------------------------------------
+            "forma_aquisicao": forma,
+            "valor_mensal": valor_mensal,
+            "contrato_id": a.contrato_id,
+            "contrato_numero": contrato.numero if contrato else None,
+            # O início da locação é do CONTRATO. Usar `data_aquisicao` do
+            # ativo (que num locado é nula) zeraria o custo acumulado.
+            "contrato_inicio": (
+                contrato.inicio.isoformat() if contrato and contrato.inicio else None
+            ),
+            "contrato_fim": contrato.fim.isoformat() if contrato and contrato.fim else None,
+            "valor_residual": float(a.valor_residual or 0) or None,
         })
     return saida
 
@@ -267,3 +309,71 @@ def custo_por_pagina(
     sem_dados = [x for x in saida if x.get("custo_por_pagina_total") is None]
 
     return {**_paginado(confiaveis, page, size), "sem_dados": len(sem_dados)}
+
+
+# ===========================================================================
+# Exportação: custo mensal por contrato
+# ===========================================================================
+@router.get("/contratos.csv", response_class=Response)
+def contratos_csv(
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(get_current_user),
+    planta_id: int | None = Depends(planta_ativa),
+):
+    """Custo mensal por contrato, em CSV.
+
+    ## Por que este relatório existe
+
+    O custo de locação não aparece em nenhum lugar do financeiro tradicional
+    — ele não é patrimônio, não deprecia e não tem valor de compra. Sem esta
+    planilha, a gestão não tem como conferir a fatura do fornecedor contra o
+    que o sistema acha que está contratado.
+
+    É a visão que responde "quanto eu pago por mês, e por quê".
+    """
+    import csv
+    import io
+
+    from sqlalchemy import func as _func
+
+    contratos = aplicar_filtro(
+        db.query(Contrato).filter(Contrato.deleted_at.is_(None)), Contrato, planta_id
+    ).order_by(Contrato.numero).all()
+
+    # Contagem por contrato numa consulta só — dentro do laço seria N+1.
+    cobertos = dict(
+        db.query(Ativo.contrato_id, _func.count(Ativo.id))
+        .filter(Ativo.deleted_at.is_(None), Ativo.contrato_id.isnot(None))
+        .group_by(Ativo.contrato_id)
+        .all()
+    )
+
+    buf = io.StringIO()
+    w = csv.writer(buf, delimiter=";", lineterminator="\n")
+    w.writerow([
+        "contrato", "tipo", "fornecedor", "inicio", "fim", "dias_para_vencer",
+        "equipamentos", "valor_mensal", "rateio_por_equipamento", "custo_12_meses",
+    ])
+    for c in contratos:
+        quantos = cobertos.get(c.id) or 0
+        mensal = float(c.valor_mensal or 0)
+        w.writerow([
+            c.numero,
+            getattr(c.tipo, "value", c.tipo),
+            getattr(c.fornecedor, "nome", "") if c.fornecedor else "",
+            c.inicio.isoformat() if c.inicio else "",
+            c.fim.isoformat() if c.fim else "",
+            c.dias_para_vencer if c.dias_para_vencer is not None else "",
+            quantos,
+            f"{mensal:.2f}".replace(".", ","),
+            f"{(mensal / quantos):.2f}".replace(".", ",") if quantos else "",
+            f"{(mensal * 12):.2f}".replace(".", ","),
+        ])
+
+    # BOM: sem ele o Excel em português abre os acentos errado.
+    conteudo = "\ufeff" + buf.getvalue()
+    return Response(
+        content=conteudo.encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="nexus-contratos.csv"'},
+    )

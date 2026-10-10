@@ -231,13 +231,11 @@ input[type=file] { width: 100%; font-size: 13px; color: var(--md-sys-color-on-su
               var(--md-sys-color-surface-container-lowest) 100%);
   border-bottom: 1px solid var(--md-sys-color-outline-variant);
 }
-.bv-icone {
-  width: 64px; height: 64px; margin: 0 auto 16px;
-  border-radius: var(--shape-md);
-  display: grid; place-items: center;
-  font-size: 24px; font-weight: 700; letter-spacing: 1px;
-  background: var(--md-sys-color-primary);
-  color: var(--md-sys-color-on-primary);
+/* O logotipo do Nexus. Era um quadrado verde com as iniciais "GP" — sobra do
+   nome antigo. A imagem já é o símbolo; fundo colorido atrás só atrapalha. */
+.bv-logo {
+  width: 88px; height: 88px; margin: 0 auto 16px;
+  display: block; object-fit: contain;
 }
 .bv-hero h1 { font-size: 23px; font-weight: 600; margin: 0 0 6px; }
 .bv-sub { margin: 0; font-size: 13.5px; color: var(--md-sys-color-on-surface-variant); }

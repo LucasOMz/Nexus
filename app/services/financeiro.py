@@ -254,40 +254,182 @@ def custo_por_pagina(
     }
 
 
+# ===========================================================================
+# Locação
+# ===========================================================================
+# Comprado e locado NÃO se somam. Um tem valor patrimonial que deprecia; o
+# outro tem mensalidade e não é bem da empresa. Somar os dois numa métrica só
+# ("valor do parque") produz um número sem significado — e é o erro fácil de
+# cometer aqui.
+# ===========================================================================
+
+# Dias médios do mês gregoriano (365,25 / 12). Usar 30 fixo acumularia 5 dias
+# de erro por ano — num contrato de 36 meses, quase meio mês de mensalidade.
+DIAS_DO_MES = 30.44
+
+
+def meses_decorridos(inicio, agora: datetime | None = None) -> float:
+    """Meses desde o início da locação.
+
+    Zero quando ainda não começou (contrato com início no futuro): cobrar
+    mensalidade de um período que não passou infla o custo.
+    """
+    d = _data(inicio)
+    if d is None:
+        return 0.0
+    hoje = _hoje(agora)
+    if d > hoje:
+        return 0.0
+    return round((hoje - d).days / DIAS_DO_MES, 2)
+
+
+def custo_locacao(
+    valor_mensal,
+    inicio,
+    agora: datetime | None = None,
+    valor_residual=None,
+) -> dict[str, Any]:
+    """Custo acumulado de um ativo LOCADO.
+
+    Aqui **não há depreciação**: o equipamento não é patrimônio da empresa, e
+    depreciar mediria um bem que não é dela. O que existe é o que já foi pago.
+
+    `valor_residual` não é custo — é o preço do buyout, se um dia for
+    exercido. Fica separado para não entrar no custo de quem nunca comprar.
+    """
+    mensal = float(valor_mensal or 0)
+    if mensal <= 0:
+        return {
+            "aplicavel": False,
+            "motivo": "sem valor mensal (comodato ou contrato sem cobrança)",
+        }
+
+    d = _data(inicio)
+    if d is None:
+        return {"aplicavel": False, "motivo": "sem data de início"}
+
+    meses = meses_decorridos(d, agora=agora)
+
+    return {
+        "aplicavel": True,
+        "valor_mensal": round(mensal, 2),
+        "meses": meses,
+        "custo_acumulado": round(mensal * meses, 2),
+        # Doze meses adiante: o horizonte que a gestão olha para decidir
+        # renovação.
+        "custo_12_meses": round(mensal * 12, 2),
+        "inicio": d.isoformat(),
+        "valor_residual": round(float(valor_residual), 2) if valor_residual else None,
+        # A depreciação de um locado é ZERO, e não "não calculada": devolver
+        # None obrigaria todo relatório que soma a tratar o caso, e um deles
+        # esqueceria — virando número errado em relatório de gestão.
+        "depreciacao": 0.0,
+    }
+
+
 def resumo_do_parque(itens: list[dict], agora: datetime | None = None) -> dict[str, Any]:
-    """Números do parque inteiro, para o topo da tela financeira."""
-    total_aquisicao = 0.0
-    total_depreciado = 0.0
-    total_atual = 0.0
-    total_manutencao = 0.0
+    """Números do parque, **separados por forma de aquisição**.
+
+    Comprado e locado têm naturezas diferentes: um é patrimônio que perde
+    valor, o outro é serviço pago todo mês. Somá-los daria um "valor do
+    parque" que não corresponde a nada.
+
+    Os totais de contagem continuam existindo; o **dinheiro vem separado**.
+    """
+    comprado = {
+        "ativos": 0, "valor_aquisicao": 0.0, "valor_depreciado": 0.0,
+        "valor_atual": 0.0, "custo_manutencao": 0.0,
+    }
+    locado = {
+        "ativos": 0, "custo_acumulado": 0.0, "custo_mensal": 0.0,
+        "custo_manutencao": 0.0, "residual_total": 0.0,
+    }
     garantias = {"vigente": 0, "atencao": 0, "vencendo": 0, "vencida": 0, "nao_informada": 0}
 
     for it in itens:
-        total_aquisicao += float(it.get("valor") or 0)
-        total_manutencao += float(it.get("custo_manutencao") or 0)
+        # `forma_aquisicao` ausente = comprado. É o padrão do campo no banco, e
+        # também o certo para quem chama a função só com os campos antigos.
+        locado_mesmo = it.get("forma_aquisicao") == "locado"
+        manut = float(it.get("custo_manutencao") or 0)
 
-        d = depreciacao(it.get("valor"), it.get("data_aquisicao"),
-                        dominio=it.get("dominio"), agora=agora)
+        if locado_mesmo:
+            locado["ativos"] += 1
+            locado["custo_manutencao"] += manut
+            c = custo_locacao(
+                it.get("valor_mensal"),
+                it.get("contrato_inicio") or it.get("data_aquisicao"),
+                agora=agora,
+                valor_residual=it.get("valor_residual"),
+            )
+            if c["aplicavel"]:
+                locado["custo_acumulado"] += c["custo_acumulado"]
+                locado["custo_mensal"] += c["valor_mensal"]
+            if c.get("valor_residual"):
+                locado["residual_total"] += c["valor_residual"]
+
+            # Locado não tem garantia própria: quem cobre é o fornecedor, pelo
+            # contrato. Contar como "não informada" só poluiria o indicador.
+            continue
+
+        comprado["ativos"] += 1
+        comprado["custo_manutencao"] += manut
+        v = float(it.get("valor") or 0)
+        comprado["valor_aquisicao"] += v
+
+        d = depreciacao(v, it.get("data_aquisicao"), dominio=it.get("dominio"), agora=agora)
         if d["aplicavel"]:
-            total_atual += d["valor_atual"]
-            total_depreciado += d["depreciado"]
+            comprado["valor_atual"] += d["valor_atual"]
+            comprado["valor_depreciado"] += d["depreciado"]
         else:
-            total_atual += float(it.get("valor") or 0)
+            comprado["valor_atual"] += v
 
         g = garantia(it.get("data_garantia"), agora=agora)
         garantias[g["situacao"]] = garantias.get(g["situacao"], 0) + 1
 
+    # TCO de comprado = o que custou + o que gastou. O de locado é o que já foi
+    # pago + manutenção. Não se soma o `valor` de um locado: ele não existe.
+    tco_comprado = comprado["valor_aquisicao"] + comprado["custo_manutencao"]
+    tco_locado = locado["custo_acumulado"] + locado["custo_manutencao"]
+
     return {
-        "ativos": len(itens),
-        "valor_aquisicao": round(total_aquisicao, 2),
-        "valor_depreciado": round(total_depreciado, 2),
-        "valor_atual": round(total_atual, 2),
-        "custo_manutencao": round(total_manutencao, 2),
-        "tco_total": round(total_aquisicao + total_manutencao, 2),
+        "ativos": comprado["ativos"] + locado["ativos"],
+        # --- Comprado: patrimônio ---------------------------------------
+        "comprado": {
+            "ativos": comprado["ativos"],
+            "valor_aquisicao": round(comprado["valor_aquisicao"], 2),
+            "valor_depreciado": round(comprado["valor_depreciado"], 2),
+            "valor_atual": round(comprado["valor_atual"], 2),
+            "custo_manutencao": round(comprado["custo_manutencao"], 2),
+            "tco": round(tco_comprado, 2),
+            "percentual_depreciado": (
+                round(comprado["valor_depreciado"] / comprado["valor_aquisicao"] * 100, 1)
+                if comprado["valor_aquisicao"] else 0.0
+            ),
+        },
+        # --- Locado: serviço -------------------------------------------
+        "locado": {
+            "ativos": locado["ativos"],
+            "custo_mensal": round(locado["custo_mensal"], 2),
+            "custo_acumulado": round(locado["custo_acumulado"], 2),
+            "custo_manutencao": round(locado["custo_manutencao"], 2),
+            "tco": round(tco_locado, 2),
+            "residual_total": round(locado["residual_total"], 2),
+            # Doze meses do parque locado: o número que a gestão usa para
+            # decidir renovação, e que não sai de `valor_atual`.
+            "custo_12_meses": round(locado["custo_mensal"] * 12, 2),
+        },
+        # --- Nomes antigos, agora restritos ao COMPRADO -----------------
+        # Quem lia `valor_atual` esperando patrimônio continua certo. Antes, um
+        # locado somava zero ali e ninguém notava a diferença.
+        "valor_aquisicao": round(comprado["valor_aquisicao"], 2),
+        "valor_depreciado": round(comprado["valor_depreciado"], 2),
+        "valor_atual": round(comprado["valor_atual"], 2),
+        "custo_manutencao": round(comprado["custo_manutencao"] + locado["custo_manutencao"], 2),
+        "tco_total": round(tco_comprado + tco_locado, 2),
         "percentual_depreciado": (
-            round(total_depreciado / total_aquisicao * 100, 1) if total_aquisicao else 0.0
+            round(comprado["valor_depreciado"] / comprado["valor_aquisicao"] * 100, 1)
+            if comprado["valor_aquisicao"] else 0.0
         ),
         "garantias": garantias,
-        # O que merece ação agora.
         "garantias_vencendo": garantias.get("vencendo", 0) + garantias.get("atencao", 0),
     }

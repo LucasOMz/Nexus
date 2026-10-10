@@ -36,6 +36,9 @@ function aplicarDestaqueDaUrl() {
 }
 let page = 1;
 let filtroStatus = "";
+// Filtro por natureza patrimonial. A lista provoca a pergunta "quais são
+// locados?" — o chip mostra, mas sem o filtro não dá para isolar.
+let filtroForma = "";
 let filtroSearch = "";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -94,8 +97,25 @@ function commonFields(ativo, lookups, fotos) {
       <div class="field"><label>Departamento</label><select name="departamento_id">${optionsOf(lookups.departamentos)}</select></div>
       <div class="field"><label>Status</label>
         <select name="status">${["estoque","reservado","em_uso","manutencao","descartado","emprestado"].map((s) => `<option ${a.status === s ? "selected" : ""}>${s}</option>`).join("")}</select></div>
+      <div class="field"><label>Aquisição</label>
+        <select name="forma_aquisicao">
+          <option value="comprado" ${(a.forma_aquisicao || "comprado") === "comprado" ? "selected" : ""}>Comprado</option>
+          <option value="locado" ${a.forma_aquisicao === "locado" ? "selected" : ""}>Locado</option>
+        </select>
+        <span class="hint">Locado não deprecia: o custo é a mensalidade do contrato.</span>
+      </div>
+      <div class="field"><label>Data de aquisição</label>
+        <input type="date" name="data_aquisicao" value="${esc(a.data_aquisicao)}">
+        <span class="hint">É a partir daqui que a depreciação conta.</span>
+      </div>
       <div class="field"><label>Garantia</label><input type="date" name="data_garantia" value="${esc(a.data_garantia)}"></div>
-      <div class="field"><label>Valor (R$)</label><input type="number" step="0.01" name="valor" value="${a.valor ?? ""}"></div>
+      <div class="field"><label>Valor (R$)</label><input type="number" step="0.01" name="valor" value="${a.valor ?? ""}">
+        <span class="hint">Preço de compra. Em locado, deixe vazio.</span>
+      </div>
+      <div class="field"><label>Opção de compra (R$)</label>
+        <input type="number" step="0.01" name="valor_residual" value="${a.valor_residual ?? ""}">
+        <span class="hint">Preço do buyout ao fim da locação.</span>
+      </div>
       <div class="field span-2"><label>Foto do ativo (Banco de Fotos)</label>
         <select name="foto_id">${opcoesFoto}</select>
         <span class="hint">As fotos são cadastradas em Administração → Banco de Fotos.</span>
@@ -120,7 +140,12 @@ function buildPayload(data) {
     localizacao_id: data.localizacao_id, departamento_id: data.departamento_id,
     status: data.status, data_garantia: data.data_garantia || null,
     valor: data.valor, observacoes: data.observacoes || null, foto_id: data.foto_id,
+    data_aquisicao: data.data_aquisicao || null,
     dominio: state.dominio, tipo_item: "ativo",
+    // Locado não tem valor de compra nem data de aquisição — mandar os dois
+    // inflaria o patrimônio com um bem que não é da empresa.
+    forma_aquisicao: data.forma_aquisicao || "comprado",
+    valor_residual: data.forma_aquisicao === "locado" ? (data.valor_residual || null) : null,
   };
   if (state.dominio === "ti") {
     payload.ti = { hostname: data.hostname || null, mac_address: data.mac_address || null, ip: data.ip || null, so: data.so || null, dominio_ad: data.dominio_ad || null, cpu: data.cpu || null, ram_gb: data.ram_gb, armazenamento_gb: data.armazenamento_gb };
@@ -442,7 +467,16 @@ function openDetail(ativo, lookups) {
     ["Modelo", ativo.modelo || "—"], ["Marca", ativo.marca || "—"],
     ["Nº de Série", ativo.numero_serie || "—"], ["Garantia", ativo.data_garantia ? fmtDate(ativo.data_garantia) : "—"],
     ["Valor", fmtMoney(ativo.valor)], ["Localização", locNome || "—"],
+    // A natureza patrimonial muda o que `Valor` significa: num locado ele é
+    // vazio porque não houve compra, e "—" sozinho parece dado faltando.
+    ["Aquisição", ativo.forma_aquisicao === "locado"
+      ? "Locado (não é patrimônio da empresa)"
+      : "Comprado"],
   ];
+  if (ativo.forma_aquisicao === "locado") {
+    info.push(["Data de aquisição", "— (a depreciação começa só na compra)"]);
+    if (ativo.valor_residual) info.push(["Opção de compra", fmtMoney(ativo.valor_residual)]);
+  }
   if (ext) {
     for (const [k, v] of Object.entries(ext)) {
       if (k !== "ativo_id") info.push([k.replace(/_/g, " "), v === null || v === "" ? "—" : String(v)]);
@@ -583,6 +617,7 @@ async function renderList(root, lookups) {
   root.innerHTML = "";
   const q = { dominio: state.dominio, page, size: pageSize };
   if (filtroStatus) q.status = filtroStatus;
+  if (filtroForma) q.forma_aquisicao = filtroForma;
   if (filtroSearch) q.search = filtroSearch;
 
   let data;
@@ -690,7 +725,17 @@ async function renderList(root, lookups) {
         ...(caixaLinha ? [el("td", { style: "padding-right:0" }, caixaLinha)] : []),        el("td", { style: "padding-right:0" }, a.foto_id
           ? el("img", { src: fotoUrl(a.foto_id), alt: "", style: "width:38px;height:38px;object-fit:cover;border-radius:8px;display:block" })
           : el("div", { style: "width:38px;height:38px;border-radius:8px;background:var(--md-sys-color-surface-container-high)" })),
-        el("td", { style: "font-weight:600" }, a.patrimonio),
+        el("td", { style: "font-weight:600" },
+          a.patrimonio,
+          // O chip responde a pergunta que o patrimônio sozinho não responde:
+          // este equipamento é nosso ou é alugado? Muda o que ele significa
+          // no financeiro — locado não entra no patrimônio nem deprecia.
+          a.forma_aquisicao === "locado"
+            ? el("span", {
+                class: "chip locado",
+                title: "Locado — não é patrimônio da empresa e não deprecia",
+              }, "Locado")
+            : null),
         el("td", {}, a.planta_sigla
           ? el("span", { class: "chip" }, a.planta_sigla)
           : el("span", { class: "muted" }, "—")),
@@ -773,6 +818,7 @@ export async function renderAtivos(root) {
 
   function atualizarToolbar() {
     chipsStatus.forEach(([valor, botao]) => botao.classList.toggle("selected", filtroStatus === valor));
+    chipsForma.forEach(([valor, botao]) => botao.classList.toggle("selected", filtroForma === valor));
     botoesTamanho.forEach(([valor, botao]) => botao.classList.toggle("selected", pageSize === valor));
   }
 
@@ -816,6 +862,7 @@ export async function renderAtivos(root) {
     onclick: () => trocarStatus(""),
   }, "Todos");
   chipsStatus.push(["", chipTodos]);
+  const chipsForma = [];
 
   const toolbar = el("div", { class: "toolbar" },
     el("div", { class: "grow" }, campoBusca),
@@ -831,6 +878,24 @@ export async function renderAtivos(root) {
       }),
     ),
     seletorTamanho,
+    // Filtro de natureza, numa linha própria: junto dos status ele
+    // confundiria — são eixos diferentes (o que o ativo é vs. como chegou).
+    el("div", { class: "row", style: "gap:6px;margin-top:8px" },
+      el("span", { class: "dica", style: "margin:auto 6px auto 0" }, "Aquisição:"),
+      ...[["", "Todas"], ["comprado", "Comprados"], ["locado", "Locados"]].map(([v, r]) => {
+        const b = el("button", {
+          class: "chip" + (filtroForma === v ? " selected" : ""),
+          onclick: () => {
+            filtroForma = v;
+            page = 1;
+            atualizarToolbar();
+            refresh();
+          },
+        }, r);
+        chipsForma.push([v, b]);
+        return b;
+      }),
+    ),
   );
 
   atualizarToolbar();
