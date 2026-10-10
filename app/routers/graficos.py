@@ -1,14 +1,15 @@
 """Dados agregados para os gráficos dos relatórios (módulo `relatorios`).
 
 Retorna séries prontas para o frontend desenhar em SVG, sem dependências
-externas. Todos os agrupamentos respeitam o inventário selecionado.
+externas. Todos os agrupamentos respeitam o inventário selecionado **e os
+filtros personalizados**.
 """
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func
+from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, require_module
@@ -25,7 +26,7 @@ from app.models.core import (
     Produto,
     Usuario,
 )
-from app.models.enums import Dominio, TipoMov
+from app.models.enums import Dominio, FormaAquisicao, TipoMov
 from app.models.impressora import AtivoImpressora, SuprimentoImpressora
 from app.models.ti import AtivoTI
 
@@ -57,23 +58,80 @@ def _serie(rows: list[tuple], rotulos: dict[str, str] | None = None) -> list[dic
     return sorted(saida, key=lambda x: x["valor"], reverse=True)
 
 
+def _condicoes(
+    dominio: Dominio,
+    *,
+    inicio: date | None = None,
+    fim: date | None = None,
+    planta_id: int | None = None,
+    forma_aquisicao: FormaAquisicao | None = None,
+    contrato_id: int | None = None,
+) -> list:
+    """Condições comuns a TODOS os blocos que consultam ativos.
+
+    ## Por que existe
+
+    Antes, cada bloco montava a sua própria consulta. Um filtro acrescentado a
+    um bloco valia só ali — e um relatório com **alguns gráficos filtrados e
+    outros não** é pior do que nenhum: os números parecem filtrados e não são.
+
+    ## Como usar
+
+    `query.filter(*cond)` quando não há outra condição, ou
+    `and_(outra_condicao, *cond)` quando há — dentro de um `join`, por
+    exemplo.
+
+    ## A ordem dos dois primeiros itens é invertida de propósito
+
+    Se fosse `deleted_at, dominio`, esta linha casaria com o texto do filtro
+    antigo e uma substituição textual a transformaria numa lista que se
+    espalha dentro de si mesma — estourando com `UnboundLocalError`.
+    """
+    cond = [Ativo.dominio == dominio, Ativo.deleted_at.is_(None)]
+    if inicio is not None:
+        cond.append(Ativo.data_aquisicao >= inicio)
+    if fim is not None:
+        cond.append(Ativo.data_aquisicao <= fim)
+    if planta_id is not None:
+        cond.append(Ativo.planta_id == planta_id)
+    if forma_aquisicao is not None:
+        cond.append(Ativo.forma_aquisicao == forma_aquisicao)
+    if contrato_id is not None:
+        cond.append(Ativo.contrato_id == contrato_id)
+    return cond
+
+
 @router.get("")
 def graficos(
     dominio: Dominio = Query(default=Dominio.TI),
     meses: int = Query(default=6, ge=1, le=24),
+    # --- Filtros personalizados -------------------------------------------
+    # Valem para TODOS os blocos. `inicio`/`fim` são sobre a DATA DE
+    # AQUISIÇÃO: é o que responde "quanto entrou neste ano".
+    inicio: date | None = Query(default=None),
+    fim: date | None = Query(default=None),
+    planta_id: int | None = Query(default=None),
+    forma_aquisicao: FormaAquisicao | None = Query(default=None),
+    contrato_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
     user: Usuario = Depends(get_current_user),
 ) -> dict:
     if not pode_inventario(user, dominio.value):
         raise HTTPException(403, "Sem acesso a este inventário")
 
-    base = db.query(Ativo).filter(Ativo.deleted_at.is_(None), Ativo.dominio == dominio)
+    # As condições são calculadas UMA vez e espalhadas em todos os blocos.
+    # É o que faz um filtro valer no relatório inteiro.
+    cond = _condicoes(
+        dominio, inicio=inicio, fim=fim, planta_id=planta_id,
+        forma_aquisicao=forma_aquisicao, contrato_id=contrato_id,
+    )
+    base = db.query(Ativo).filter(*cond)
     ativo_ids = [a.id for a in base.with_entities(Ativo.id).all()]
 
     # 1) Ativos por status.
     rows = (
         db.query(Ativo.status, func.count(Ativo.id))
-        .filter(Ativo.deleted_at.is_(None), Ativo.dominio == dominio)
+        .filter(*cond)
         .group_by(Ativo.status)
         .all()
     )
@@ -82,7 +140,7 @@ def graficos(
     # 2) Ativos por categoria.
     rows = (
         db.query(Categoria.nome, func.count(Ativo.id))
-        .outerjoin(Ativo, (Ativo.categoria_id == Categoria.id) & (Ativo.deleted_at.is_(None)) & (Ativo.dominio == dominio))
+        .outerjoin(Ativo, and_(Ativo.categoria_id == Categoria.id, *cond))
         .group_by(Categoria.nome)
         .all()
     )
@@ -91,7 +149,7 @@ def graficos(
     # 3) Ativos por localização.
     rows = (
         db.query(Localizacao.nome, func.count(Ativo.id))
-        .outerjoin(Ativo, (Ativo.localizacao_id == Localizacao.id) & (Ativo.deleted_at.is_(None)) & (Ativo.dominio == dominio))
+        .outerjoin(Ativo, and_(Ativo.localizacao_id == Localizacao.id, *cond))
         .group_by(Localizacao.nome)
         .all()
     )
@@ -100,7 +158,7 @@ def graficos(
     # 4) Ativos por departamento.
     rows = (
         db.query(Departamento.nome, func.count(Ativo.id))
-        .outerjoin(Ativo, (Ativo.departamento_id == Departamento.id) & (Ativo.deleted_at.is_(None)) & (Ativo.dominio == dominio))
+        .outerjoin(Ativo, and_(Ativo.departamento_id == Departamento.id, *cond))
         .group_by(Departamento.nome)
         .all()
     )
@@ -109,13 +167,14 @@ def graficos(
     # 5) Valor patrimonial por categoria.
     rows = (
         db.query(Categoria.nome, func.coalesce(func.sum(Ativo.valor), 0))
-        .outerjoin(Ativo, (Ativo.categoria_id == Categoria.id) & (Ativo.deleted_at.is_(None)) & (Ativo.dominio == dominio))
+        .outerjoin(Ativo, and_(Ativo.categoria_id == Categoria.id, *cond))
         .group_by(Categoria.nome)
         .all()
     )
     valor_categoria = _serie([(n, float(v or 0)) for n, v in rows if v])
 
     # 6) Garantias a vencer.
+    # Parte de `base`, que já carrega as condições.
     hoje = date.today()
     garantias = [
         {
@@ -138,6 +197,8 @@ def graficos(
     )
     # Domínios por id, para filtrar movimentações do inventário atual.
     ids_produto = {p.id: getattr(p.dominio, "value", p.dominio) for p in db.query(Produto).all()}
+    # `ativo_ids` vem de `base`, então o filtro de ativos já está aplicado —
+    # movimentação de ativo fora do filtro não entra na contagem.
     set_ativos = set(ativo_ids)
     buckets: dict[str, dict[str, int]] = {}
     for tipo, data_mov, ativo_id, produto_id in movs:
@@ -159,7 +220,7 @@ def graficos(
     rows = (
         db.query(Manutencao.status, func.count(Manutencao.id))
         .join(Ativo, Ativo.id == Manutencao.ativo_id)
-        .filter(Manutencao.deleted_at.is_(None), Ativo.deleted_at.is_(None), Ativo.dominio == dominio)
+        .filter(Manutencao.deleted_at.is_(None), *cond)
         .group_by(Manutencao.status)
         .all()
     )
@@ -171,7 +232,7 @@ def graficos(
         rows = (
             db.query(AtivoTI.so, func.count(AtivoTI.ativo_id))
             .join(Ativo, Ativo.id == AtivoTI.ativo_id)
-            .filter(Ativo.deleted_at.is_(None), Ativo.dominio == Dominio.TI)
+            .filter(*cond)
             .group_by(AtivoTI.so)
             .all()
         )
@@ -179,7 +240,7 @@ def graficos(
         rows = (
             db.query(AtivoTI.ram_gb, func.count(AtivoTI.ativo_id))
             .join(Ativo, Ativo.id == AtivoTI.ativo_id)
-            .filter(Ativo.deleted_at.is_(None), Ativo.dominio == Dominio.TI)
+            .filter(*cond)
             .group_by(AtivoTI.ram_gb)
             .all()
         )
@@ -188,7 +249,7 @@ def graficos(
         rows = (
             db.query(Ativo.patrimonio, AtivoImpressora.contador_paginas)
             .join(AtivoImpressora, AtivoImpressora.ativo_id == Ativo.id)
-            .filter(Ativo.deleted_at.is_(None), Ativo.dominio == Dominio.IMPRESSORA)
+            .filter(*cond)
             .order_by(AtivoImpressora.contador_paginas.desc())
             .limit(12)
             .all()
@@ -198,8 +259,7 @@ def graficos(
             db.query(SuprimentoImpressora.modelo, SuprimentoImpressora.tipo, SuprimentoImpressora.estoque_atual)
             .join(Ativo, Ativo.id == SuprimentoImpressora.ativo_id)
             .filter(
-                Ativo.deleted_at.is_(None),
-                Ativo.dominio == Dominio.IMPRESSORA,
+                *cond,
                 SuprimentoImpressora.deleted_at.is_(None),
                 SuprimentoImpressora.estoque_atual <= SuprimentoImpressora.estoque_minimo,
             )
@@ -214,7 +274,7 @@ def graficos(
     # Depois da locação, "valor do parque" deixou de ser um número só. Somar
     # patrimônio com mensalidade daria um valor sem significado — por isso o
     # relatório separa as duas naturezas, como o financeiro já faz.
-    parque = _parque(db, dominio)
+    parque = _parque(db, dominio, cond)
 
     return {
         "dominio": dominio.value,
@@ -232,18 +292,16 @@ def graficos(
     }
 
 
-def _parque(db: Session, dominio: Dominio) -> dict:
+def _parque(db: Session, dominio: Dominio, cond: list) -> dict:
     """Composição do parque por forma de aquisição, e o custo da locação.
 
     Comprado e locado têm naturezas diferentes: um é patrimônio que perde
     valor, o outro é serviço pago todo mês. O gráfico precisa dos dois
     separados — é o que o gestor usa para decidir renovação.
     """
-    from app.models.enums import FormaAquisicao
-
     linhas = (
         db.query(Ativo.forma_aquisicao, func.count(Ativo.id))
-        .filter(Ativo.deleted_at.is_(None), Ativo.dominio == dominio)
+        .filter(*cond)
         .group_by(Ativo.forma_aquisicao)
         .all()
     )
@@ -258,28 +316,23 @@ def _parque(db: Session, dominio: Dominio) -> dict:
     # Valor patrimonial: só o comprado. Um locado não é bem da empresa.
     valor_comprado = (
         db.query(func.coalesce(func.sum(Ativo.valor), 0))
-        .filter(
-            Ativo.deleted_at.is_(None),
-            Ativo.dominio == dominio,
-            Ativo.forma_aquisicao != FormaAquisicao.LOCADO,
-        )
+        .filter(*cond, Ativo.forma_aquisicao != FormaAquisicao.LOCADO)
         .scalar()
         or 0
     )
 
     # Custo mensal: a soma das mensalidades dos contratos que cobrem ativos
-    # DESTE domínio. Contar o contrato inteiro inflaria um inventário que
-    # talvez seja só metade dele.
+    # que passam pelo filtro. Contar o contrato inteiro inflaria um recorte
+    # que talvez seja só parte dele.
     contratos = (
         db.query(
             Contrato.numero,
             Contrato.valor_mensal,
             func.count(Ativo.id).label("quantos"),
         )
-        .join(Ativo, (Ativo.contrato_id == Contrato.id) & (Ativo.deleted_at.is_(None)))
+        .join(Ativo, and_(Ativo.contrato_id == Contrato.id, *cond))
         .filter(
             Contrato.deleted_at.is_(None),
-            Ativo.dominio == dominio,
             Contrato.valor_mensal.isnot(None),
         )
         .group_by(Contrato.id)
@@ -295,8 +348,8 @@ def _parque(db: Session, dominio: Dominio) -> dict:
             "contrato": numero,
             "mensal": round(valor, 2),
             "ativos": quantos,
-            # Custo por equipamento DESTE inventário — é o número que a
-            # gestão compara entre contratos.
+            # Custo por equipamento DESTE recorte — é o número que a gestão
+            # compara entre contratos.
             "por_ativo": round(valor / quantos, 2) if quantos else 0,
         })
 

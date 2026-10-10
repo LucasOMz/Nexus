@@ -2147,3 +2147,56 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
    rótulo. Empilhados, "patrimônio" e "custo mensal" seriam lidos como uma
    soma. */
 .parque-numeros { display: flex; flex-direction: column; gap: 12px; }
+
+/* ------------------------------------------------------------------ */
+/* Cards de número do resumo                                           */
+/* ------------------------------------------------------------------ */
+/* O valor tem fonte grande de propósito: é o número que a gestão lê de    */
+/* longe. Mas a coluna precisava poder encolher — sem `min-width: 0` um    */
+/* item de grid não fica menor que o próprio conteúdo, e o texto vazava    */
+/* para fora da caixa.                                                     */
+.resumo-numeros { grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); }
+.numero { min-width: 0; }
+.numero-valor {
+  /* 24px fixo não cabia em "R$ 19.376.250,00". O tamanho acompanha a tela; */
+  /* o piso de 15px mantém a leitura, e o teto de 22px preserva o destaque. */
+  font-size: clamp(15px, 1.5vw, 22px);
+  overflow-wrap: anywhere;
+  line-height: 1.2;
+}
+
+/* ------------------------------------------------------------------ */
+/* Tabela de números (maiores contratos de locação)                    */
+/* ------------------------------------------------------------------ */
+/* O problema que isto resolve: os valores ficavam todos juntos, sem       */
+/* separação entre coluna e sem alinhamento — "1785 R$ 35.500 R$ 20" lia    */
+/* como um número só.                                                      */
+.tabela-numeros { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+
+.tabela-numeros th {
+  padding: 8px 14px 10px;
+  font-size: 11.5px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .4px; color: var(--md-sys-color-on-surface-variant);
+  border-bottom: 1.5px solid var(--md-sys-color-outline-variant);
+  white-space: nowrap;
+}
+.tabela-numeros td {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  vertical-align: middle;
+}
+.tabela-numeros tr:last-child td { border-bottom: none; }
+.tabela-numeros tbody tr:hover { background: var(--md-sys-color-surface-container-low); }
+
+/* Números à direita e com largura fixa de dígito. Sem `tabular-nums`, o "1"
+   é mais estreito que o "8" e as casas decimais não se alinham entre as
+   linhas — que é justamente o que permite comparar duas de relance. */
+.tabela-numeros .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tabela-numeros .col-nome { font-weight: 600; }
+/* O custo por equipamento é o número que a comparação usa — recebe o peso
+   visual, sem competir com o mensal. */
+.tabela-numeros .destaque { font-weight: 700; color: var(--md-sys-color-primary); }

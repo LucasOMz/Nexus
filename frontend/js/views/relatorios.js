@@ -10,6 +10,39 @@ import { el, icon, toast, dialog, confirmSheet, skeleton, fmtMoney, fmtMoneyCurt
 import { donut, barsH, barsV, linhaMensal } from "../charts.js";
 import { mensagemErro } from "../erros.js";
 
+/**
+ * Filtros dos gráficos.
+ *
+ * ## O que eles filtram
+ *
+ * Tudo. O backend calcula as condições **uma vez** e as espalha em todos os
+ * blocos (`_condicoes` em `app/routers/graficos.py`) — então o filtro vale do
+ * primeiro ao último gráfico.
+ *
+ * Isso é o que impede o pior caso: alguns gráficos filtrados e outros não, em
+ * que os números **parecem** filtrados e não são.
+ *
+ * `inicio`/`fim` são sobre a DATA DE AQUISIÇÃO: respondem "quanto entrou
+ * neste período".
+ */
+const filtrosGraficos = {
+  inicio: "",
+  fim: "",
+  planta_id: "",
+  forma_aquisicao: "",
+  contrato_id: "",
+};
+
+/** Os filtros que estão ativos, no formato da query. */
+function filtrosAtivos() {
+  const q = {};
+  for (const [k, v] of Object.entries(filtrosGraficos)) {
+    if (v) q[k] = v;
+  }
+  return q;
+}
+
+
 async function download(url, filename) {
   try {
     const res = await fetch(url, { headers: { Authorization: "Bearer " + state.access } });
@@ -36,9 +69,19 @@ async function download(url, filename) {
 function blocoParque(p) {
   if (!p) return el("div");
 
-  const dinheiro = (v) => Number(v || 0).toLocaleString("pt-BR", {
+  // Duas formatações, de propósito.
+  //
+  // O mensal de um contrato é da ordem de milhares: os centavos são ruído.
+  // Já o custo POR EQUIPAMENTO fica na casa das dezenas — ali "R$ 20" em vez
+  // de "R$ 19,89" esconde justamente a diferença que se quer comparar entre
+  // contratos.
+  const reaisGrande = (v) => Number(v || 0).toLocaleString("pt-BR", {
     style: "currency", currency: "BRL", maximumFractionDigits: 0,
   });
+  const reaisExato = (v) => Number(v || 0).toLocaleString("pt-BR", {
+    style: "currency", currency: "BRL", minimumFractionDigits: 2,
+  });
+  const inteiro = (v) => Number(v || 0).toLocaleString("pt-BR");
 
   const semLocacao = !p.locados;
   const semCompra = !p.comprados;
@@ -55,17 +98,17 @@ function blocoParque(p) {
       el("div", { class: "parque-numeros" },
         el("div", {},
           el("div", { class: "dica" }, "Patrimônio (comprado)"),
-          el("b", {}, dinheiro(p.valor_patrimonial)),
+          el("b", {}, reaisGrande(p.valor_patrimonial)),
           el("div", { class: "muted", style: "font-size:12px" },
             semCompra ? "Nenhum equipamento comprado" : `${p.comprados} ativo(s)`)),
         el("div", {},
           el("div", { class: "dica" }, "Custo mensal (locado)"),
-          el("b", {}, dinheiro(p.custo_mensal)),
+          el("b", {}, reaisGrande(p.custo_mensal)),
           el("div", { class: "muted", style: "font-size:12px" },
             semLocacao ? "Nenhum contrato ativo" : `${p.locados} ativo(s)`)),
         el("div", {},
           el("div", { class: "dica" }, "Locação — próximos 12 meses"),
-          el("b", {}, dinheiro(p.custo_12_meses))),
+          el("b", {}, reaisGrande(p.custo_12_meses))),
       ),
       // A frase que evita a leitura errada: sem ela, alguém soma os dois e
       // conclui que o parque vale patrimônio + mensalidade.
@@ -78,10 +121,13 @@ function blocoParque(p) {
   // O ranking só faz sentido se houver locação.
   if (!semLocacao && (p.top_contratos || []).length) {
     const linhas = p.top_contratos.map((c) => el("tr", {},
-      el("td", { style: "font-weight:600" }, c.contrato),
-      el("td", {}, String(c.ativos)),
-      el("td", {}, dinheiro(c.mensal)),
-      el("td", {}, dinheiro(c.por_ativo)),
+      // `num` alinha à direita e usa números tabulares: sem isso, as colunas
+      // de valor ficam com os dígitos desencontrados, e comparar duas linhas
+      // exige ler cada número inteiro.
+      el("td", { class: "col-nome" }, c.contrato),
+      el("td", { class: "num" }, inteiro(c.ativos)),
+      el("td", { class: "num" }, reaisGrande(c.mensal)),
+      el("td", { class: "num destaque" }, reaisExato(c.por_ativo)),
     ));
     cartoes.push(el("div", { class: "chart-card", style: "grid-column:1/-1" },
       el("h3", {}, "Maiores contratos de locação"),
@@ -89,10 +135,12 @@ function blocoParque(p) {
         "Onde a renovação vale negociação. O custo por equipamento usa só "
         + "este inventário."),
       el("div", { class: "table-wrap" },
-        el("table", {},
+        el("table", { class: "tabela-numeros" },
           el("thead", {}, el("tr", {},
-            el("th", {}, "Contrato"), el("th", {}, "Ativos"),
-            el("th", {}, "Mensal"), el("th", {}, "Por equipamento"))),
+            el("th", {}, "Contrato"),
+            el("th", { class: "num" }, "Ativos"),
+            el("th", { class: "num" }, "Mensal"),
+            el("th", { class: "num" }, "Por equipamento"))),
           el("tbody", {}, ...linhas))),
     ));
   }
@@ -101,6 +149,85 @@ function blocoParque(p) {
     el("h2", { class: "section-title", style: "margin:24px 0 12px" },
       "Parque: comprado e locado"),
     el("div", { class: "charts-grid" }, ...cartoes),
+  );
+}
+
+/**
+ * Barra de filtros dos gráficos.
+ *
+ * Carrega as opções de planta e contrato do servidor — e **tolera falha**:
+ * se uma delas não vier, a barra aparece sem aquele campo em vez de derrubar
+ * o relatório inteiro. Filtro é acessório; os gráficos é que são o conteúdo.
+ */
+async function barraFiltros(container) {
+  const [plantas, contratos] = await Promise.all([
+    api.get("/plantas").catch(() => []),
+    api.get("/contratos").catch(() => []),
+  ]);
+
+  const campo = (rotulo, entrada) =>
+    el("div", { class: "field", style: "margin:0" }, el("label", {}, rotulo), entrada);
+
+  const inicio = el("input", { type: "date", value: filtrosGraficos.inicio || "" });
+  const fim = el("input", { type: "date", value: filtrosGraficos.fim || "" });
+  const planta = el("select", {},
+    el("option", { value: "" }, "Todas"),
+    ...(plantas || []).map((p) => el("option", {
+      value: p.id, selected: String(filtrosGraficos.planta_id) === String(p.id) ? "selected" : null,
+    }, `${p.sigla} — ${p.nome}`)));
+  const forma = el("select", {},
+    el("option", { value: "" }, "Todas"),
+    el("option", { value: "comprado", selected: filtrosGraficos.forma_aquisicao === "comprado" ? "selected" : null }, "Comprados"),
+    el("option", { value: "locado", selected: filtrosGraficos.forma_aquisicao === "locado" ? "selected" : null }, "Locados"));
+  const contrato = el("select", {},
+    el("option", { value: "" }, "Todos"),
+    ...(contratos || []).map((c) => el("option", {
+      value: c.id, selected: String(filtrosGraficos.contrato_id) === String(c.id) ? "selected" : null,
+    }, c.numero)));
+
+  // Aplicar recarrega só os gráficos, sem recarregar a página.
+  function aplicar() {
+    filtrosGraficos.inicio = inicio.value;
+    filtrosGraficos.fim = fim.value;
+    filtrosGraficos.planta_id = planta.value;
+    filtrosGraficos.forma_aquisicao = forma.value;
+    filtrosGraficos.contrato_id = contrato.value;
+    renderGraficos(container);
+  }
+  for (const campo_ of [inicio, fim, planta, forma, contrato]) {
+    campo_.addEventListener("change", aplicar);
+  }
+
+  const limpar = el("button", {
+    class: "btn text small", type: "button",
+    onclick: () => {
+      for (const k of Object.keys(filtrosGraficos)) filtrosGraficos[k] = "";
+      inicio.value = ""; fim.value = "";
+      planta.value = ""; forma.value = ""; contrato.value = "";
+      renderGraficos(container);
+    },
+  }, "Limpar filtros");
+
+  const ativos = Object.values(filtrosGraficos).filter(Boolean).length;
+
+  return el("div", { class: "card", style: "margin-bottom:14px" },
+    el("div", { class: "row between wrap", style: "gap:10px;align-items:center" },
+      el("div", {},
+        el("div", { class: "section-title", style: "margin:0" }, "Filtros"),
+        el("p", { class: "muted", style: "font-size:12.5px;margin:4px 0 0" },
+          ativos
+            // Dizer que há recorte aplicado evita ler os números como se
+            // fossem do parque inteiro.
+            ? `${ativos} filtro(s) aplicado(s) — os números abaixo refletem só este recorte.`
+            : "Valem para todos os gráficos. A data é a de aquisição.")),
+      ativos ? limpar : null),
+    el("div", { class: "grade", style: "margin-top:12px" },
+      campo("Adquirido de", inicio),
+      campo("Adquirido até", fim),
+      campo("Planta", planta),
+      campo("Aquisição", forma),
+      campo("Contrato", contrato),
+    ),
   );
 }
 
@@ -236,7 +363,9 @@ async function renderGraficos(container) {
   let g;
   let stats = null;
   try {
-    g = await api.get("/relatorios/graficos", { dominio: state.dominio, meses: 6 });
+    g = await api.get("/relatorios/graficos", {
+      dominio: state.dominio, meses: 6, ...filtrosAtivos(),
+    });
     // Indicadores do antigo Dashboard, agora no topo (best-effort).
     stats = await api.get("/dashboard/stats", { dominio: state.dominio }).catch(() => null);
   } catch (e) {
@@ -287,6 +416,9 @@ async function renderGraficos(container) {
 
     const kpis = linhaKpis(stats);
     container.innerHTML = "";
+    // A barra vem ANTES de tudo: os números abaixo são o resultado dela, e
+    // quem chega precisa saber que há um recorte aplicado.
+    container.append(await barraFiltros(container));
     if (kpis) container.append(kpis);
     // O parque vem ANTES dos gráficos de composição: é o número que a
     // gestão procura primeiro depois da locação — quanto é nosso e quanto

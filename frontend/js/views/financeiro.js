@@ -10,7 +10,7 @@
 import { api } from "../api.js";
 import { state } from "../state.js";
 import { ctx } from "../context.js";
-import { el, icon, fmtMoney, skeleton, mostrarErro } from "../ui.js";
+import { el, icon, fmtMoney, fmtMoneyCurto, skeleton, mostrarErro } from "../ui.js";
 
 const ABAS = [
   ["resumo", "Resumo do parque"],
@@ -52,9 +52,29 @@ export async function renderFinanceiro(root) {
   }
 }
 
+/**
+ * Um número do resumo.
+ *
+ * ## Por que o valor é encurtado
+ *
+ * O card é um RESUMO e a fonte é de 24 px: `R$ 19.376.250,00` não cabe na
+ * largura da coluna e vazava para fora da caixa. A partir de um milhão o
+ * valor aparece compacto (`R$ 19,4 mi`) e o **exato fica no `title`** — quem
+ * precisa da casa decimal passa o mouse, quem lê o painel vê o número.
+ *
+ * O corte é em 1 milhão de propósito: abaixo disso o valor cheio cabe, e
+ * encurtar `R$ 8.500,00` para `R$ 8,5 mil` só perderia precisão sem ganhar
+ * espaço nenhum.
+ */
 function numero(valor, rotulo, tom = "") {
-  return el("div", { class: `numero ${tom}` },
-    el("span", { class: "numero-valor" }, valor),
+  const numerico = typeof valor === "number";
+  const exato = numerico ? dinheiro(valor) : String(valor);
+  const curto = numerico && Math.abs(valor) >= 1e6 ? fmtMoneyCurto(valor) : exato;
+  return el("div", {
+    class: `numero ${tom}`,
+    title: curto !== exato ? exato : null,
+  },
+    el("span", { class: "numero-valor" }, curto),
     el("span", { class: "numero-rotulo" }, rotulo));
 }
 
