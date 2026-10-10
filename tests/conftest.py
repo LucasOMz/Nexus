@@ -104,16 +104,26 @@ def _zerar_limitadores():
     da execucao - falha que nada tem a ver com o que o teste verifica.
 
     Foi o que fez classes de teste passarem sozinhas e falharem em conjunto.
+
+    O `api_limiter` entrou depois, quando o teto geral da API passou a valer:
+    a suite inteira faz muito mais de 600 requisicoes, e o contador estouraria
+    no meio da execucao. Um teste que verifica 429 de verdade recria o seu.
     """
+    from app import main as app_main
     from app.core import rate_limit
     from app.routers import auth as auth_router
 
-    auth_router.login_limiter = rate_limit.SlidingWindowLimiter(
-        max_requests=rate_limit.login_limiter.max_requests,
-        window_seconds=rate_limit.login_limiter.window_seconds,
-    )
+    def novo(limiter):
+        return rate_limit.SlidingWindowLimiter(
+            max_requests=limiter.max_requests,
+            window_seconds=limiter.window_seconds,
+        )
+
+    # `auth` e `main` importam os limitadores POR NOME, então cada um tem a
+    # sua referência. Trocar só o atributo do módulo de origem não muda o que
+    # eles usam — é preciso trocar nos dois lugares.
+    auth_router.login_limiter = novo(rate_limit.login_limiter)
+    app_main.api_limiter = novo(rate_limit.api_limiter)
     yield
-    auth_router.login_limiter = rate_limit.SlidingWindowLimiter(
-        max_requests=rate_limit.login_limiter.max_requests,
-        window_seconds=rate_limit.login_limiter.window_seconds,
-    )
+    auth_router.login_limiter = novo(rate_limit.login_limiter)
+    app_main.api_limiter = novo(rate_limit.api_limiter)

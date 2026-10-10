@@ -22,6 +22,7 @@ from sqlalchemy.exc import IntegrityError
 from app import __version__
 from app.config import settings
 from app.core.deps import require_module
+from app.core.rate_limit import api_limiter, chave_do_cliente
 from app.database import SessionLocal, init_db
 from app.routers import (
     admin,
@@ -42,6 +43,7 @@ from app.routers import (
     etiquetas,
     financeiro,
     graficos,
+    lgpd,
     manutencoes,
     mfa,
     monitor_impressoras,
@@ -146,6 +148,49 @@ async def security_headers(request, call_next):
 
 
 # ---------------------------------------------------------------------------
+# Limite de requisições da API.
+#
+# O login já tinha o seu (10/min, contra força bruta). Todo o resto da API
+# ficava aberto: um cliente com token válido podia varrer `/ativos` à vontade
+# e extrair o inventário inteiro em minutos.
+#
+# Este teto é FOLGADO (600/min) de propósito — existe para travar varredura,
+# não uso. Ver `api_limiter` em core/rate_limit.py.
+# ---------------------------------------------------------------------------
+# Rotas que NÃO entram na conta. O login tem limitador próprio e bem mais
+# apertado; contar duas vezes faria o teto geral disparar antes do específico
+# e mascarar a mensagem certa.
+FORA_DO_LIMITE = ("/api/v1/auth/login", "/api/v1/auth/refresh")
+
+
+@app.middleware("http")
+async def limite_de_requisicoes(request: Request, call_next):
+    caminho = request.url.path
+
+    # Só a API. Os arquivos do PWA são muitos por tela e não são o alvo de
+    # uma varredura de dados.
+    if not caminho.startswith("/api/") or caminho.startswith(FORA_DO_LIMITE):
+        return await call_next(request)
+
+    chave = chave_do_cliente(request)
+    if not api_limiter.is_allowed(chave):
+        from fastapi.responses import JSONResponse as _JSON
+
+        return _JSON(
+            status_code=429,
+            content={
+                "detail": (
+                    "Muitas requisições em pouco tempo. Aguarde um instante e "
+                    "tente de novo."
+                )
+            },
+            headers={"Retry-After": "60"},
+        )
+
+    return await call_next(request)
+
+
+# ---------------------------------------------------------------------------
 # Erros tratados de forma clara (em vez de "Internal Server Error").
 # ---------------------------------------------------------------------------
 @app.exception_handler(IntegrityError)
@@ -231,6 +276,7 @@ if INSTALADO:
     app.include_router(banco.router, prefix=API)
     app.include_router(busca.router, prefix=API)
     app.include_router(contratos.router, prefix=API)
+    app.include_router(lgpd.router, prefix=API)
     app.include_router(transferencias.router, prefix=API)
 
 
