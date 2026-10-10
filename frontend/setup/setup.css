@@ -3,28 +3,29 @@
    outra aplicação. É independente por necessidade — precisa funcionar antes de
    existir banco —, mas não por aparência. */
 :root {
+  --md-sys-color-background: #F1F7F1;
   /* Tokens do sistema (tema claro). */
-  --md-sys-color-primary: #B3261E;
+  --md-sys-color-primary: #2F6B4F;
   --md-sys-color-on-primary: #FFFFFF;
-  --md-sys-color-primary-container: #FFDAD6;
-  --md-sys-color-on-primary-container: #410002;
-  --md-sys-color-secondary-container: #FFDAD4;
-  --md-sys-color-on-secondary-container: #2C1512;
-  --md-sys-color-tertiary-container: #F6E3A1;
-  --md-sys-color-on-tertiary-container: #231B00;
+  --md-sys-color-primary-container: #B4F1CE;
+  --md-sys-color-on-primary-container: #00210F;
+  --md-sys-color-secondary-container: #D3E8D6;
+  --md-sys-color-on-secondary-container: #0D1F14;
+  --md-sys-color-tertiary-container: #BDEBF2;
+  --md-sys-color-on-tertiary-container: #001F24;
   --md-sys-color-error: #BA1A1A;
   --md-sys-color-error-container: #FFDAD6;
   --md-sys-color-on-error-container: #410002;
-  --md-sys-color-surface: #FFFFFF;
-  --md-sys-color-on-surface: #201A19;
+  --md-sys-color-surface: #F7FBF7;
+  --md-sys-color-on-surface: #171D19;
   --md-sys-color-surface-container-lowest: #FFFFFF;
-  --md-sys-color-surface-container: #FDF6F5;
-  --md-sys-color-surface-container-high: #F9ECEA;
-  --md-sys-color-surface-container-highest: #F3E3E0;
-  --md-sys-color-on-surface-variant: #534341;
-  --md-sys-color-outline: #857370;
-  --md-sys-color-outline-variant: #E6D3D0;
-  --cor-ok: #1E6B3A;
+  --md-sys-color-surface-container: #EBF3EC;
+  --md-sys-color-surface-container-high: #E0EAE2;
+  --md-sys-color-surface-container-highest: #DAE5DC;
+  --md-sys-color-on-surface-variant: #414942;
+  --md-sys-color-outline: #717971;
+  --md-sys-color-outline-variant: #C1C9C1;
+  --cor-ok: #1F6B3F;
   --shape-xs: 8px;
   --shape-sm: 12px;
   --shape-md: 16px;
@@ -33,26 +34,27 @@
 /* Tema escuro, como no sistema. */
 @media (prefers-color-scheme: dark) {
   :root {
-    --md-sys-color-primary: #FFB4AB;
-    --md-sys-color-on-primary: #690005;
-    --md-sys-color-primary-container: #93000A;
-    --md-sys-color-on-primary-container: #FFDAD6;
-    --md-sys-color-secondary-container: #5D3F3C;
-    --md-sys-color-on-secondary-container: #FFDAD4;
-    --md-sys-color-tertiary-container: #54461A;
-    --md-sys-color-on-tertiary-container: #F6E3A1;
+    --md-sys-color-primary: #99D5B3;
+    --md-sys-color-on-primary: #00391F;
+    --md-sys-color-primary-container: #14522F;
+    --md-sys-color-on-primary-container: #B4F1CE;
+    --md-sys-color-secondary-container: #384B3D;
+    --md-sys-color-on-secondary-container: #D3E8D6;
+    --md-sys-color-tertiary-container: #1F4D54;
+    --md-sys-color-on-tertiary-container: #BDEBF2;
     --md-sys-color-error: #FFB4AB;
     --md-sys-color-error-container: #93000A;
     --md-sys-color-on-error-container: #FFDAD6;
-    --md-sys-color-surface: #201A19;
-    --md-sys-color-on-surface: #EDE0DE;
-    --md-sys-color-surface-container-lowest: #1A1413;
-    --md-sys-color-surface-container: #251E1D;
-    --md-sys-color-surface-container-high: #302827;
-    --md-sys-color-surface-container-highest: #3B3231;
-    --md-sys-color-on-surface-variant: #D8C2BF;
-    --md-sys-color-outline: #A08C89;
-    --md-sys-color-outline-variant: #534341;
+    --md-sys-color-surface: #111A13;
+    --md-sys-color-background: #0E1610;
+    --md-sys-color-on-surface: #DFE4DE;
+    --md-sys-color-surface-container-lowest: #0C140E;
+    --md-sys-color-surface-container: #1D261F;
+    --md-sys-color-surface-container-high: #28312A;
+    --md-sys-color-surface-container-highest: #333C35;
+    --md-sys-color-on-surface-variant: #C1C9C1;
+    --md-sys-color-outline: #8B938C;
+    --md-sys-color-outline-variant: #414942;
     --cor-ok: #7EE2A8;
   }
 }
@@ -64,7 +66,7 @@ body {
   min-height: 100vh;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   font-size: 14px;
-  background: var(--md-sys-color-surface-container);
+  background: var(--md-sys-color-background);
   color: var(--md-sys-color-on-surface);
   display: flex;
   align-items: flex-start;
@@ -88,15 +90,12 @@ body {
   margin-bottom: 22px;
 }
 .marca { display: flex; gap: 14px; align-items: center; }
-.marca-icone {
-  width: 46px; height: 46px; flex: 0 0 auto;
+/* O logotipo do Nexus. Substituiu o quadrado com as iniciais — a imagem já
+   é o símbolo, e um fundo colorido atrás dela só atrapalharia. */
+.marca-logo {
+  width: 52px; height: 52px; flex: 0 0 auto;
+  object-fit: contain;
   border-radius: var(--shape-sm);
-  display: grid; place-items: center;
-  font-weight: 700; font-size: 17px; letter-spacing: .5px;
-  background: var(--md-sys-color-primary);
-  color: var(--md-sys-color-on-primary);
-  background-size: cover; background-position: center;
-  overflow: hidden;
 }
 h1 { font-size: 18px; font-weight: 600; margin: 0 0 2px; }
 .muted { color: var(--md-sys-color-on-surface-variant); font-size: 13px; margin: 0; }

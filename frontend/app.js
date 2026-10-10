@@ -10,6 +10,7 @@ import { api, replayOfflineQueue } from "./js/api.js";
 import { Router } from "./js/router.js";
 import { ctx } from "./js/context.js";
 import { el, icon, toast, mostrarErro, dialog } from "./js/ui.js";
+import { ligarAtalhoDeBusca } from "./js/views/busca.js";
 import { APP_VERSION } from "./js/version.js";
 import { renderLogin } from "./js/views/login.js";
 import { renderSelecao, renderHome } from "./js/views/inventario.js";
@@ -100,7 +101,9 @@ function buildShell() {
   const topbar = el("header", { class: "topbar" },
     menuBtn,
     homeBtn,
-    el("div", { class: "brand", html: `<span class="long">Nexus</span><small>v${APP_VERSION}</small>` }),
+    // A versão saiu daqui de propósito: na barra superior ela competia com o
+    // nome sem ajudar. Fica na gaveta, onde há espaço e quem procura vai.
+    el("div", { class: "brand", html: '<span class="long">Nexus</span>' }),
     el("div", { class: "spacer" }),
     badge,
     sinoNotificacoes(),
@@ -690,6 +693,8 @@ function boot() {
   state.applyPaleta();
   state.applyFundo();
   state.applyDominio();
+  // Ctrl+K fica ligado uma vez, e não a cada tela: o atalho é global.
+  ligarAtalhoDeBusca();
 
   // Registro do service worker é feito em registrarServiceWorker() no final.
 

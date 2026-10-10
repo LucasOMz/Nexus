@@ -721,7 +721,12 @@ verificar("tela inexistente cai no menu",
       if (!m) continue;
 
       const importadas = new Set(m[1].split(",").map((s) => s.trim()));
-      const corpo = c.slice(m.index + m[0].length);
+      // Sem os comentários: um comentário pode CITAR `dialog()` justamente
+      // para explicar por que não se usa ele — e a busca por texto casaria
+      // com a explicação, não com o código.
+      const corpo = c.slice(m.index + m[0].length)
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/\/\/[^\n]*/g, "");
       for (const f of FUNCOES) {
         // Ignora `obj.f(` e `function f(`; pega so a chamada direta.
         const usada = new RegExp("(?<![\\w.])" + f + "\\s*\\(").test(corpo);

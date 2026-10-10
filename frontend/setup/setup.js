@@ -478,8 +478,10 @@ function desenharPassos() {
 function aplicarMarca() {
   $("#marca-titulo").textContent = estado.dados.empresa.nome || "Nexus";
   if (estado.dados.logo) {
-    $("#marca-icone").style.backgroundImage = `url("${API}/marca/${estado.dados.logo}")`;
-    $("#marca-icone").textContent = "";
+    // O logotipo agora é uma <img> (o logo do Nexus), não um quadrado com
+    // imagem de fundo — por isso troca o `src`, e não o `background-image`.
+    const logo = $(".marca-logo");
+    if (logo) logo.src = `${API}/marca/${estado.dados.logo}`;
   }
   if (estado.dados.favicon) {
     let link = document.querySelector("link[rel=icon]");

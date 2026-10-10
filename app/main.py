@@ -30,6 +30,7 @@ from app.routers import (
     auth,
     backups,
     banco,
+    busca,
     cadastros,
     calendario,
     checklist,
@@ -227,6 +228,7 @@ if INSTALADO:
     app.include_router(ocs.router, prefix=API)
     app.include_router(ocs_reconciliacao.router, prefix=API)
     app.include_router(banco.router, prefix=API)
+    app.include_router(busca.router, prefix=API)
     app.include_router(transferencias.router, prefix=API)
 
 

@@ -41,6 +41,22 @@ def montar(app: FastAPI, frontend_dir: Path) -> None:
             return JSONResponse(status_code=404, content={"detail": "Recurso não encontrado."})
         return FileResponse(alvo)
 
+    @app.get("/icons/{arquivo:path}", include_in_schema=False)
+    def icone(arquivo: str):
+        """Ícones do sistema: favicon da aba e logotipo do assistente.
+
+        O modo setup **não** monta a pasta do PWA — não haveria banco para ela
+        funcionar. Mas a aba do navegador e o logo da página precisam da
+        imagem, e sem esta rota `/icons/...` respondia 404 justamente na tela
+        em que o logo mais aparece.
+        """
+        raiz = (frontend_dir / "icons").resolve()
+        alvo = (raiz / arquivo).resolve()
+        # Mesma proteção de "../" da rota acima.
+        if not str(alvo).startswith(str(raiz)) or not alvo.is_file():
+            return JSONResponse(status_code=404, content={"detail": "Ícone não encontrado."})
+        return FileResponse(alvo)
+
     @app.get("/", include_in_schema=False)
     def raiz():
         """A raiz recebe quem abre o endereço do sistema.
