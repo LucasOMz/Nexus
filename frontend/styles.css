@@ -1601,3 +1601,62 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   display: grid; gap: 8px;
   grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
 }
+
+/* ------------------------------------------------------------------ */
+/* Barra lateral: rola POR DENTRO, nao a pagina inteira                */
+/* ------------------------------------------------------------------ */
+/* A .rail tem altura fixa (100vh - topbar) e position:sticky, mas nao   */
+/* tinha overflow proprio: com muitos favoritos o conteudo transbordava  */
+/* e empurrava a pagina, obrigando a rolar a tela toda para alcancar a   */
+/* ultima opcao. Agora quem rola e a propria barra.                     */
+.rail {
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* Impede que a rolagem "vaze" para a pagina ao chegar no fim. */
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--md-sys-color-outline-variant) transparent;
+}
+.rail::-webkit-scrollbar { width: 8px; }
+.rail::-webkit-scrollbar-track { background: transparent; }
+.rail::-webkit-scrollbar-thumb {
+  background: var(--md-sys-color-outline-variant);
+  border-radius: 999px;
+  border: 2px solid var(--md-sys-color-surface);
+}
+.rail::-webkit-scrollbar-thumb:hover { background: var(--md-sys-color-outline); }
+
+/* O item ativo nao pode ficar escondido sob a borda ao rolar. */
+.rail .nav-item { scroll-margin: 10px; }
+
+/* A gaveta (celular) ja rolava, mas ganha a mesma contencao para nao
+   arrastar a pagina junto. */
+.drawer {
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--md-sys-color-outline-variant) transparent;
+}
+.drawer::-webkit-scrollbar { width: 8px; }
+.drawer::-webkit-scrollbar-track { background: transparent; }
+.drawer::-webkit-scrollbar-thumb {
+  background: var(--md-sys-color-outline-variant);
+  border-radius: 999px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Botao "easter egg" preso no rodape da barra lateral                  */
+/* ------------------------------------------------------------------ */
+/* Ele e anexado DEPOIS dos favoritos. Com todos favoritados, era        */
+/* empurrado para fora da area visivel e "sumia". Agora fica preso no    */
+/* rodape: a lista de favoritos rola por tras dele, e ele nao sai do     */
+/* campo de visao.                                                       */
+.easteregg-btn {
+  /* Fica preso no rodape: empurrado pelos favoritos, ele saia do campo de
+     visao. O sticky devolve o acesso sem mudar nada do que ele E. */
+  position: sticky;
+  bottom: 4px;
+  z-index: 3;
+  /* SEM fundo e SEM sombra de proposito: e um ponto de 7px com opacidade
+     .14. Pintar o fundo o denunciaria - o que ele precisa e passar
+     despercebido. */
+}
