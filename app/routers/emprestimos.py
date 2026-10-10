@@ -96,17 +96,53 @@ def _agora() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _itens_de(emp: Emprestimo, momento: MomentoChecklist) -> dict[str, bool]:
-    return {i.rotulo: i.ok for i in emp.itens if i.momento == momento}
+def _itens_de(db: Session, emp_id: int, momento: MomentoChecklist) -> dict[str, bool]:
+    """Le do banco, e nao da colecao emp.itens.
+
+    A colecao e carregada quando o emprestimo e buscado; itens adicionados
+    depois (na propria requisicao) podem nao estar nela. Consultar direto
+    evita depender do estado da sessao - foi o que fez a devolucao nao acusar
+    avaria.
+    """
+    q = db.query(EmprestimoItem).filter(
+        EmprestimoItem.emprestimo_id == emp_id,
+        EmprestimoItem.momento == momento,
+        EmprestimoItem.deleted_at.is_(None),
+    )
+    return {i.rotulo: i.ok for i in q.all()}
 
 
-def _saida(emp: Emprestimo) -> dict:
+def _bloqueio_por_atraso(db: Session, usuario_id: int | None) -> tuple[Emprestimo, dict] | None:
+    """Emprestimo em aberto que bloqueia novos - se houver.
+
+    A escada do serviço decide: 15 dias de atraso bloqueiam. Quem esta nesse
+    degrau nao leva equipamento novo ate regularizar.
+    """
+    if usuario_id is None:
+        return None
+    abertos = (
+        db.query(Emprestimo)
+        .filter(
+            Emprestimo.usuario_id == usuario_id,
+            Emprestimo.situacao == SituacaoEmprestimo.RETIRADO,
+            Emprestimo.deleted_at.is_(None),
+        )
+        .all()
+    )
+    for e in abertos:
+        alerta = svc.escalonamento(e.devolucao_prevista)
+        if alerta.get("bloqueia_novo_emprestimo"):
+            return e, alerta
+    return None
+
+
+def _saida(db: Session, emp: Emprestimo) -> dict:
     """Resumo com o que a tela precisa: situação, alerta e próximos passos."""
     resumo = svc.resumo_do_ciclo(
         emp.situacao,
         emp.devolucao_prevista,
         tem_termo=emp.termo_id is not None,
-        tem_checklist_entrega=bool(_itens_de(emp, MomentoChecklist.ENTREGA)),
+        tem_checklist_entrega=bool(_itens_de(db, emp.id, MomentoChecklist.ENTREGA)),
     )
     return {
         "id": emp.id,
@@ -150,7 +186,7 @@ def listar(
         selectinload(Emprestimo.usuario),
     )
     resultado = paginate(q.order_by(Emprestimo.reservado_em.desc()), page, size)
-    resultado["items"] = [_saida(e) for e in resultado["items"]]
+    resultado["items"] = [_saida(db, e) for e in resultado["items"]]
     return Page[dict](**resultado)
 
 
@@ -199,7 +235,7 @@ def detalhe(
     _: Usuario = Depends(get_current_user),
     planta_id: int | None = Depends(planta_ativa),
 ):
-    return _saida(_buscar(db, emp_id, planta_id))
+    return _saida(db, _buscar(db, emp_id, planta_id))
 
 
 @router.post("", response_model=dict, status_code=201)
@@ -236,6 +272,16 @@ def reservar(
     if body.usuario_id is None and not (body.retirado_por_nome or "").strip():
         raise HTTPException(400, "Informe para quem é o empréstimo.")
 
+    # Escalonamento do atraso: no degrau mais alto, não se leva equipamento novo.
+    bloqueio = _bloqueio_por_atraso(db, body.usuario_id)
+    if bloqueio is not None:
+        emp_antigo, alerta = bloqueio
+        raise HTTPException(
+            400,
+            f"Novo empréstimo bloqueado: há {alerta['dias_atraso']} dias de atraso "
+            f"no empréstimo #{emp_antigo.id}. Regularize a devolução primeiro.",
+        )
+
     emp = Emprestimo(
         ativo_id=ativo.id,
         planta_id=planta_id or ativo.planta_id,
@@ -255,7 +301,7 @@ def reservar(
           diff={"ativo": ativo.patrimonio})
     db.commit()
     db.refresh(emp)
-    return _saida(emp)
+    return _saida(db, emp)
 
 
 @router.post("/{emp_id}/retirar", response_model=dict)
@@ -287,7 +333,10 @@ def retirar(
         )
         termo = Termo(
             ativo_id=emp.ativo_id,
-            usuario_id=emp.usuario_id,
+            # Termo.usuario_id e obrigatorio no modelo (que nao foi alterado).
+            # Emprestimo para quem NAO tem login - visitante, terceiro - cai no
+            # operador que registra; o nome do retirante vai no conteudo do termo.
+            usuario_id=emp.usuario_id or user.id,
             hash_sha256=hashlib.sha256(conteudo.encode("utf-8")).hexdigest(),
             data_assinatura=_agora(),
             observacoes=conteudo,
@@ -331,7 +380,7 @@ def retirar(
           diff={"itens_conferidos": len(checklist)})
     db.commit()
     db.refresh(emp)
-    return _saida(emp)
+    return _saida(db, emp)
 
 
 @router.post("/{emp_id}/devolver", response_model=dict)
@@ -365,9 +414,18 @@ def devolver(
         ))
     db.flush()
 
-    entrega = _itens_de(emp, MomentoChecklist.ENTREGA)
-    devolucao = _itens_de(emp, MomentoChecklist.DEVOLUCAO)
-    laudo = svc.avaliar_devolucao(entrega, devolucao)
+    entrega = _itens_de(db, emp.id, MomentoChecklist.ENTREGA)
+    # A devolucao sai do que acabou de ser ENVIADO, nao da colecao emp.itens:
+    # ela foi carregada do banco antes destes itens existirem, e comparar contra
+    # uma lista vazia nunca acusaria avaria.
+    devolucao = {i.rotulo: i.ok for i in checklist}
+    # Os itens comparados sao os DESTE emprestimo, nao os de fabrica: o
+    # checklist e configuravel e pode ter mudado desde a retirada. Sem isto, a
+    # comparacao percorria os 7 rotulos padrao, nao encontrava nenhum e nunca
+    # acusava avaria.
+    laudo = svc.avaliar_devolucao(
+        entrega, devolucao, itens=list(entrega.keys()) or list(devolucao.keys())
+    )
 
     emp.situacao = SituacaoEmprestimo.DEVOLVIDO
     emp.devolvido_em = _agora()
@@ -389,7 +447,7 @@ def devolver(
     db.commit()
     db.refresh(emp)
 
-    saida = _saida(emp)
+    saida = _saida(db, emp)
     saida["laudo"] = laudo          # a tela mostra o que a comparação achou
     return saida
 
@@ -443,7 +501,7 @@ def vistoriar(
     db.commit()
     db.refresh(emp)
 
-    saida = _saida(emp)
+    saida = _saida(db, emp)
     saida["manutencao_id"] = manutencao_id
     return saida
 
@@ -466,4 +524,4 @@ def cancelar(
     emp.cancelado_em = _agora()
     db.commit()
     db.refresh(emp)
-    return _saida(emp)
+    return _saida(db, emp)
