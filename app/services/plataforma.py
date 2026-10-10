@@ -284,7 +284,7 @@ def conferir_codigo(segredo: str, codigo: str, momento: datetime | None = None) 
     return False
 
 
-def uri_otpauth(segredo: str, conta: str, emissor: str = "Gestao Patrimonial") -> str:
+def uri_otpauth(segredo: str, conta: str, emissor: str = "Nexus") -> str:
     """Endereço que o aplicativo lê do QR Code.
 
     É o que faz o cadastro ser "aponte a câmera" em vez de "digite 32 letras".

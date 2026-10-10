@@ -121,7 +121,7 @@ if [ "${1:-}" = "--setup" ]; then
 fi
 
 echo ""
-echo "  Gestao Patrimonial rodando em:  http://127.0.0.1:${PORT}"
+echo "  Nexus rodando em:  http://127.0.0.1:${PORT}"
 echo "  Login inicial:  admin@empresa.com  /  admin123"
 echo "  Encerrar: CTRL + C"
 echo ""

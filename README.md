@@ -1,6 +1,6 @@
-# Gestão Patrimonial Unificada
+# Nexus
 
-Sistema web de gestão patrimonial com **dois inventários** (TI e Impressoras),
+O **Nexus** é um sistema web de gestão patrimonial com **dois inventários** (TI e Impressoras),
 **QR Code assinado HMAC-SHA256**, **impressão em impressora térmica** por
 dispositivo cadastrado (Raspberry Pi / compartilhamento / CUPS), **leitura por
 scanner físico**, **permissões granulares por usuário**, **banco de fotos** e
@@ -114,7 +114,7 @@ Para restringir a este computador apenas (mais seguro): `.\run.ps1 -Local`.
    como Administrador:
 
    ```powershell
-   New-NetFirewallRule -DisplayName "Gestao Patrimonial" -Direction Inbound `
+   New-NetFirewallRule -DisplayName "Nexus" -Direction Inbound `
        -Protocol TCP -LocalPort 8000 -Action Allow
    ```
 
@@ -566,7 +566,7 @@ cd C:\estoque
 Depois agende o `run-servidor.ps1` (seção 11) e libere a porta no firewall:
 
 ```powershell
-New-NetFirewallRule -DisplayName "Gestao Patrimonial" -Direction Inbound `
+New-NetFirewallRule -DisplayName "Nexus" -Direction Inbound `
     -Protocol TCP -LocalPort 8000 -Action Allow
 ```
 

@@ -121,6 +121,7 @@ function abrirUsuario(usuario, lookups) {
       <div class="field span-2"><label>${isEdit ? "Nova senha (deixe vazio para manter)" : "Senha (contas locais)"}</label>
         <input type="password" name="senha">
         <span class="hint">Para conta de <b>rede</b> deixe vazio — a senha validada é a do AD.</span></div>
+      <div class="field span-2" id="usuario-modo-conta"></div>
     </div>
     ${blocoPermissoes(usuario, lookups)}
   ` });
@@ -131,6 +132,42 @@ function abrirUsuario(usuario, lookups) {
   // É só uma conveniência — nada é liberado aqui; quem libera é o "Salvar".
   const campoLoginAd = form.querySelector("#usuario-login-ad");
   const resultadoAd = form.querySelector("#usuario-ad-resultado");
+  const campoSenha = form.querySelector('[name="senha"]');
+  const avisoModo = form.querySelector("#usuario-modo-conta");
+
+  // Deixa EXPLÍCITO qual tipo de conta será criada.
+  //
+  // Antes, bastava o campo de rede ter qualquer conteúdo para a conta nascer
+  // como conta de AD — e a senha digitada era descartada em silêncio. Ao
+  // tentar entrar com ela, a resposta era "senha incorreta", sem que nada
+  // estivesse quebrado: aquela senha nunca chegou a ser gravada.
+  function pintarModo(loginAd, nomeAd) {
+    const ehRede = Boolean((loginAd || "").trim());
+    if (!avisoModo) return;
+
+    if (ehRede) {
+      avisoModo.innerHTML = `<div class="recado info" style="margin:0">
+        <b>Conta de rede (AD)</b>${nomeAd ? ` — ${esc(nomeAd)}` : ""}<br>
+        A senha abaixo <b>não será usada</b>: quem valida é o diretório, com a
+        senha de rede da pessoa. Deixe o campo de senha em branco.
+      </div>`;
+    } else {
+      avisoModo.innerHTML = `<div class="recado" style="margin:0">
+        <b>Conta local</b><br>
+        A senha abaixo é a que a pessoa vai usar no primeiro acesso — e o
+        sistema vai <b>exigir a troca</b> assim que ela entrar.
+      </div>`;
+    }
+    if (campoSenha) {
+      // Com conta de rede o campo fica desabilitado: evita digitar uma senha
+      // que seria ignorada.
+      campoSenha.disabled = ehRede;
+      if (ehRede) campoSenha.value = "";
+    }
+  }
+  pintarModo(campoLoginAd.value);
+  campoLoginAd.addEventListener("input", () => pintarModo(campoLoginAd.value));
+
   form.querySelector("#usuario-buscar-ad")?.addEventListener("click", async () => {
     const login = campoLoginAd.value.trim();
     if (!login) { toast("Digite o usuário de rede"); return; }

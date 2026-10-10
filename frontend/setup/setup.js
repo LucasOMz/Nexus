@@ -476,7 +476,7 @@ function desenharPassos() {
 }
 
 function aplicarMarca() {
-  $("#marca-titulo").textContent = estado.dados.empresa.nome || "Gestão Patrimonial";
+  $("#marca-titulo").textContent = estado.dados.empresa.nome || "Nexus";
   if (estado.dados.logo) {
     $("#marca-icone").style.backgroundImage = `url("${API}/marca/${estado.dados.logo}")`;
     $("#marca-icone").textContent = "";

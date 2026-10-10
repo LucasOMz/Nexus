@@ -1,5 +1,5 @@
 <#
-  run.ps1 — Sobe o sistema de Gestão Patrimonial (API + frontend PWA).
+  run.ps1 — Sobe o sistema de Nexus (API + frontend PWA).
 
   Uso:
     .\run.ps1                # porta 8000
@@ -238,7 +238,7 @@ function Test-FirewallLiberado($porta, $exe) {
 }
 
 Write-Host ""
-Write-Host "  Gestao Patrimonial" -ForegroundColor Cyan
+Write-Host "  Nexus" -ForegroundColor Cyan
 Write-Host "    Neste computador :  http://127.0.0.1:$Port"
 
 if ($Bind -eq "0.0.0.0" -or $Bind -eq "*" -or $Bind -eq "+") {
@@ -250,7 +250,7 @@ if ($Bind -eq "0.0.0.0" -or $Bind -eq "*" -or $Bind -eq "+") {
         Write-Host "  ATENCAO: nao encontrei regra de firewall liberando esta porta." -ForegroundColor Yellow
         Write-Host "  Se outra maquina (ou o celular) nao conseguir abrir, rode como" -ForegroundColor Yellow
         Write-Host "  Administrador:" -ForegroundColor Yellow
-        Write-Host "      New-NetFirewallRule -DisplayName 'Gestao Patrimonial' ``" -ForegroundColor White
+        Write-Host "      New-NetFirewallRule -DisplayName 'Nexus' ``" -ForegroundColor White
         Write-Host "          -Direction Inbound -Protocol TCP -LocalPort $Port -Action Allow" -ForegroundColor White
     } else {
         Write-Host "    Firewall         :  regra de entrada encontrada (ok)" -ForegroundColor DarkGray

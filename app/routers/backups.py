@@ -124,7 +124,7 @@ def exportar(db: Session = Depends(get_db), _: Usuario = Depends(require_admin))
     return Response(
         content=conteudo,
         media_type="application/zip",
-        headers={"Content-Disposition": 'attachment; filename="gestao-patrimonial-csv.zip"'},
+        headers={"Content-Disposition": 'attachment; filename="nexus-csv.zip"'},
     )
 
 

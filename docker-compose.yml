@@ -1,5 +1,5 @@
 # =====================================================================
-# Gestão Patrimonial Unificada — stack completa (api + postgres + nginx)
+# Nexus — stack completa (api + postgres + nginx)
 # Suba tudo com:  docker compose up -d --build
 #
 # IMPORTANTE: os volumes abaixo guardam os dados que NÃO podem se perder.

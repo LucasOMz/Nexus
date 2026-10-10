@@ -171,7 +171,7 @@ export async function renderBackups(root) {
         el("div", { class: "muted", style: "font-size:13px" }, `Pasta: ${status.pasta || "—"} · retenção: ${status.retencao ?? "—"} arquivos`),
       ),
       el("div", { class: "row" },
-        el("button", { class: "btn outlined small", onclick: () => baixar("/api/v1/admin/exportar", "gestao-patrimonial-csv.zip"), html: icon("download", 18) + " Exportar CSV total" }),
+        el("button", { class: "btn outlined small", onclick: () => baixar("/api/v1/admin/exportar", "nexus-csv.zip"), html: icon("download", 18) + " Exportar CSV total" }),
         el("button", { class: "btn tonal small", onclick: () => importarCsv(), html: icon("add", 18) + " Importar CSV" }),
         el("button", { class: "btn filled small", onclick: async () => {
           try { await api.post("/admin/backups", { motivo: "manual" }); toast("Backup criado"); renderBackups(document.getElementById("view")); }

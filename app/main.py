@@ -100,7 +100,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title="Gestão Patrimonial Unificada",
+    title="Nexus",
     version="1.0.0",
     description="Inventário de TI + Impressoras com QR Code assinado e impressão térmica.",
     lifespan=lifespan,

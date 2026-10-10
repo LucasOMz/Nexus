@@ -34,7 +34,7 @@ const TILES = [
 
 /** Tela de seleção de inventário (após o login). */
 export function renderSelecao(root) {
-  document.title = "Selecionar inventário — Gestão Patrimonial";
+  document.title = "Selecionar inventário — Nexus";
   ctx.setFab(null);
   ctx.setChrome(false);
 

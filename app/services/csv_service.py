@@ -144,7 +144,7 @@ def exportar_zip(db: Session) -> bytes:
         manifesto = {
             "gerado_em": datetime.now().isoformat(timespec="seconds"),
             "app_version": __version__,
-            "formato": "gestao-patrimonial/csv-zip",
+            "formato": "nexus/csv-zip",
             "tabelas": {},
         }
         for tabela, colunas in _COLUNAS.items():

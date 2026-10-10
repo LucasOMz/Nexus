@@ -27,7 +27,7 @@ $ErrorActionPreference = "Stop"
 Set-Location -LiteralPath $PSScriptRoot
 
 Write-Host ""
-Write-Host "=== RESET DO SISTEMA DE GESTAO PATRIMONIAL ===" -ForegroundColor Cyan
+Write-Host "=== RESET DO SISTEMA DE NEXUS ===" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Serao APAGADOS:" -ForegroundColor Yellow
 Write-Host "  - o banco de dados (estoque.db): ativos, usuarios, movimentacoes, manutencoes"

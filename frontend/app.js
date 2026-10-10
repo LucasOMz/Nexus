@@ -100,7 +100,7 @@ function buildShell() {
   const topbar = el("header", { class: "topbar" },
     menuBtn,
     homeBtn,
-    el("div", { class: "brand", html: `<span class="long">Gestão Patrimonial</span><small>v${APP_VERSION}</small>` }),
+    el("div", { class: "brand", html: `<span class="long">Nexus</span><small>v${APP_VERSION}</small>` }),
     el("div", { class: "spacer" }),
     badge,
     sinoNotificacoes(),
@@ -547,7 +547,7 @@ function boot() {
   ctx.setTitle = (t) => {
     document.title = t
       ? `${t} — ${state.dominioLabel}`
-      : `${state.dominioLabel} — Gestão Patrimonial`;
+      : `${state.dominioLabel} — Nexus`;
   };
 
   router.add("selecao", renderRoute);

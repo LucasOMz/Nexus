@@ -1,5 +1,5 @@
 ﻿# =====================================================================
-# Dependências de produção — Gestão Patrimonial Unificada
+# Dependências de produção — Nexus
 # Compatível com Python 3.11+ (testado em 3.13)
 # =====================================================================
 fastapi>=0.115

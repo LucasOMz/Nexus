@@ -40,7 +40,7 @@ $EXCLUIR_ARQ = @("*.pyc", "get-pip.py", "_*", "*.log", "diag*.db", "*.zip")
 $DADOS = @(".env", "estoque.db", "media", "backups")
 
 $stamp = Get-Date -Format "yyyy-MM-dd_HHmm"
-$nome = "gestao-patrimonial_$stamp"
+$nome = "nexus_$stamp"
 if (-not (Test-Path $Destino)) { New-Item -ItemType Directory -Path $Destino | Out-Null }
 $zip = Join-Path $Destino "$nome.zip"
 $temp = Join-Path ([System.IO.Path]::GetTempPath()) $nome

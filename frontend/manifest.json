@@ -1,6 +1,6 @@
 {
-  "name": "Gestão Patrimonial Unificada",
-  "short_name": "Patrimônio",
+  "name": "Nexus",
+  "short_name": "Nexus",
   "description": "Inventário de TI e Impressoras com QR Code assinado e impressão térmica.",
   "start_url": "/",
   "scope": "/",

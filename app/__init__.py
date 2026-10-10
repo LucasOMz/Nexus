@@ -1,2 +1,2 @@
-﻿"""Gestão Patrimonial Unificada — pacote da aplicação."""
-__version__ = "2.70.0"
+﻿"""Nexus — pacote da aplicação."""
+__version__ = "2.71.0"
