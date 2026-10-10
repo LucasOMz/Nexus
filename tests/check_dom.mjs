@@ -291,7 +291,7 @@ const fonteAdmin = fs.readFileSync(new URL("../frontend/js/views/admin.js", impo
 
 // 25) A ordem das abas da Administração é definida pelo usuário.
 //     E o despacho precisa acompanhar — aba fora do despacho abriria em branco.
-const ORDEM_ABAS = ["usuarios", "plantas", "dispositivos", "etiquetas", "fotos", "auditoria", "backups", "auth", "ocs", "reconciliacao", "banco"];
+const ORDEM_ABAS = ["usuarios", "plantas", "dispositivos", "etiquetas", "checklist", "fotos", "auditoria", "backups", "auth", "ocs", "reconciliacao", "banco"];
 const blocoAbas = /const abas = \[([\s\S]*?)\n  \];/.exec(fonteAdmin);
 const abasNoArquivo = blocoAbas ? [...blocoAbas[1].matchAll(/\["(\w+)",/g)].map((m) => m[1]) : [];
 verificar("abas da administracao na ordem pedida",

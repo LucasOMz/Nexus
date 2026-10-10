@@ -62,6 +62,9 @@ class ChecklistIn(BaseModel):
 
     itens: list[ItemConferido] = Field(default_factory=list)
     observacoes: str | None = None
+    # Confirmacao de que o termo foi assinado. Ao marcar, o sistema cria o
+    # registro Termo (com hash e data) e vincula - e o que tira a retirada do papel.
+    confirmar_termo: bool = False
 
 
 class VistoriaIn(BaseModel):
@@ -270,6 +273,28 @@ def retirar(
     recusada com o motivo.
     """
     emp = _buscar(db, emp_id, planta_id)
+
+    # Assinar o termo nesta etapa cria o registro e libera a transicao.
+    if body.confirmar_termo and emp.termo_id is None:
+        import hashlib
+
+        from app.models.core import Termo
+
+        conteudo = (
+            f"Emprestimo #{emp.id} - ativo {emp.ativo_patrimonio or emp.ativo_id} - "
+            f"para {emp.retirado_por_nome_final or 'nao informado'} - "
+            f"termo de responsabilidade confirmado na retirada"
+        )
+        termo = Termo(
+            ativo_id=emp.ativo_id,
+            usuario_id=emp.usuario_id,
+            hash_sha256=hashlib.sha256(conteudo.encode("utf-8")).hexdigest(),
+            data_assinatura=_agora(),
+            observacoes=conteudo,
+        )
+        db.add(termo)
+        db.flush()
+        emp.termo_id = termo.id
 
     checklist = [i for i in body.itens]
     validacao = svc.validar_transicao(

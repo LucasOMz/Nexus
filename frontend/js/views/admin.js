@@ -13,6 +13,7 @@ import { renderBackups } from "./admin_backups.js";
 import { renderAuth } from "./admin_auth.js";
 import { renderOCS } from "./admin_ocs.js";
 import { renderReconciliacao } from "./admin_ocs_reconciliacao.js";
+import { renderChecklist } from "./admin_checklist.js";
 import { renderBanco } from "./admin_banco.js";
 import { renderAuditoria } from "./admin_auditoria.js";
 import { renderPlantas } from "./admin_plantas.js";
@@ -527,6 +528,7 @@ export async function renderAdmin(root) {
     ["plantas", "Plantas"],
     ["dispositivos", "Impressão"],
     ["etiquetas", "Etiquetas"],
+    ["checklist", "Checklist de empréstimo"],
     ["fotos", "Banco de Fotos"],
     ["auditoria", "Logs"],
     ["backups", "Backups"],
@@ -565,7 +567,7 @@ export async function renderAdmin(root) {
     // "Autenticação (AD)" saiu daqui: ela configura COMO se entra no sistema,
     // que é assunto de infraestrutura, não de cadastro de pessoas.
     ["Pessoas e acessos", ["usuarios", "plantas"]],
-    ["Patrimônio", ["dispositivos", "etiquetas", "fotos"]],
+    ["Patrimônio", ["dispositivos", "etiquetas", "checklist", "fotos"]],
     // "Auditoria" reúne o que serve para CONFERIR: a trilha do que foi feito
     // (Logs) e a conferência do que existe na rede (Reconciliação).
     ["Auditoria", ["auditoria", "reconciliacao"]],
@@ -700,6 +702,7 @@ export async function renderAdmin(root) {
   else if (abaAtiva === "plantas") await renderPlantas(alvo);
   else if (abaAtiva === "dispositivos") await abaDispositivos(alvo);
   else if (abaAtiva === "etiquetas") await renderTemplates(alvo);
+  else if (abaAtiva === "checklist") await renderChecklist(alvo);
   else if (abaAtiva === "fotos") await abaFotos(alvo);
   else if (abaAtiva === "auditoria") await renderAuditoria(alvo);
   else if (abaAtiva === "backups") await renderBackups(alvo);
