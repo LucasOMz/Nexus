@@ -282,7 +282,9 @@ def create_usuario(
     if not login_ad and not body.senha:
         raise HTTPException(400, "Informe uma senha (conta local) ou o usuário de rede (conta do AD).")
 
-    data = body.model_dump(exclude={"senha", "login_ad"})
+    # `exigir_mfa` e instrucao de CADASTRO, nao coluna: sai do dump e vira a
+    # flag `mfa_obrigatorio` abaixo.
+    data = body.model_dump(exclude={"senha", "login_ad", "exigir_mfa"})
     # Conta do AD: a senha local é SEMPRE aleatória e inútil — quem autentica é
     # o diretório. Mesmo que venha uma senha no cadastro, ela não é gravada:
     # guardá-la deixaria uma credencial utilizável que ninguém deveria ter.
@@ -293,6 +295,16 @@ def create_usuario(
         login_ad=login_ad,
         origem="ad" if login_ad else "local",
         senha_hash=senha_hash,
+        # --- Primeiro acesso ---------------------------------------------
+        # Senha local é definida pelo ADMINISTRADOR e entregue à pessoa: ela é
+        # conhecida por outra pessoa, então o sistema exige a troca antes de
+        # liberar qualquer coisa. Numa conta de AD não há o que trocar aqui; a
+        # senha é da rede.
+        senha_temporaria=not login_ad,
+        # Conta nova (local ou de rede) precisa registrar a segunda etapa no
+        # primeiro acesso. Quem já entra com senha de rede tem a identidade
+        # confirmada, mas não a posse do aparelho — MFA cobre justamente isso.
+        mfa_obrigatorio=bool(body.exigir_mfa),
     )
     db.add(obj)
     db.flush()

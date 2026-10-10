@@ -4,5 +4,5 @@
  * Ao publicar mudanças de frontend, aumente APP_VERSION e a VERSION do sw.js.
  * @module version
  */
-export const APP_VERSION = "2.62.1";
-export const SW_VERSION = "v102";
+export const APP_VERSION = "2.70.0";
+export const SW_VERSION = "v110";

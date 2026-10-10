@@ -11,8 +11,9 @@ Regra de autenticação:
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, or_
@@ -24,11 +25,12 @@ from app.core.security import (
     create_access_token,
     create_refresh_token,
     decode_token,
+    hash_password,
     verify_password,
 )
 from app.database import get_db
 from app.models.core import Usuario
-from app.schemas.auth import RefreshRequest, Token
+from app.schemas.auth import RefreshRequest, Token, TrocaSenhaIn
 from app.schemas.common import UsuarioOut
 from app.services.audit_service import audit
 from app.services.config_service import obter_config
@@ -61,6 +63,10 @@ def login(
     request: Request,
     form: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
+    # Segunda etapa. Parametro separado de proposito: o formulario OAuth2
+    # tem campos fixos, e acrescentar um la quebraria o /docs e qualquer
+    # cliente que ja usa o login.
+    codigo: str | None = Query(default=None),
 ) -> Token:
     """Autentica o usuário e emite access + refresh tokens.
 
@@ -118,6 +124,50 @@ def login(
     if not user.ativo:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Usuário inativo")
 
+    # --- Primeiro acesso e segunda etapa ---------------------------------
+    # A ordem importa. Trocar a senha vem ANTES do MFA: enquanto a senha for a
+    # que o administrador definiu, ela e conhecida por outra pessoa - proteger
+    # com MFA uma senha compartilhada nao protege nada.
+    #
+    # Em todos os casos o token E emitido: para trocar a senha ou cadastrar o
+    # MFA e preciso estar autenticado. A trava de verdade nao e negar o token,
+    # e o servidor recusar as demais rotas enquanto isto nao se resolve
+    # (ver exigir_primeiro_acesso em core/deps.py).
+    acao = None
+    mensagem = None
+
+    if user.senha_temporaria:
+        acao = "trocar_senha"
+        mensagem = "Sua senha foi definida pelo administrador. Escolha uma senha sua para continuar."
+
+    elif user.mfa_ativo:
+        # MFA ja cadastrado: agora sim exige o codigo, sem emitir token util.
+        from app.routers.mfa import consumir_recuperacao
+        from app.services import plataforma as _plataforma
+
+        if not codigo:
+            # Fica DEPOIS de a senha ser conferida: pedir o codigo antes
+            # revelaria quais contas tem MFA, sem ninguem ter provado nada.
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="mfa_necessario"
+            )
+
+        if not _plataforma.conferir_codigo(user.mfa_segredo or "", codigo):
+            # Nao sendo TOTP, pode ser um codigo de recuperacao (uso unico).
+            if not consumir_recuperacao(db, user, codigo):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Codigo de verificacao invalido.",
+                )
+
+    elif user.mfa_obrigatorio:
+        # Conta nova (local ou AD): entra, mas o cadastro do MFA e obrigatorio.
+        acao = "cadastrar_mfa"
+        mensagem = (
+            "Bem-vindo! Antes de usar o sistema, cadastre a verificacao em duas "
+            "etapas com o aplicativo autenticador."
+        )
+
     audit(db, user, "login", "usuario", user.id, ip=client_ip)
     db.commit()
 
@@ -125,6 +175,8 @@ def login(
         access_token=create_access_token(user.id, user.papel.value, user.email),
         refresh_token=create_refresh_token(user.id, user.papel.value),
         user=UsuarioOut.model_validate(user),
+        acao_requerida=acao,
+        acao_mensagem=mensagem,
     )
 
 
@@ -142,6 +194,76 @@ class PreferenciasUpdate(BaseModel):
 def _limpar_lista(itens: list[str] | None) -> list[str]:
     """Limita quantidade e tamanho: é preferência de tela, não campo livre."""
     return [str(m).strip()[:40] for m in (itens or []) if str(m).strip()][:80]
+
+
+# Regras da senha, em um lugar só — a tela e o servidor dizem a mesma coisa.
+SENHA_MINIMA = 8
+SENHAS_PROIBIDAS = {
+    "admin123", "12345678", "senha123", "password", "123456789",
+    "mudar123", "trocar123", "qwerty123",
+}
+
+
+def _validar_senha_nova(senha: str, nome: str | None = None) -> None:
+    """Recusa senha fraca — e explica o porquê, em vez de só negar."""
+    if len(senha or "") < SENHA_MINIMA:
+        raise HTTPException(400, f"A senha precisa de pelo menos {SENHA_MINIMA} caracteres.")
+    if senha.lower() in SENHAS_PROIBIDAS:
+        raise HTTPException(400, "Esta senha é fácil de adivinhar. Escolha outra.")
+    if senha.isdigit():
+        raise HTTPException(400, "Use letras e números, não só números.")
+    primeiro = (nome or "").strip().split(" ")[0].lower()
+    if primeiro and len(primeiro) >= 4 and primeiro in senha.lower():
+        raise HTTPException(400, "A senha não pode conter o seu nome.")
+
+
+@router.post("/trocar-senha", response_model=dict)
+def trocar_senha(
+    body: TrocaSenhaIn,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(get_current_user),
+) -> dict:
+    """Troca a senha do próprio usuário.
+
+    Serve para o primeiro acesso (senha temporária criada pelo administrador) e
+    para a troca voluntária. Nas duas, exige a senha atual: sessão aberta numa
+    máquina destravada não pode virar troca de senha.
+    """
+    if body.senha_nova != body.confirmacao:
+        raise HTTPException(400, "A confirmação não confere com a senha nova.")
+    if not verify_password(body.senha_atual, user.senha_hash):
+        raise HTTPException(400, "A senha atual não confere.")
+    if body.senha_nova == body.senha_atual:
+        raise HTTPException(400, "A senha nova precisa ser diferente da atual.")
+
+    _validar_senha_nova(body.senha_nova, user.nome)
+
+    if user.origem == "ad" and not user.senha_hash:
+        # Conta de AD não tem senha local para trocar; quem manda é o domínio.
+        raise HTTPException(
+            400, "Sua conta usa a senha da rede. Troque-a no domínio, não aqui."
+        )
+
+    user.senha_hash = hash_password(body.senha_nova)
+    user.senha_temporaria = False          # cumpriu a exigência do primeiro acesso
+    if user.primeiro_acesso_em is None:
+        user.primeiro_acesso_em = datetime.now(timezone.utc)
+
+    audit(db, user, "trocar_senha", "usuario", user.id,
+          ip=request.client.host if request.client else None)
+    db.commit()
+
+    # O que ainda falta depois da troca: cadastrar o MFA, se exigido.
+    proxima = "cadastrar_mfa" if (user.mfa_obrigatorio and not user.mfa_ativo) else None
+    return {
+        "ok": True,
+        "acao_requerida": proxima,
+        "mensagem": (
+            "Senha alterada. Agora cadastre a verificação em duas etapas."
+            if proxima else "Senha alterada com sucesso."
+        ),
+    }
 
 
 @router.put("/preferencias")

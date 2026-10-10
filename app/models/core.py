@@ -134,6 +134,26 @@ class Usuario(BaseModel, Base):
     # Estrutura: {"inventarios": [...], "modulos": [...], "pode_escrever": bool, "pode_excluir": bool}
     permissoes: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
+    # --- MFA (segunda etapa) ----------------------------------------------
+    # Segredo TOTP em base32, gravado só DEPOIS que a pessoa confirma um
+    # código. Guardar antes deixaria um segredo pendente que ninguém usa.
+    mfa_segredo: Mapped[str | None] = mapped_column(String(64))
+    mfa_ativo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    mfa_ativado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Códigos de recuperação (JSON, lista de hashes): uso único, para quando o
+    # celular é perdido. Sem eles, a saída seria desligar o MFA.
+    mfa_recuperacao: Mapped[list | None] = mapped_column(JSON, nullable=True)
+
+    # --- Primeiro acesso ---------------------------------------------------
+    # Senha criada pelo administrador e entregue ao técnico. Enquanto for
+    # verdadeiro, o sistema exige a troca antes de liberar qualquer coisa —
+    # senha que o admin conhece não é senha da pessoa.
+    senha_temporaria: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Cadastro do MFA exigido no primeiro acesso. Vale para conta nova (local
+    # ou AD): quem entra pela primeira vez precisa registrar a segunda etapa.
+    mfa_obrigatorio: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    primeiro_acesso_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     departamento: Mapped[Departamento | None] = relationship(back_populates="usuarios")
 
     @property

@@ -23,6 +23,7 @@ import { renderContagens } from "./js/views/contagens.js";
 import { renderFinanceiro } from "./js/views/financeiro.js";
 import { renderEmprestimos } from "./js/views/emprestimos.js";
 import { renderMonitor } from "./js/views/monitor_impressoras.js";
+import { renderSeguranca } from "./js/views/seguranca.js";
 import { renderManutencoes } from "./js/views/manutencoes.js";
 import { renderScanner, stopScanner } from "./js/views/scanner.js";
 import { renderRelatorios } from "./js/views/relatorios.js";
@@ -44,6 +45,7 @@ const MODULOS = {
   financeiro: { rotulo: "Financeiro", icone: "relatorios" },
   emprestimos: { rotulo: "Empréstimos", icone: "calendario" },
   monitor: { rotulo: "Monitor de impressoras", icone: "print" },
+  seguranca: { rotulo: "Segurança da conta", icone: "settings" },
   relatorios: { rotulo: "Relatórios", icone: "relatorios" },
   calendario: { rotulo: "Calendário", icone: "calendario" },
   impressao: { rotulo: "Impressão", icone: "print" },
@@ -63,6 +65,7 @@ const VIEWS = {
   financeiro: renderFinanceiro,
   emprestimos: renderEmprestimos,
   monitor: renderMonitor,
+  seguranca: renderSeguranca,
   relatorios: renderRelatorios,
   calendario: renderCalendario,
   impressao: renderImpressao,

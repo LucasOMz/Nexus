@@ -93,3 +93,27 @@ def client():
 def auth_headers() -> dict[str, str]:
     """Token de acesso admin (id=1, primeiro registro do banco de teste)."""
     return {"Authorization": f"Bearer {create_access_token(1, 'admin')}"}
+
+
+@pytest.fixture(autouse=True)
+def _zerar_limitadores():
+    """Zera os limitadores entre testes.
+
+    Eles sao GLOBAIS e EM MEMORIA. A suite faz muitos logins seguidos, e sem
+    zerar o limitador de login (10 por minuto) comeca a devolver 429 no meio
+    da execucao - falha que nada tem a ver com o que o teste verifica.
+
+    Foi o que fez classes de teste passarem sozinhas e falharem em conjunto.
+    """
+    from app.core import rate_limit
+    from app.routers import auth as auth_router
+
+    auth_router.login_limiter = rate_limit.SlidingWindowLimiter(
+        max_requests=rate_limit.login_limiter.max_requests,
+        window_seconds=rate_limit.login_limiter.window_seconds,
+    )
+    yield
+    auth_router.login_limiter = rate_limit.SlidingWindowLimiter(
+        max_requests=rate_limit.login_limiter.max_requests,
+        window_seconds=rate_limit.login_limiter.window_seconds,
+    )

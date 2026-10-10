@@ -152,6 +152,14 @@ class UsuarioCreate(UsuarioBase):
     # não aqui. Para contas locais continua obrigatória.
     senha: str | None = Field(default=None, min_length=6, max_length=128)
 
+    # Exigir o cadastro da verificação em duas etapas no primeiro acesso.
+    #
+    # Ligado por padrão nas contas novas. Quem entra com senha de rede tem a
+    # identidade confirmada, mas não a **posse do aparelho** — é isso que a
+    # segunda etapa cobre. Desligue em equipamento compartilhado, onde ninguém
+    # tem celular próprio.
+    exigir_mfa: bool = True
+
 
 class UsuarioUpdate(SemVazios):
     model_config = ConfigDict(extra="forbid")

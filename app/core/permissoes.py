@@ -24,6 +24,7 @@ MODULOS: dict[str, str] = {
     "financeiro": "Painel financeiro",
     "emprestimos": "Empréstimos e devoluções",
     "monitor": "Monitor de impressoras",
+    "seguranca": "Segurança da conta",
     "contagens": "Inventário cíclico (contagem)",
     "relatorios": "Relatórios",
     "cadastros": "Cadastros",
@@ -53,21 +54,21 @@ def permissoes_padrao(papel: str) -> dict[str, Any]:
     if papel == "ti":
         return {
             "inventarios": todos_inv,
-            "modulos": ["ativos", "produtos", "movimentacoes", "manutencoes", "scanner", "contagens", "financeiro", "emprestimos", "monitor", "relatorios", "impressao", "calendario", "reporte"],
+            "modulos": ["ativos", "produtos", "movimentacoes", "manutencoes", "scanner", "contagens", "financeiro", "emprestimos", "monitor", "seguranca", "relatorios", "impressao", "calendario", "reporte"],
             "pode_escrever": True,
             "pode_excluir": False,
         }
     if papel == "auditor":
         return {
             "inventarios": todos_inv,
-            "modulos": ["ativos", "produtos", "movimentacoes", "manutencoes", "contagens", "financeiro", "emprestimos", "monitor", "relatorios", "calendario", "reporte"],
+            "modulos": ["ativos", "produtos", "movimentacoes", "manutencoes", "contagens", "financeiro", "emprestimos", "monitor", "seguranca", "relatorios", "calendario", "reporte"],
             "pode_escrever": False,
             "pode_excluir": False,
         }
     # leitor — o calendário é visível para TODOS (cada um vê a sua planta).
     return {
         "inventarios": todos_inv,
-        "modulos": ["ativos", "produtos", "movimentacoes", "manutencoes", "scanner", "contagens", "financeiro", "emprestimos", "monitor", "calendario", "reporte"],
+        "modulos": ["ativos", "produtos", "movimentacoes", "manutencoes", "scanner", "contagens", "financeiro", "emprestimos", "monitor", "seguranca", "calendario", "reporte"],
         "pode_escrever": False,
         "pode_excluir": False,
     }

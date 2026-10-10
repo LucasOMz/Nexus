@@ -1,2 +1,2 @@
 ﻿"""Gestão Patrimonial Unificada — pacote da aplicação."""
-__version__ = "2.62.1"
+__version__ = "2.70.0"
