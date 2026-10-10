@@ -198,6 +198,12 @@ class UsuarioOut(DatasComFuso):
     # favoritos porque quem reordena mexe em todas as linhas, não só nas
     # marcadas.
     barra_ordem: list[str] = []
+    # Tema de interface escolhido pela pessoa. Vai no login para a tela já
+    # abrir no tema certo, sem piscar no padrão e trocar depois.
+    tema: str | None = None
+    # Cor de destaque, independente do claro/escuro.
+    paleta: str | None = None
+    fundo: str | None = None
     permissoes: dict | None = None
     # Calculado pelo backend (papel + customizações) — usado pelo frontend.
     permissoes_efetivas: dict = {}

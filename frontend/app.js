@@ -9,7 +9,7 @@ import { state, ROTULO_INVENTARIO } from "./js/state.js";
 import { api, replayOfflineQueue } from "./js/api.js";
 import { Router } from "./js/router.js";
 import { ctx } from "./js/context.js";
-import { el, icon, toast, mostrarErro } from "./js/ui.js";
+import { el, icon, toast, mostrarErro, dialog } from "./js/ui.js";
 import { APP_VERSION } from "./js/version.js";
 import { renderLogin } from "./js/views/login.js";
 import { renderSelecao, renderHome } from "./js/views/inventario.js";
@@ -104,7 +104,7 @@ function buildShell() {
     el("div", { class: "spacer" }),
     badge,
     sinoNotificacoes(),
-    el("button", { class: "iconbtn", title: "Alternar tema", onclick: toggleTheme, html: icon(state.theme === "dark" ? "sun" : "moon") }),
+    el("button", { class: "iconbtn", title: TITULO_TEMA, onclick: abrirSeletorDeTema, html: iconeDoModo() }),
     el("button", { class: "iconbtn", title: "Sair", onclick: logout, html: icon("logout") }),
   );
 
@@ -131,12 +131,182 @@ function updateBadge() {
   if (b) b.innerHTML = icon(state.dominio === "ti" ? "ativos" : "print", 18) + `<span>${state.dominioLabel}</span>`;
 }
 
+/**
+ * As duas escolhas visuais, em eixos separados.
+ *
+ * `MODOS` e iluminacao (claro/escuro); `PALETAS` e identidade (a cor de
+ * destaque). Juntar as duas num so campo obrigaria a repetir cada cor nos dois
+ * modos — e acrescentar uma cor exigiria dois blocos de CSS.
+ *
+ * Os valores sao os MESMOS de `[data-theme]` e `[data-paleta]` no CSS.
+ */
+/**
+ * As três listas de aparência — com a MESMA forma.
+ *
+ * Cada opção tem sempre os mesmos campos:
+ *   sw     cor do quadrado (o "fundo" daquela opção)
+ *   borda  cor da borda do quadrado
+ *   marca  cor do elemento central (o "cartão")
+ *   icone  quando a opção é categórica (modo), em vez de cromática
+ *   tinta  cor do ícone, quando houver
+ *
+ * Antes os modos usavam as cores do tema ATUAL e as cores usavam as próprias
+ * — então a mesma lista se desenhava de dois jeitos. Agora toda opção mostra
+ * as SUAS cores, e o desenho é um só (`opcaoDeTema`).
+ */
+const MODOS = [
+  { valor: "light", rotulo: "Claro", icone: "sun",
+    sw: "#F7FBF7", borda: "#C1C9C1", tinta: "#2F6B4F" },
+  { valor: "dark", rotulo: "Escuro", icone: "moon",
+    sw: "#111A13", borda: "#414942", tinta: "#99D5B3" },
+];
+// Cor dos ÍCONES e dos botões — o destaque da tela.
+const PALETAS = [
+  { valor: "nexus", rotulo: "Verde Nexus", sw: "#B4F1CE", borda: "#2F6B4F", marca: "#2F6B4F" },
+  { valor: "azul", rotulo: "Azul", sw: "#D3E4FF", borda: "#2C5A8C", marca: "#2C5A8C" },
+  { valor: "roxo", rotulo: "Roxo", sw: "#EBDCFF", borda: "#6A4C93", marca: "#6A4C93" },
+  { valor: "ambar", rotulo: "Âmbar", sw: "#FFDF9E", borda: "#8A6000", marca: "#8A6000" },
+  { valor: "classico", rotulo: "Clássico", sw: "#FFDAD6", borda: "#B3261E", marca: "#B3261E" },
+];
+// Cor de FUNDO — escolha separada, para combinar como quiser.
+const FUNDOS = [
+  { valor: "verde", rotulo: "Verde", sw: "#F1F7F1", borda: "#C1C9C1", marca: "#EBF3EC" },
+  { valor: "neutro", rotulo: "Neutro", sw: "#F4F4F4", borda: "#C6C6C6", marca: "#EFEFEF" },
+  { valor: "azul", rotulo: "Azul", sw: "#F2F6FB", borda: "#C0C8D2", marca: "#EAF0F7" },
+  { valor: "areia", rotulo: "Areia", sw: "#F8F4ED", borda: "#CCC4B6", marca: "#F2EDE4" },
+];
+const TITULO_TEMA = "Aparência";
+const ICONE_TEMA = { light: "sun", dark: "moon" };
+
+/** Icone do botao, conforme o modo atual. */
+function iconeDoModo() {
+  return icon(ICONE_TEMA[state.theme] || "moon");
+}
+
+function atualizarIconeDoTema() {
+  document.querySelectorAll(".topbar .iconbtn").forEach((b) => {
+    if (b.getAttribute("title") === TITULO_TEMA) b.innerHTML = iconeDoModo();
+  });
+}
+
+/**
+ * Janela de aparencia: modo e cor no mesmo lugar.
+ *
+ * A janela NAO fecha ao escolher — o tema aplica na hora, entao a pessoa ve o
+ * resultado enquanto decide e pode trocar de ideia ali mesmo.
+ *
+ * As duas escolhas vao para a CONTA (`state.setTheme`/`state.setPaleta` gravam
+ * no servidor), entao acompanham a pessoa em qualquer computador.
+ */
+function abrirSeletorDeTema() {
+  const GRUPOS = [
+    { chave: "theme", lista: MODOS, atual: () => state.theme, titulo: "Modo",
+      aplica: (v) => { state.setTheme(v); atualizarIconeDoTema(); } },
+    { chave: "paleta", lista: PALETAS, atual: () => state.paleta,
+      titulo: "Cor dos ícones e botões", aplica: (v) => state.setPaleta(v) },
+    { chave: "fundo", lista: FUNDOS, atual: () => state.fundo,
+      titulo: "Cor de fundo e cartões", aplica: (v) => state.setFundo(v) },
+  ];
+
+  // Um bloco por eixo, desenhado pela MESMA função. Antes cada lista tinha o
+  // seu próprio JSX, e por isso divergiam: o modo usava as cores do tema
+  // atual, as cores usavam as próprias.
+  const blocos = GRUPOS.map((g) => {
+    const div = el("div", { class: "cartoes" },
+      ...g.lista.map((o) => opcaoDeTema(o, g.atual() === o.valor, () => {
+        g.aplica(o.valor);
+        repintar();
+        toast(`${g.chave === "theme" ? "Modo" : g.chave === "paleta" ? "Cor" : "Fundo"} `
+              + `${o.rotulo.toLowerCase()}`);
+      })));
+    return { ...g, div };
+  });
+
+  /**
+   * Redesenha SÓ as marcas de seleção, sem fechar a janela.
+   *
+   * Recriar a janela inteira perderia a posição de rolagem e piscaria a cada
+   * clique — e a pessoa está justamente experimentando as combinações.
+   *
+   * Lê o estado atual em vez de receber parâmetros: com três eixos, passar
+   * cada um por argumento virava uma lista que podia sair de sincronia.
+   */
+  function repintar() {
+    blocos.forEach(({ div, lista, atual }) => {
+      div.querySelectorAll(".tema-opcao").forEach((b, i) => {
+        const ativo = lista[i].valor === atual();
+        b.classList.toggle("ativa", ativo);
+        const marca = b.querySelector(".tema-atual");
+        if (ativo && !marca) b.append(el("span", { class: "tema-atual", html: icon("check", 16) }));
+        else if (!ativo && marca) marca.remove();
+      });
+    });
+  }
+
+  dialog({
+    title: "Aparência",
+    body: el("div", {},
+      // Prévia ao vivo: mostra a combinação ANTES de decidir. Sem ela, a
+      // pessoa precisa aplicar cada opção para descobrir como fica.
+      el("div", { class: "tema-previa" },
+        el("div", { class: "tema-previa-topo" },
+          el("span", { class: "tema-previa-ponto" }),
+          el("span", { class: "tema-previa-linha" }),
+        ),
+        el("div", { class: "tema-previa-corpo" },
+          el("b", { class: "tema-previa-titulo" }, "Como vai ficar"),
+          el("span", { class: "tema-previa-desc" },
+            "Fundo, cartões e ícones — a combinação escolhida, aplicada agora."),
+          el("span", { class: "tema-previa-btn" }, "Botão"),
+        ),
+      ),
+      ...blocos.flatMap((b, i) => [
+        el("p", { class: "dica", style: i === 0 ? "margin:0 0 10px" : "margin:18px 0 10px" },
+          b.titulo),
+        b.div,
+      ]),
+      el("p", { class: "muted", style: "margin:16px 0 0;font-size:12.5px" },
+        "As três escolhas são independentes e ficam salvas na sua conta — "
+        + "acompanham você em qualquer computador onde entrar."),
+    ),
+    actions: [{ label: "Fechar", variant: "text" }],
+  });
+}
+
+/**
+ * Desenha UMA opção de aparência.
+ *
+ * Usada pelas três listas — é o que garante que modo, cor e fundo tenham
+ * exatamente o mesmo tamanho, borda, espaçamento e marca de seleção. Enquanto
+ * cada lista tinha o seu próprio desenho, elas divergiam a cada mudança.
+ *
+ * O quadrado mostra sempre as cores DA PRÓPRIA opção, nunca as do tema atual:
+ * é o que a pessoa vai receber se clicar nela.
+ */
+function opcaoDeTema(o, ativo, aoEscolher) {
+  return el("button", {
+    type: "button",
+    class: `tema-opcao${ativo ? " ativa" : ""}`,
+    onclick: aoEscolher,
+  },
+    el("span", { class: "tema-sw", style: `background:${o.sw};border-color:${o.borda}` },
+      o.icone
+        // Modo é categórico: mostra o ícone do sol/lua, na tinta daquele modo.
+        ? el("span", { class: "tema-sw-tinta", style: `color:${o.tinta}`,
+                       html: icon(o.icone, 17) })
+        // Cor e fundo são cromáticos: mostram o "cartão" sobre o fundo.
+        : el("span", { class: "tema-sw-marca", style: `background:${o.marca}` })),
+    el("span", { class: "tema-nome" }, o.rotulo),
+    ativo ? el("span", { class: "tema-atual", html: icon("check", 16) }) : null,
+  );
+}
+
 function toggleTheme() {
   state.setTheme(state.theme === "dark" ? "light" : "dark");
   if (shellBuilt) {
     // Atualiza só o ícone do botão de tema.
     const btns = document.querySelectorAll(".topbar .iconbtn");
-    btns.forEach((b) => { if (b.title === "Alternar tema" || b.getAttribute("title") === "Alternar tema") b.innerHTML = icon(state.theme === "dark" ? "sun" : "moon"); });
+    btns.forEach((b) => { if (b.getAttribute("title") === TITULO_TEMA) b.innerHTML = icon(state.theme === "dark" ? "sun" : "moon"); });
   }
   ctx.rerender();
 }
@@ -517,6 +687,8 @@ function mostrarTelaQuebrada(path, erro) {
 // ---------------------------------------------------------------------------
 function boot() {
   state.applyTheme();
+  state.applyPaleta();
+  state.applyFundo();
   state.applyDominio();
 
   // Registro do service worker é feito em registrarServiceWorker() no final.

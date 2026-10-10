@@ -12,47 +12,47 @@
      seguirem o tema claro. No dark há a regra equivalente. */
   color-scheme: light;
 
-  --md-sys-color-primary: #B3261E;
+  --md-sys-color-primary: #2F6B4F;
   --md-sys-color-on-primary: #FFFFFF;
-  --md-sys-color-primary-container: #FFDAD6;
-  --md-sys-color-on-primary-container: #410002;
-  --md-sys-color-secondary: #775652;
+  --md-sys-color-primary-container: #B4F1CE;
+  --md-sys-color-on-primary-container: #00210F;
+  --md-sys-color-secondary: #506355;
   --md-sys-color-on-secondary: #FFFFFF;
-  --md-sys-color-secondary-container: #FFDAD4;
-  --md-sys-color-on-secondary-container: #2C1512;
-  --md-sys-color-tertiary: #6C5D2F;
+  --md-sys-color-secondary-container: #D3E8D6;
+  --md-sys-color-on-secondary-container: #0D1F14;
+  --md-sys-color-tertiary: #39656B;
   --md-sys-color-on-tertiary: #FFFFFF;
-  --md-sys-color-tertiary-container: #F6E3A1;
-  --md-sys-color-on-tertiary-container: #231B00;
+  --md-sys-color-tertiary-container: #BDEBF2;
+  --md-sys-color-on-tertiary-container: #001F24;
   --md-sys-color-error: #BA1A1A;
   --md-sys-color-on-error: #FFFFFF;
   --md-sys-color-error-container: #FFDAD6;
   --md-sys-color-on-error-container: #410002;
 
-  --md-sys-color-surface: #FFFFFF;
-  --md-sys-color-on-surface: #201A19;
-  --md-sys-color-surface-variant: #F5DDDA;
-  --md-sys-color-on-surface-variant: #534341;
+  --md-sys-color-surface: #F7FBF7;
+  --md-sys-color-on-surface: #171D19;
+  --md-sys-color-surface-variant: #DCE5DC;
+  --md-sys-color-on-surface-variant: #414942;
   --md-sys-color-surface-container-lowest: #FFFFFF;
-  --md-sys-color-surface-container-low: #FFFFFF;
-  --md-sys-color-surface-container: #FDF6F5;
-  --md-sys-color-surface-container-high: #F9ECEA;
-  --md-sys-color-outline: #857370;
-  --md-sys-color-outline-variant: #E6D3D0;
-  --md-sys-color-inverse-surface: #3A2E2C;
-  --md-sys-color-inverse-on-surface: #FFEDEA;
-  --md-sys-color-inverse-primary: #FFB4AB;
-  --md-sys-color-background: #FFFFFF;
-  --md-sys-color-on-background: #201A19;
+  --md-sys-color-surface-container-low: #F0F6F0;
+  --md-sys-color-surface-container: #EBF3EC;
+  --md-sys-color-surface-container-high: #E0EAE2;
+  --md-sys-color-outline: #717971;
+  --md-sys-color-outline-variant: #C1C9C1;
+  --md-sys-color-inverse-surface: #2C322D;
+  --md-sys-color-inverse-on-surface: #EDF2EC;
+  --md-sys-color-inverse-primary: #99D5B3;
+  --md-sys-color-background: #F1F7F1;
+  --md-sys-color-on-background: #171D19;
 
   /* Acento por inventário (diferencia TI x Impressoras mantendo a marca vermelha) */
   --inv-accent: #415F91;
   --inv-accent-container: #D6E3FF;
   --inv-accent-on-container: #001B3F;
 
-  --md-elevation-1: 0 1px 2px rgba(80, 20, 15, .06), 0 1px 3px 1px rgba(80, 20, 15, .05);
-  --md-elevation-2: 0 1px 2px rgba(80, 20, 15, .08), 0 2px 6px 2px rgba(80, 20, 15, .07);
-  --md-elevation-3: 0 4px 8px 3px rgba(80, 20, 15, .08), 0 1px 3px rgba(80, 20, 15, .10);
+  --md-elevation-1: 0 1px 2px rgba(20, 50, 30, .06), 0 1px 3px 1px rgba(20, 50, 30, .05);
+  --md-elevation-2: 0 1px 2px rgba(20, 50, 30, .08), 0 2px 6px 2px rgba(20, 50, 30, .07);
+  --md-elevation-3: 0 4px 8px 3px rgba(20, 50, 30, .08), 0 1px 3px rgba(20, 50, 30, .10);
   --shape-xs: 8px;
   --shape-sm: 12px;
   --shape-md: 16px;
@@ -67,9 +67,9 @@
 
   /* Cores de apoio que precisam mudar no tema escuro (usadas em avisos e
      gráficos). Nunca use a cor fixa direto: use a variável. */
-  --cor-aviso: #8A5300;
+  --cor-aviso: #7A5A00;
   --cor-saida: #2E6B3E;
-  --cor-ok: #1E6B34;
+  --cor-ok: #1F6B3F;
 }
 
 /* Acerto de acento por inventário */
@@ -91,38 +91,38 @@
   /* Controles nativos em modo escuro (dropdown, scrollbar, calendário). */
   color-scheme: dark;
 
-  --md-sys-color-primary: #FFB4AB;
-  --md-sys-color-on-primary: #690005;
-  --md-sys-color-primary-container: #93000A;
-  --md-sys-color-on-primary-container: #FFDAD6;
-  --md-sys-color-secondary: #E7BDB6;
-  --md-sys-color-on-secondary: #442925;
-  --md-sys-color-secondary-container: #5D3F3B;
-  --md-sys-color-on-secondary-container: #FFDAD4;
-  --md-sys-color-tertiary: #D9C58C;
-  --md-sys-color-on-tertiary: #3B2F00;
-  --md-sys-color-tertiary-container: #534600;
-  --md-sys-color-on-tertiary-container: #F6E3A1;
+  --md-sys-color-primary: #99D5B3;
+  --md-sys-color-on-primary: #00391F;
+  --md-sys-color-primary-container: #14522F;
+  --md-sys-color-on-primary-container: #B4F1CE;
+  --md-sys-color-secondary: #B7CCBA;
+  --md-sys-color-on-secondary: #223527;
+  --md-sys-color-secondary-container: #384B3D;
+  --md-sys-color-on-secondary-container: #D3E8D6;
+  --md-sys-color-tertiary: #A1CED5;
+  --md-sys-color-on-tertiary: #00363D;
+  --md-sys-color-tertiary-container: #1F4D54;
+  --md-sys-color-on-tertiary-container: #BDEBF2;
   --md-sys-color-error: #FFB4AB;
   --md-sys-color-on-error: #690005;
   --md-sys-color-error-container: #93000A;
   --md-sys-color-on-error-container: #FFDAD6;
 
-  --md-sys-color-surface: #1A1110;
-  --md-sys-color-on-surface: #F1DEDB;
-  --md-sys-color-surface-variant: #534341;
-  --md-sys-color-on-surface-variant: #D8C2BE;
-  --md-sys-color-surface-container-lowest: #140C0B;
-  --md-sys-color-surface-container-low: #221817;
-  --md-sys-color-surface-container: #271C1B;
-  --md-sys-color-surface-container-high: #322625;
-  --md-sys-color-outline: #A08C89;
-  --md-sys-color-outline-variant: #534341;
-  --md-sys-color-inverse-surface: #F1DEDB;
-  --md-sys-color-inverse-on-surface: #3A2E2C;
-  --md-sys-color-inverse-primary: #B3261E;
-  --md-sys-color-background: #1A1110;
-  --md-sys-color-on-background: #F1DEDB;
+  --md-sys-color-surface: #111A13;
+  --md-sys-color-on-surface: #DFE4DE;
+  --md-sys-color-surface-variant: #414942;
+  --md-sys-color-on-surface-variant: #C1C9C1;
+  --md-sys-color-surface-container-lowest: #0C140E;
+  --md-sys-color-surface-container-low: #19221B;
+  --md-sys-color-surface-container: #1D261F;
+  --md-sys-color-surface-container-high: #28312A;
+  --md-sys-color-outline: #8B938C;
+  --md-sys-color-outline-variant: #414942;
+  --md-sys-color-inverse-surface: #DFE4DE;
+  --md-sys-color-inverse-on-surface: #2C322D;
+  --md-sys-color-inverse-primary: #2F6B4F;
+  --md-sys-color-background: #0E1610;
+  --md-sys-color-on-background: #DFE4DE;
 
   --inv-accent: #AAC7FF;
   --inv-accent-container: #284777;
@@ -943,7 +943,7 @@ text.chart-value { font-size: 11px; font-weight: 600; fill: var(--md-sys-color-o
 /* Dialog / Bottom Sheet                                              */
 /* ------------------------------------------------------------------ */
 .overlay {
-  position: fixed; inset: 0; z-index: 60; background: rgba(40, 10, 8, .48);
+  position: fixed; inset: 0; z-index: 60; background: rgba(10, 28, 18, .48);
   display: flex; align-items: center; justify-content: center; padding: 16px;
   animation: fade var(--dur) ease-out;
 }
@@ -964,7 +964,7 @@ text.chart-value { font-size: 11px; font-weight: 600; fill: var(--md-sys-color-o
 }
 
 /* Drawer lateral (menu de 3 barras) */
-.drawer-overlay { position: fixed; inset: 0; z-index: 70; background: rgba(40, 10, 8, .45); display: flex; }
+.drawer-overlay { position: fixed; inset: 0; z-index: 70; background: rgba(10, 28, 18, .45); display: flex; }
 .drawer {
   width: 300px; max-width: 86vw; height: 100%; background: var(--md-sys-color-surface-container-low);
   padding: 20px 14px; display: flex; flex-direction: column; gap: 2px;
@@ -1660,3 +1660,347 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
      .14. Pintar o fundo o denunciaria - o que ele precisa e passar
      despercebido. */
 }
+
+/* ==================================================================== */
+
+/* ==================================================================== */
+/* PALETAS ALTERNATIVAS DE COR                                          */
+/* ==================================================================== */
+/* O verde e a IDENTIDADE do Nexus — esta nos tokens de `:root`. O que    */
+/* existe aqui e uma alternativa: o vermelho que o sistema usava antes.   */
+/*                                                                        */
+/* A paleta mexe SO nos tokens de cor; as superficies vem do claro/escuro,*/
+/* entao as quatro combinacoes funcionam sem repetir codigo.              */
+
+/* ==================================================================== */
+/* EIXOS DE APARENCIA                                                   */
+/* ==================================================================== */
+/* Tres escolhas INDEPENDENTES. Antes eram duas, e a cor de destaque     */
+/* arrastava junto o fundo — nao dava para ter, por exemplo, destaque    */
+/* azul sobre fundo verde.                                                */
+/*                                                                        */
+/*   data-theme  = light | dark          -> iluminacao                    */
+/*   data-paleta = nexus | azul | roxo | classico   -> DESTAQUE e icones  */
+/*   data-fundo  = verde | neutro | azul | areia    -> FUNDO e superficies*/
+/*                                                                        */
+/* Cada eixo mexe SO nos seus tokens. Eles se combinam sem repeticao:     */
+/* 2 modos x 4 cores x 4 fundos = 32 combinacoes, com 10 blocos de CSS.   */
+/* ==================================================================== */
+
+/* -------------------------------------------------------------------- */
+/* DESTAQUE (cor de icones, botoes, estados ativos)                      */
+/* -------------------------------------------------------------------- */
+:root[data-paleta="azul"] {
+  --md-sys-color-primary: #2C5A8C;
+  --md-sys-color-on-primary: #FFFFFF;
+  --md-sys-color-primary-container: #D3E4FF;
+  --md-sys-color-on-primary-container: #001C38;
+  --md-sys-color-secondary: #4A5F78;
+  --md-sys-color-on-secondary: #FFFFFF;
+  --md-sys-color-secondary-container: #D3E4FC;
+  --md-sys-color-on-secondary-container: #051D31;
+}
+:root[data-theme="dark"][data-paleta="azul"] {
+  --md-sys-color-primary: #A3C9F0;
+  --md-sys-color-on-primary: #00325A;
+  --md-sys-color-primary-container: #1B4974;
+  --md-sys-color-on-primary-container: #D3E4FF;
+  --md-sys-color-secondary: #B4C8E4;
+  --md-sys-color-on-secondary: #1F3148;
+  --md-sys-color-secondary-container: #35485F;
+  --md-sys-color-on-secondary-container: #D3E4FC;
+}
+
+:root[data-paleta="roxo"] {
+  --md-sys-color-primary: #6A4C93;
+  --md-sys-color-on-primary: #FFFFFF;
+  --md-sys-color-primary-container: #EBDCFF;
+  --md-sys-color-on-primary-container: #26004D;
+  --md-sys-color-secondary: #655A72;
+  --md-sys-color-on-secondary: #FFFFFF;
+  --md-sys-color-secondary-container: #EBDCFF;
+  --md-sys-color-on-secondary-container: #201A2C;
+}
+:root[data-theme="dark"][data-paleta="roxo"] {
+  --md-sys-color-primary: #D3BBFF;
+  --md-sys-color-on-primary: #3B1E62;
+  --md-sys-color-primary-container: #52357A;
+  --md-sys-color-on-primary-container: #EBDCFF;
+  --md-sys-color-secondary: #CFC2DC;
+  --md-sys-color-on-secondary: #352D42;
+  --md-sys-color-secondary-container: #4C4359;
+  --md-sys-color-on-secondary-container: #EBDCFF;
+}
+
+:root[data-paleta="ambar"] {
+  --md-sys-color-primary: #8A6000;
+  --md-sys-color-on-primary: #FFFFFF;
+  --md-sys-color-primary-container: #FFDF9E;
+  --md-sys-color-on-primary-container: #2B1D00;
+  --md-sys-color-secondary: #6E5C3E;
+  --md-sys-color-on-secondary: #FFFFFF;
+  --md-sys-color-secondary-container: #F9DFB8;
+  --md-sys-color-on-secondary-container: #261A04;
+}
+:root[data-theme="dark"][data-paleta="ambar"] {
+  --md-sys-color-primary: #F5C542;
+  --md-sys-color-on-primary: #452B00;
+  --md-sys-color-primary-container: #664200;
+  --md-sys-color-on-primary-container: #FFDF9E;
+  --md-sys-color-secondary: #DBC3A0;
+  --md-sys-color-on-secondary: #3C2F1B;
+  --md-sys-color-secondary-container: #54452F;
+  --md-sys-color-on-secondary-container: #F9DFB8;
+}
+
+/* O vermelho anterior do sistema, mantido como alternativa. */
+:root[data-paleta="classico"] {
+  --md-sys-color-primary: #B3261E;
+  --md-sys-color-on-primary: #FFFFFF;
+  --md-sys-color-primary-container: #FFDAD6;
+  --md-sys-color-on-primary-container: #410002;
+  --md-sys-color-secondary: #775652;
+  --md-sys-color-on-secondary: #FFFFFF;
+  --md-sys-color-secondary-container: #FFDAD4;
+  --md-sys-color-on-secondary-container: #2C1512;
+}
+:root[data-theme="dark"][data-paleta="classico"] {
+  --md-sys-color-primary: #FFB4AB;
+  --md-sys-color-on-primary: #690005;
+  --md-sys-color-primary-container: #93000A;
+  --md-sys-color-on-primary-container: #FFDAD6;
+  --md-sys-color-secondary: #E7BDB6;
+  --md-sys-color-on-secondary: #442925;
+  --md-sys-color-secondary-container: #5D3F3B;
+  --md-sys-color-on-secondary-container: #FFDAD4;
+}
+
+/* -------------------------------------------------------------------- */
+/* FUNDO (superficies, cartoes, barras)                                  */
+/* -------------------------------------------------------------------- */
+/* So mexe na familia de superficies. O contraste do TEXTO e recalculado  */
+/* junto: fundo claro pede texto escuro, e vice-versa — trocar so o fundo */
+/* deixaria texto ilegivel.                                               */
+:root[data-fundo="neutro"] {
+  --md-sys-color-surface: #FAFAFA;
+  --md-sys-color-surface-variant: #E3E3E3;
+  --md-sys-color-on-surface-variant: #454545;
+  --md-sys-color-surface-container-lowest: #FFFFFF;
+  --md-sys-color-surface-container-low: #F5F5F5;
+  --md-sys-color-surface-container: #EFEFEF;
+  --md-sys-color-surface-container-high: #E8E8E8;
+  --md-sys-color-outline-variant: #C6C6C6;
+  --md-sys-color-background: #F4F4F4;
+}
+:root[data-theme="dark"][data-fundo="neutro"] {
+  --md-sys-color-surface: #141414;
+  --md-sys-color-surface-variant: #464646;
+  --md-sys-color-on-surface-variant: #C6C6C6;
+  --md-sys-color-surface-container-lowest: #0E0E0E;
+  --md-sys-color-surface-container-low: #1C1C1C;
+  --md-sys-color-surface-container: #212121;
+  --md-sys-color-surface-container-high: #2B2B2B;
+  --md-sys-color-outline-variant: #464646;
+  --md-sys-color-background: #0F0F0F;
+}
+
+:root[data-fundo="azul"] {
+  --md-sys-color-surface: #F8FAFD;
+  --md-sys-color-surface-variant: #DCE3EC;
+  --md-sys-color-on-surface-variant: #424A54;
+  --md-sys-color-surface-container-lowest: #FFFFFF;
+  --md-sys-color-surface-container-low: #F1F5FA;
+  --md-sys-color-surface-container: #EAF0F7;
+  --md-sys-color-surface-container-high: #E2E9F2;
+  --md-sys-color-outline-variant: #C0C8D2;
+  --md-sys-color-background: #F2F6FB;
+}
+:root[data-theme="dark"][data-fundo="azul"] {
+  --md-sys-color-surface: #101519;
+  --md-sys-color-surface-variant: #40484F;
+  --md-sys-color-on-surface-variant: #C0C8D0;
+  --md-sys-color-surface-container-lowest: #0B0F13;
+  --md-sys-color-surface-container-low: #181D22;
+  --md-sys-color-surface-container: #1C2127;
+  --md-sys-color-surface-container-high: #262C32;
+  --md-sys-color-outline-variant: #40484F;
+  --md-sys-color-background: #0D1114;
+}
+
+:root[data-fundo="areia"] {
+  --md-sys-color-surface: #FCFAF6;
+  --md-sys-color-surface-variant: #E8E1D5;
+  --md-sys-color-on-surface-variant: #4A453C;
+  --md-sys-color-surface-container-lowest: #FFFFFF;
+  --md-sys-color-surface-container-low: #F7F3EC;
+  --md-sys-color-surface-container: #F2EDE4;
+  --md-sys-color-surface-container-high: #EBE5DA;
+  --md-sys-color-outline-variant: #CCC4B6;
+  --md-sys-color-background: #F8F4ED;
+}
+:root[data-theme="dark"][data-fundo="areia"] {
+  --md-sys-color-surface: #191713;
+  --md-sys-color-surface-variant: #4A463D;
+  --md-sys-color-on-surface-variant: #CCC5B8;
+  --md-sys-color-surface-container-lowest: #13110E;
+  --md-sys-color-surface-container-low: #211E19;
+  --md-sys-color-surface-container: #26231D;
+  --md-sys-color-surface-container-high: #302D26;
+  --md-sys-color-outline-variant: #4A463D;
+  --md-sys-color-background: #15130F;
+}
+
+/* Amostra do FUNDO: duas camadas — o fundo e um cartao por cima, que e */
+/* exatamente como a escolha aparece na tela.                            */
+.tema-carta {
+  width: 22px; height: 14px; border-radius: 3px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .12);
+}
+
+/* ==================================================================== */
+/* SELETOR DE APARENCIA                                                 */
+/* ==================================================================== */
+/* As tres listas (modo, cor, fundo) usam o MESMO componente: o quadrado  */
+/* de 44x30 a esquerda, o nome no meio e a marca de selecao a direita.    */
+/*                                                                        */
+/* Isso e o que garante que fiquem iguais. Enquanto cada lista tinha o seu */
+/* proprio desenho, elas divergiam — o icone do sol ficava com fundo cheio */
+/* e o quadrado de cor so com borda, em alturas diferentes.               */
+/* ==================================================================== */
+.tema-opcao {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 9px 14px; cursor: pointer; text-align: left;
+  border: 1.5px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--shape-md);
+  background: var(--md-sys-color-surface-container-lowest);
+  color: var(--md-sys-color-on-surface);
+  font-family: inherit; font-size: 14px; font-weight: 500;
+  transition: border-color .15s, background .15s, transform .1s;
+}
+.tema-opcao:hover {
+  border-color: var(--md-sys-color-outline);
+  background: var(--md-sys-color-surface-container-low);
+}
+.tema-opcao:active { transform: scale(.99); }
+.tema-opcao.ativa {
+  border-color: var(--md-sys-color-primary);
+  border-width: 2px;
+  background: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container);
+  font-weight: 600;
+}
+
+/* O quadrado. Tamanho e raio IGUAIS nas tres listas — e o que alinha as
+   linhas entre si. */
+.tema-sw {
+  flex: 0 0 auto; width: 44px; height: 30px;
+  border-radius: var(--shape-xs);
+  border: 2px solid;
+  display: grid; place-items: center;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .04);
+}
+/* Modo: icone na tinta daquele modo — o tema atual nao interfere. */
+.tema-sw-tinta { display: inline-flex; }
+/* Cor e fundo: o "cartao" sobre o fundo, como aparece na tela de verdade. */
+.tema-sw-marca {
+  width: 22px; height: 13px; border-radius: 3px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .14);
+}
+.tema-nome { flex: 1; }
+.tema-atual {
+  display: inline-flex; flex: 0 0 auto;
+  color: var(--md-sys-color-primary);
+}
+.tema-opcao.ativa .tema-atual { color: inherit; }
+.cartoes { display: flex; flex-direction: column; gap: 8px; }
+
+/* ------------------------------------------------------------------ */
+/* Previa ao vivo                                                      */
+/* ------------------------------------------------------------------ */
+.tema-previa {
+  border-radius: var(--shape-md);
+  overflow: hidden;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  background: var(--md-sys-color-background);
+  margin-bottom: 20px;
+}
+.tema-previa-topo {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px;
+  background: var(--md-sys-color-primary);
+}
+.tema-previa-ponto {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--md-sys-color-on-primary); opacity: .9;
+}
+.tema-previa-linha {
+  height: 6px; border-radius: 3px; flex: 0 1 90px;
+  background: var(--md-sys-color-on-primary); opacity: .55;
+}
+.tema-previa-corpo { display: flex; flex-direction: column; gap: 6px; padding: 14px; }
+.tema-previa-titulo { font-size: 14px; color: var(--md-sys-color-on-surface); }
+.tema-previa-desc { font-size: 12.5px; color: var(--md-sys-color-on-surface-variant); }
+.tema-previa-btn {
+  align-self: flex-start; margin-top: 6px;
+  padding: 7px 16px; border-radius: var(--shape-full);
+  background: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
+  font-size: 13px; font-weight: 600;
+}
+
+/* ==================================================================== */
+/* CLASSES QUE FALTAVAM NO styles.css                                   */
+/* ==================================================================== */
+/* Estas classes eram usadas no JS e NAO existiam aqui. Umas vinham do    */
+/* `setup.css` (o assistente tem folha propria) e foram copiadas para o   */
+/* app sem conferir; outras nasceram nas telas novas e nunca foram        */
+/* escritas. Sem definicao elas renderizavam SEM ESTILO, sem erro nenhum. */
+/*                                                                        */
+/* A trava 41 do check_dom passa a impedir que isso volte.                */
+/* ==================================================================== */
+
+/* --- Avisos e mensagens ------------------------------------------- */
+/* Portado do setup.css: a mesma familia de cor, para o app e o assistente */
+/* falarem a mesma lingua visual.                                          */
+.recado {
+  padding: 12px 14px; border-radius: var(--shape-sm);
+  font-size: 13.5px; line-height: 1.6; margin-top: 14px;
+}
+.recado.ok   { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
+.recado.erro { background: var(--md-sys-color-error-container);     color: var(--md-sys-color-on-error-container); }
+.recado.info { background: var(--md-sys-color-surface-container-high); color: var(--md-sys-color-on-surface); }
+.recado ul { margin: 8px 0 0; padding-left: 20px; }
+.recado b { font-weight: 600; }
+.recado.oculto { display: none; }
+
+/* --- Layout de formularios e grades ------------------------------- */
+/* `.wrap` e o campo que quebra linha; `.grade` poe campos lado a lado.   */
+.wrap { flex-wrap: wrap; }
+.grade {
+  display: grid; gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+/* --- Modo leitura de contagem ------------------------------------- */
+.leitura { display: flex; flex-direction: column; gap: 14px; }
+.leitura-data {
+  font-size: 12.5px; color: var(--md-sys-color-on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+.leitura-ultimas { display: flex; flex-direction: column; gap: 6px; }
+.valor {
+  font-variant-numeric: tabular-nums; font-weight: 600;
+  color: var(--md-sys-color-on-surface);
+}
+
+/* --- Previas de QR Code e etiqueta -------------------------------- */
+.qr-preview, .label-preview {
+  display: grid; place-items: center;
+  padding: 14px; border-radius: var(--shape-md);
+  background: var(--md-sys-color-surface-container-high);
+  border: 1px solid var(--md-sys-color-outline-variant);
+}
+.qr-preview img, .label-preview img { max-width: 100%; height: auto; }
+
+/* --- Corpo de dialogo --------------------------------------------- */
+.dialog-body { display: flex; flex-direction: column; gap: 4px; }

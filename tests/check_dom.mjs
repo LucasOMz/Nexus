@@ -695,6 +695,97 @@ verificar("tela inexistente cai no menu",
   verificar("os campos ficam em grade, nao empilhados",
     /\.perm-grid \{[\s\S]{0,120}grid-template-columns: repeat\(auto-fill/.test(fonteCss));
 }
+
+// 40) Todo nome de ui.js usado num modulo esta IMPORTADO nele.
+//     Esta classe de erro ja custou caro: o botao de tema existia, mas
+//     `dialog` nao estava importado no app.js — clicar lancava ReferenceError
+//     e NADA acontecia, sem mensagem nenhuma.
+//     Verificacao estatica nao pega isso (o codigo esta sintaticamente certo),
+//     so a execucao — e executar cada tela nao e viavel aqui.
+{
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+
+  const FUNCOES = ["dialog", "toast", "icon", "el", "mostrarErro", "confirmSheet",
+                   "emptyState", "skeleton", "fmtDate", "fmtMoney"];
+
+  function varrerUi(dir) {
+    const faltando = [];
+    for (const nome of fs.readdirSync(dir)) {
+      const p = path.join(dir, nome);
+      if (fs.statSync(p).isDirectory()) { faltando.push(...varrerUi(p)); continue; }
+      if (!nome.endsWith(".js")) continue;
+
+      const c = fs.readFileSync(p, "utf8");
+      const m = /import \{([^}]*)\} from "(?:\.\.\/ui\.js|\.\/js\/ui\.js)"/.exec(c);
+      if (!m) continue;
+
+      const importadas = new Set(m[1].split(",").map((s) => s.trim()));
+      const corpo = c.slice(m.index + m[0].length);
+      for (const f of FUNCOES) {
+        // Ignora `obj.f(` e `function f(`; pega so a chamada direta.
+        const usada = new RegExp("(?<![\\w.])" + f + "\\s*\\(").test(corpo);
+        if (usada && !importadas.has(f)) {
+          faltando.push(path.relative(process.cwd(), p) + " -> " + f);
+        }
+      }
+    }
+    return faltando;
+  }
+
+  const faltando = varrerUi("frontend");
+  verificar("todo nome de ui.js usado esta importado", faltando.length === 0);
+  if (faltando.length) console.log("       " + faltando.join(" | "));
+}
+
+// 41) Toda classe CSS usada no JS existe em styles.css.
+//     Esta trava existe por um motivo concreto: duas vezes um corte feito por
+//     marcador de texto apagou o CSS do seletor de tema, e os botoes
+//     renderizaram SEM ESTILO — sem erro, sem aviso, com as 181 travas
+//     passando. Sintaxe e imports nao pegam isso: o JS esta correto, e o CSS
+//     simplesmente nao existe.
+{
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+
+  const css = fs.readFileSync("frontend/styles.css", "utf8");
+  // Classes definidas no CSS (fora de comentarios, para nao casar exemplos).
+  const cssSemComentario = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const definidas = new Set(
+    [...cssSemComentario.matchAll(/\.([a-zA-Z][\w-]*)/g)].map((m) => m[1])
+  );
+
+  // Classes usadas no JS: pega `class: "a b c"` e `class: \`a b ${x}\``.
+  const faltandoCss = [];
+  function varrerClasses(dir) {
+    for (const nome of fs.readdirSync(dir)) {
+      const p = path.join(dir, nome);
+      if (fs.statSync(p).isDirectory()) { varrerClasses(p); continue; }
+      if (!nome.endsWith(".js")) continue;
+
+      const c = fs.readFileSync(p, "utf8");
+      for (const m of c.matchAll(/class:\s*[`"]([^`"]*)[`"]/g)) {
+        // Só a parte ANTES da primeira interpolação: dentro de `${...}` há
+        // código (`chave === abaAtiva ? ...`), não nomes de classe.
+        const literal = m[1].split("${")[0];
+        for (const cls of literal.split(/\s+/)) {
+          const limpo = cls.trim();
+          // Ignora o que vem de interpolacao (${...}) e nomes muito curtos.
+          if (!limpo || limpo.length < 3) continue;
+          if (!/^[a-zA-Z][\w-]*$/.test(limpo)) continue;
+          if (!definidas.has(limpo)) {
+            faltandoCss.push(path.relative(process.cwd(), p) + " -> ." + limpo);
+          }
+        }
+      }
+    }
+  }
+  varrerClasses("frontend");
+
+  const unicos = [...new Set(faltandoCss)];
+  verificar("toda classe CSS usada no JS existe", unicos.length === 0);
+  if (unicos.length) console.log("       " + unicos.slice(0, 8).join(" | "));
+}
 if (falhas) {
   console.log(`${falhas} DE ${casos} CASOS FALHARAM`);
   process.exit(1);

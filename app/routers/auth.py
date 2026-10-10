@@ -180,6 +180,15 @@ def login(
     )
 
 
+TEMAS_VALIDOS = {"light", "dark"}
+# Paletas de cor — os MESMOS valores de `[data-paleta="..."]` no CSS.
+# Separadas do tema porque são decisões independentes: claro/escuro é
+# iluminação do ambiente, paleta é identidade visual.
+PALETAS_VALIDAS = {"nexus", "azul", "roxo", "ambar", "classico"}
+# Cor de FUNDO — o terceiro eixo, independente do destaque.
+FUNDOS_VALIDOS = {"verde", "neutro", "azul", "areia"}
+
+
 class PreferenciasUpdate(BaseModel):
     """Preferências de interface do próprio usuário."""
 
@@ -189,6 +198,14 @@ class PreferenciasUpdate(BaseModel):
     # Ordem da lista inteira da gaveta. Separada dos favoritos: quem reordena
     # mexe em todas as linhas, não só nas marcadas.
     barra_ordem: list[str] | None = None
+    # Tema de interface. Fica no servidor, e não só no navegador, para a
+    # preferência acompanhar a PESSOA — quem troca de computador não deveria
+    # reconfigurar a tela.
+    tema: str | None = None
+    # Cor de destaque, independente do claro/escuro.
+    paleta: str | None = None
+    # Cor de fundo, independente do destaque e do modo.
+    fundo: str | None = None
 
 
 def _limpar_lista(itens: list[str] | None) -> list[str]:
@@ -289,10 +306,39 @@ def salvar_preferencias(
         ordem = _limpar_lista(body.barra_ordem)
         user.barra_ordem = json.dumps(ordem, ensure_ascii=False) if ordem else None
 
+    if body.tema is not None:
+        # Lista fechada: um valor inventado deixaria a tela sem estilo nenhum,
+        # porque não haveria bloco de CSS correspondente.
+        escolhido = str(body.tema).strip().lower()
+        if escolhido not in TEMAS_VALIDOS:
+            raise HTTPException(
+                400, f"Tema desconhecido. Use um destes: {', '.join(sorted(TEMAS_VALIDOS))}."
+            )
+        user.tema = escolhido
+
+    if body.paleta is not None:
+        escolhida = str(body.paleta).strip().lower()
+        if escolhida not in PALETAS_VALIDAS:
+            raise HTTPException(
+                400, f"Paleta desconhecida. Use uma destas: {', '.join(sorted(PALETAS_VALIDAS))}."
+            )
+        user.paleta = escolhida
+
+    if body.fundo is not None:
+        escolhido_fundo = str(body.fundo).strip().lower()
+        if escolhido_fundo not in FUNDOS_VALIDOS:
+            raise HTTPException(
+                400, f"Fundo desconhecido. Use um destes: {', '.join(sorted(FUNDOS_VALIDOS))}."
+            )
+        user.fundo = escolhido_fundo
+
     db.commit()
     return {
         "barra_favoritos": json.loads(user.barra_favoritos) if user.barra_favoritos else [],
         "barra_ordem": json.loads(user.barra_ordem) if user.barra_ordem else [],
+        "tema": user.tema,
+        "paleta": user.paleta,
+        "fundo": user.fundo,
         "mensagem": "Preferências salvas",
     }
 

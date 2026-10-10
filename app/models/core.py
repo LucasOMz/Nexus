@@ -148,6 +148,15 @@ class Usuario(BaseModel, Base):
     # Senha criada pelo administrador e entregue ao técnico. Enquanto for
     # verdadeiro, o sistema exige a troca antes de liberar qualquer coisa —
     # senha que o admin conhece não é senha da pessoa.
+    # Tema de interface escolhido. Fica na CONTA (e nao so no navegador)
+    # para acompanhar a pessoa: trocar de computador nao deveria
+    # obrigar a reconfigurar a tela.
+    tema: Mapped[str | None] = mapped_column(String(20))
+    # Cor de destaque — o SEGUNDO eixo visual, independente do claro/escuro.
+    paleta: Mapped[str | None] = mapped_column(String(20))
+    # Cor de fundo — terceiro eixo, independente do destaque.
+    fundo: Mapped[str | None] = mapped_column(String(20))
+
     senha_temporaria: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # Cadastro do MFA exigido no primeiro acesso. Vale para conta nova (local
     # ou AD): quem entra pela primeira vez precisa registrar a segunda etapa.
