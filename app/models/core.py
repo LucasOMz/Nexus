@@ -602,6 +602,16 @@ class LogAuditoria(CreatedAtMixin, Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
+    # --- Cadeia de integridade --------------------------------------------
+    # Cada entrada guarda o hash da anterior. Alterar uma linha no banco
+    # quebra a cadeia a partir dela, e a verificação acusa o ponto exato.
+    #
+    # Nulos nas linhas gravadas ANTES deste campo existir: elas continuam
+    # legíveis, e a verificação começa a partir da primeira com hash — sem
+    # acusar violação onde só houve atualização de versão.
+    hash_anterior: Mapped[str | None] = mapped_column(String(64))
+    hash: Mapped[str | None] = mapped_column(String(64), index=True)
+
     usuario: Mapped[Usuario | None] = relationship()
 
 

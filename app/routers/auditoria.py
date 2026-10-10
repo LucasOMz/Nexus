@@ -192,3 +192,103 @@ def resumo(db: Session = Depends(get_db), _: Usuario = Depends(require_admin)) -
         "ultimos_7_dias": recentes,
         "ultimo_em": ultimos.created_at.isoformat() if ultimos else None,
     }
+
+
+# ===========================================================================
+# Integridade da cadeia
+# ===========================================================================
+@router.get("/integridade")
+def integridade(
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(require_admin),
+    limite: int = Query(default=0, ge=0, le=100000,
+                        description="0 = verifica a cadeia inteira"),
+) -> dict:
+    """Confere se o log foi adulterado.
+
+    ## O que isto responde
+
+    O log de auditoria diz quem fez o quê. Mas um log que pode ser editado
+    não serve para auditar — quem tem acesso ao banco apaga a linha que o
+    incrimina.
+
+    Cada entrada guarda o hash da anterior. Alterar uma linha quebra a
+    cadeia a partir dela, e esta rota aponta **onde**.
+
+    Verifica a cadeia INTEIRA por padrão: a auditoria é a trilha de
+    responsabilidade, e uma janela parcial poderia esconder a adulteração
+    que importa.
+    """
+    from app.services import auditoria_cadeia as cadeia
+
+    q = (
+        db.query(LogAuditoria)
+        # Só as linhas COM hash: as anteriores a este recurso não participam
+        # da cadeia, e incluí-las acusaria violação onde só houve atualização
+        # de versão.
+        .filter(LogAuditoria.hash.isnot(None))
+        .order_by(LogAuditoria.id)
+    )
+    if limite:
+        q = q.limit(limite)
+    logs = q.all()
+
+    if not logs:
+        return {
+            "integra": True,
+            "total": 0,
+            "verificados": 0,
+            "motivo": None,
+            "mensagem": (
+                "Nenhuma entrada com assinatura ainda. A cadeia começa a "
+                "partir do próximo registro de auditoria."
+            ),
+        }
+
+    registros = [
+        {**cadeia.registro_do_log(x), "hash": x.hash, "hash_anterior": x.hash_anterior}
+        for x in logs
+    ]
+    r = cadeia.verificar(registros)
+
+    # Quantas entradas existem no total, incluindo as sem hash — a tela
+    # precisa dizer que a cobertura não é tudo.
+    total_geral = db.query(LogAuditoria).count()
+
+    if r.get("integra"):
+        return {
+            **r,
+            "total": total_geral,
+            "sem_assinatura": total_geral - len(logs),
+            "mensagem": (
+                f"Cadeia íntegra: {len(logs)} entrada(s) conferida(s). "
+                "Nenhum registro foi alterado desde que foi gravado."
+            ),
+        }
+
+    # Quando rompe, diz QUAL entrada — e o que ela continha, para a
+    # investigação começar pelo lugar certo.
+    i = r.get("indice") or 0
+    quebrada = logs[i] if i < len(logs) else None
+    return {
+        **r,
+        "total": total_geral,
+        "sem_assinatura": total_geral - len(logs),
+        "confirmados": i,
+        "entrada": (
+            {
+                "id": quebrada.id,
+                "acao": quebrada.acao,
+                "entidade": quebrada.entidade,
+                "entidade_id": quebrada.entidade_id,
+                "usuario_id": quebrada.usuario_id,
+                "created_at": quebrada.created_at,
+            }
+            if quebrada else None
+        ),
+        "mensagem": (
+            f"A CADEIA FOI ROMPIDA na entrada {r.get('registro_id') or quebrada.id if quebrada else '?'}. "
+            f"{r.get('detalhe') or ''} "
+            f"As {i} entrada(s) anteriores estão íntegras — a alteração começa aqui."
+        ),
+    }

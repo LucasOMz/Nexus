@@ -12,7 +12,7 @@ por `json_safe` antes de ser gravado.
 from __future__ import annotations
 
 import enum
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -20,6 +20,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.models.core import LogAuditoria, Usuario
+from app.services.auditoria_cadeia import GENESIS, calcular_hash, registro
 
 
 def json_safe(valor: Any) -> Any:
@@ -69,19 +70,67 @@ def audit(
     ip: str | None = None,
     diff: dict[str, Any] | None = None,
 ) -> None:
-    """Grava uma entrada de auditoria. Nunca lança exceção (fail-safe)."""
+    """Grava uma entrada de auditoria, encadeada à anterior.
+
+    Nunca lança exceção (fail-safe) — mas isso significa que, se a cadeia
+    não puder ser calculada, a entrada entra **sem** hash. É o mal menor:
+    derrubar um cadastro porque a auditoria falhou seria pior, e a
+    verificação sinaliza a lacuna em vez de escondê-la.
+    """
     try:
-        db.add(
-            LogAuditoria(
-                usuario_id=usuario.id if usuario else None,
-                acao=acao,
-                entidade=entidade,
-                entidade_id=entidade_id,
-                ip=ip,
-                diff=json_safe(diff) if diff is not None else None,
-            )
+        seguro = json_safe(diff) if diff is not None else None
+
+        # Hash da última entrada COM hash. Ordena por `id`, e não por
+        # `created_at`: duas gravações no mesmo segundo empatariam, e a
+        # ordem da cadeia passaria a depender do banco.
+        #
+        # `hash IS NOT NULL` também ignora as linhas gravadas antes deste
+        # recurso existir — a cadeia começa na primeira com hash, sem
+        # acusar violação onde só houve atualização de versão.
+        ultima = (
+            db.query(LogAuditoria.hash)
+            .filter(LogAuditoria.hash.isnot(None))
+            .order_by(LogAuditoria.id.desc())
+            .first()
         )
-        # commit é responsabilidade do chamador; aqui apenas enfileira.
+        anterior = (ultima[0] if ultima else None) or GENESIS
+
+        # A data é fixada aqui, e não pelo `server_default`: o valor precisa
+        # ser o MESMO que entra no hash e o que vai para a coluna.
+        agora = datetime.now(timezone.utc)
+
+        linha = LogAuditoria(
+            usuario_id=usuario.id if usuario else None,
+            acao=acao,
+            entidade=entidade,
+            entidade_id=entidade_id,
+            ip=ip,
+            diff=seguro,
+            created_at=agora,
+        )
+        db.add(linha)
+        # O flush vem ANTES do hash: o `id` faz parte do que é hasheado, e
+        # ele só existe depois que o banco atribui. Hashear sem o id faria a
+        # verificação acusar "conteúdo alterado" em toda a cadeia.
+        db.flush()
+
+        linha.hash_anterior = anterior
+        linha.hash = calcular_hash(
+            {
+                "id": linha.id,
+                **registro(
+                    usuario_id=usuario.id if usuario else None,
+                    acao=acao, entidade=entidade, entidade_id=entidade_id,
+                    ip=ip, diff=seguro, created_at=agora,
+                ),
+            },
+            anterior,
+        )
+        # Segundo flush: grava o hash e deixa a PRÓXIMA chamada enxergá-lo.
+        # Sem ele, duas auditorias no mesmo request encadeariam no mesmo
+        # hash anterior e a cadeia nasceria quebrada.
+        db.flush()
+        # commit é responsabilidade do chamador.
     except Exception:  # pragma: no cover - auditoria nunca deve derrubar o request
         pass
 

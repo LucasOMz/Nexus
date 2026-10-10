@@ -50,6 +50,70 @@ def calcular_hash(registro: dict[str, Any], hash_anterior: str) -> str:
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
+# Campos que entram no hash. A ORDEM não importa (`sort_keys`), mas o
+# CONJUNTO e o TIPO sim: gravação e verificação precisam montar o mesmo
+# dicionário, senão todo registro pareceria adulterado.
+CAMPOS = ("usuario_id", "acao", "entidade", "entidade_id", "ip", "diff", "created_at")
+
+
+def registro(
+    usuario_id: int | None,
+    acao: str,
+    entidade: str,
+    entidade_id: int | None,
+    ip: str | None,
+    diff: dict[str, Any] | None,
+    created_at: datetime,
+) -> dict[str, Any]:
+    """Monta o dicionário que é hasheado — a forma canônica da entrada.
+
+    `created_at` vira texto de segundos, SEM fuso, de propósito.
+
+    O valor gravado é consciente do fuso (`+00:00`), mas o SQLite devolve a
+    data **sem** fuso — e o `isoformat()` das duas formas não bate. O hash
+    então acusaria "conteúdo alterado" em toda a cadeia, logo depois de
+    gravada. `strftime` ignora o fuso e dá o mesmo texto nos dois sentidos,
+    e nos dois bancos.
+
+    Os segundos bastam: o que se detecta aqui é troca de conteúdo, e a
+    identidade da linha já vem do `id`.
+    """
+    return {
+        "usuario_id": usuario_id,
+        "acao": acao,
+        "entidade": entidade,
+        "entidade_id": entidade_id,
+        "ip": ip,
+        "diff": diff,
+        "created_at": (
+            created_at.strftime("%Y-%m-%dT%H:%M:%S")
+            if hasattr(created_at, "strftime") else created_at
+        ),
+    }
+
+
+def registro_do_log(log: Any) -> dict[str, Any]:
+    """O mesmo dicionário, a partir de uma linha de `LogAuditoria`.
+
+    Inclui o `id`: ele faz parte do que é hasheado (ver `audit_service`).
+    Se um campo novo entrar na cadeia, precisa entrar nos DOIS lados —
+    aqui e em `registro()` —, senão a verificação acusaria adulteração em
+    tudo.
+    """
+    return {
+        "id": log.id,
+        **registro(
+            usuario_id=log.usuario_id,
+            acao=log.acao,
+            entidade=log.entidade,
+            entidade_id=log.entidade_id,
+            ip=log.ip,
+            diff=log.diff,
+            created_at=log.created_at,
+        ),
+    }
+
+
 def encadear(registros: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Percorre a lista e devolve cada registro com seus dois hashes.
 

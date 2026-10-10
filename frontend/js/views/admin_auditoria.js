@@ -40,6 +40,74 @@ function verDiff(log) {
   });
 }
 
+/**
+ * Painel de integridade da cadeia.
+ *
+ * O log diz quem fez o quê. Mas um log que pode ser **editado** não serve
+ * para auditar — quem tem acesso ao banco apaga a linha que o incrimina.
+ *
+ * Cada entrada guarda o hash da anterior, e este painel confere a cadeia.
+ * O botão é explícito (e não automático) porque a verificação percorre o log
+ * inteiro: numa base grande, não é algo para rodar a cada abertura de tela.
+ */
+function painelIntegridade() {
+  const caixa = el("div", { style: "margin-top:16px" });
+  const botao = el("button", {
+    class: "btn tonal", type: "button",
+    onclick: async () => {
+      botao.disabled = true;
+      botao.textContent = "Conferindo…";
+      caixa.innerHTML = "";
+      try {
+        const d = await api.get("/admin/auditoria/integridade");
+        caixa.append(resultadoIntegridade(d));
+      } catch (e) {
+        caixa.append(el("div", { class: "recado erro" }, e.message));
+      }
+      botao.disabled = false;
+      botao.textContent = "Conferir integridade";
+    },
+  }, "Conferir integridade");
+
+  caixa.append(
+    el("p", { class: "muted", style: "font-size:12.5px;margin:0 0 10px" },
+      "Confere se algum registro foi alterado ou apagado depois de gravado. "
+      + "Cada entrada carrega a assinatura da anterior — mudar uma linha "
+      + "quebra a cadeia a partir dela."),
+    botao,
+  );
+  return caixa;
+}
+
+function resultadoIntegridade(d) {
+  if (d.integra) {
+    return el("div", { class: "recado ok" },
+      el("b", {}, "Cadeia íntegra."),
+      ` ${d.verificados} entrada(s) conferida(s)`,
+      d.sem_assinatura
+        // Não esconder a lacuna: instalação que já existia tem log gravado
+        // antes deste recurso, e essas linhas não participam da cadeia.
+        ? ` · ${d.sem_assinatura} anterior(es) a este recurso, sem assinatura`
+        : "",
+      ".");
+  }
+
+  const e = d.entrada;
+  return el("div", { class: "recado erro" },
+    el("b", {}, "A cadeia foi rompida."),
+    el("div", { style: "margin-top:6px" }, d.mensagem),
+    e
+      ? el("div", { style: "margin-top:8px;font-size:13px" },
+          `Entrada ${e.id}: ${e.acao} — ${e.entidade}`
+          + (e.entidade_id ? ` #${e.entidade_id}` : "")
+          + (e.created_at ? ` · ${fmtDate(e.created_at, true)}` : ""))
+      : null,
+    el("div", { style: "margin-top:8px;font-size:12.5px" },
+      `${d.confirmados ?? 0} entrada(s) antes dela estão íntegras — `
+      + "a alteração começa neste ponto."),
+  );
+}
+
 async function renderLista(root, opcoes) {
   const alvo = root.querySelector("#auditoria-lista") || root;
   alvo.innerHTML = "";
@@ -121,6 +189,7 @@ export async function renderAuditoria(root) {
       el("p", { style: "margin:14px 0 0;font-weight:600" },
         `${resumo.total ?? 0} registro(s) · ${resumo.ultimos_7_dias ?? 0} nos últimos 7 dias`
         + (resumo.ultimo_em ? ` · último em ${fmtDate(resumo.ultimo_em, true)}` : "")),
+      painelIntegridade(),
     ),
     el("div", { class: "card" },
       el("div", { class: "form-grid" },
