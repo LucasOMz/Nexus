@@ -22,6 +22,25 @@ from sqlalchemy.orm import Session
 from app.models.core import LogAuditoria, Usuario
 from app.services.auditoria_cadeia import GENESIS, calcular_hash, registro
 
+# Campos que NUNCA entram no diff da auditoria.
+#
+# A auditoria é encadeada por hash: o que entra nela não pode ser editado nem
+# apagado depois. Um segredo gravado aqui está vazado de forma permanente —
+# então a proteção precisa ser por NOME de campo, e valer para qualquer modelo
+# que venha a existir.
+#
+# Ver `serialize_entity` para o raciocínio completo.
+CAMPOS_PROTEGIDOS: frozenset[str] = frozenset({
+    # Chaves de licença de software (ver app/core/segredos.py)
+    "chave", "chave_cifrada", "chave_hash", "chave_impressao",
+    # Segredos de autenticação
+    "senha", "senha_hash", "password", "password_hash",
+    "totp_segredo", "mfa_segredo", "recovery_codes",
+    "token", "access_token", "refresh_token", "api_key", "secret",
+    # Chaves de integração
+    "ocs_senha", "ldap_senha", "smtp_senha",
+})
+
 
 def json_safe(valor: Any) -> Any:
     """Converte recursivamente qualquer valor em algo serializável em JSON.
@@ -136,8 +155,31 @@ def audit(
 
 
 def serialize_entity(entity: object) -> dict[str, Any]:
-    """Serializa um modelo para diff, ignorando campos não JSON-safe."""
+    """Serializa um modelo para diff, ignorando campos não JSON-safe.
+
+    ## 🚨 Por que há uma lista de exclusão
+
+    **O diff é permanente.** A auditoria é encadeada por hash: uma linha
+    gravada não pode ser editada nem apagada sem quebrar a corrente. Isso é o
+    que dá valor ao registro — e é o que torna um segredo vazado nele
+    **irrecuperável**.
+
+    Guardar o antes e o depois de `chave_cifrada` parece inofensivo (é o valor
+    cifrado), mas é errado por dois motivos:
+
+    1. **Não é o dado, é o rastro.** O operador não tem como ler a chave ali
+       para conferir nada — o diff só acumula ruído.
+    2. **A exceção vira a regra.** No dia em que alguém adicionar um campo
+       `chave` em claro, ele entra no diff automaticamente — e aí o vazamento
+       é permanente. A lista protege o campo de hoje **e o de amanhã**.
+
+    O nome do campo continua aparecendo com o marcador `<protegido>`, para o
+    registro dizer **que algo mudou** sem dizer o quê.
+    """
     out: dict[str, Any] = {}
     for col in entity.__table__.columns:  # type: ignore[attr-defined]
+        if col.name in CAMPOS_PROTEGIDOS:
+            out[col.name] = "<protegido>"
+            continue
         out[col.name] = json_safe(getattr(entity, col.name))
     return out

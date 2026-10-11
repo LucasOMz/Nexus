@@ -97,3 +97,69 @@ class TipoContrato(StrEnum):
     # fornecedor que empresta em troca de exclusividade de suprimentos.
     COMODATO = "comodato"
     COMPRA = "compra"
+
+
+class TipoLicenca(StrEnum):
+    """A natureza do direito de uso.
+
+    Muda o que faz sentido calcular, como `FormaAquisicao` faz para o
+    equipamento:
+
+    - **Perpétua** tem valor e vira ativo intangível. Não vence.
+    - **Assinatura** é serviço: o custo é mensal e o direito acaba quando o
+      pagamento para. Nunca vira patrimônio.
+    - **OEM** vem colada na máquina e **não pode ser transferida** — por isso
+      a atribuição dela precisa apontar para um ativo.
+    - **Volume** é um contrato de N atos: um número de série cobre vários seats.
+    - **Open source** não tem chave nem custo, mas é cadastrada para o
+      relatório de conformidade saber que o uso é legítimo.
+    """
+
+    PERPETUA = "perpetua"
+    ASSINATURA = "assinatura"
+    OEM = "oem"
+    VOLUME = "volume"
+    OPEN_SOURCE = "open_source"
+    TRIAL = "trial"
+
+
+class SituacaoLicenca(StrEnum):
+    """Onde a licença está na vida útil dela.
+
+    Diferente de "vencida": uma licença pode estar **suspensa** por decisão
+    (contrato em disputa, fim de projeto) antes de a data chegar — e o
+    relatório precisa distinguir as duas, porque a ação é diferente.
+    """
+
+    ATIVA = "ativa"
+    SUSPENSA = "suspensa"
+    EXPIRADA = "expirada"
+    CANCELADA = "cancelada"
+
+
+class PlataformaSoftware(StrEnum):
+    WINDOWS = "windows"
+    MACOS = "macos"
+    LINUX = "linux"
+    ANDROID = "android"
+    IOS = "ios"
+    WEB = "web"
+    # Para o que roda em qualquer lugar (navegador, Java, agente).
+    MULTIPLATAFORMA = "multiplataforma"
+
+
+class SituacaoConformidade(StrEnum):
+    """O resultado do cruzamento instalado × licenciado.
+
+    ## Por que "ocioso" existe
+
+    Comprar 50 seats e usar 31 é dinheiro parado. Um relatório que só acusa
+    excesso esconde a metade que ninguém procura — porque não há risco legal
+    nela, só financeiro.
+    """
+
+    CONFORME = "conforme"
+    EXCEDENTE = "excedente"      # instalado > licenciado — risco em auditoria
+    OCIOSO = "ocioso"            # instalado < licenciado — dinheiro parado
+    SEM_LICENCA = "sem_licenca"  # instalado e nenhuma licença cadastrada
+    NAO_INSTALADO = "nao_instalado"

@@ -58,6 +58,7 @@ from app.routers import (
     relatorios,
     reportes,
     scanner,
+    software,
     transferencias,
     zerados,
 )
@@ -279,6 +280,7 @@ if INSTALADO:
     app.include_router(contratos.router, prefix=API)
     app.include_router(lgpd.router, prefix=API)
     app.include_router(descarte.router, prefix=API)
+    app.include_router(software.router, prefix=API)
     app.include_router(transferencias.router, prefix=API)
 
 

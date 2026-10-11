@@ -45,6 +45,12 @@ from app.models.enums import (
 )
 from app.models.impressora import AtivoImpressora, LeituraContador, SuprimentoImpressora
 from app.models.ocs import ConfiguracaoOCS, SincronizacaoOCS
+from app.models.software import (
+    AtribuicaoLicenca,
+    Licenca,
+    Software,
+    SoftwareInstalado,
+)
 from app.models.ti import AtivoTI
 
 __all__ = [
@@ -52,6 +58,7 @@ __all__ = [
     "Ativo",
     "AtivoImpressora",
     "AtivoTI",
+    "AtribuicaoLicenca",
     "Base",
     "BaseModel",
     "Categoria",
@@ -73,6 +80,7 @@ __all__ = [
     "Fornecedor",
     "Imagem",
     "LeituraContador",
+    "Licenca",
     "Localizacao",
     "LogAuditoria",
     "Manutencao",
@@ -89,6 +97,8 @@ __all__ = [
     "QRZerado",
     "StatusAtivo",
     "StatusManut",
+    "Software",
+    "SoftwareInstalado",
     "SuprimentoImpressora",
     "TemplateEtiqueta",
     "Termo",
