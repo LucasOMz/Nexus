@@ -47,6 +47,7 @@ from app.schemas.software import (
     SoftwareOut,
 )
 from app.services import conformidade as conformidade_service
+from app.services import ocs_software
 from app.services.audit_service import audit, serialize_entity
 
 log = logging.getLogger(__name__)
@@ -499,3 +500,84 @@ def conformidade(db: Session = Depends(get_db),
                 for x in linhas],
         atualizado_em=r["atualizado_em"],
     )
+
+# ---------------------------------------------------------------------------
+# Coleta no OCS Inventory
+# ---------------------------------------------------------------------------
+def _config_ocs(db: Session):
+    """A configuração do OCS, ou None se ainda não houver."""
+    from app.models.ocs import ConfiguracaoOCS
+
+    return (
+        db.query(ConfiguracaoOCS)
+        .filter(ConfiguracaoOCS.deleted_at.is_(None))
+        .first()
+    )
+
+
+@router.get("/ocs/resumo")
+def ocs_resumo(db: Session = Depends(get_db),
+               user: Usuario = Depends(get_current_user)):
+    """O que já está gravado, sem refazer a coleta.
+
+    A `taxa_reconhecimento` é o indicador de saúde do módulo: baixa significa
+    que os padrões de reconhecimento estão fracos, e a conformidade vai
+    mostrar muito software como "sem licença".
+
+    Ler este número **antes** de concluir que há uso irregular evita caçar um
+    problema de licença que é, na verdade, problema de cadastro.
+    """
+    return ocs_software.resumo_do_banco(db)
+
+
+@router.post("/ocs/coletar", dependencies=[Depends(require_write)])
+def ocs_coletar(
+    limite: int | None = Query(default=None, ge=1, le=20000,
+                               description="Máquinas a processar (para testar)"),
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(get_current_user),
+):
+    """Puxa a lista de programas de cada máquina no OCS.
+
+    ## Operação pesada
+
+    Uma chamada ao OCS **por máquina**. Num parque de 5.000 são 5.000
+    requisições — por isso `limite` existe: dá para testar em 10 máquinas
+    antes de rodar no parque inteiro.
+
+    A lista de cada máquina é substituída, e não somada: programa
+    desinstalado precisa sair do relatório, senão a conformidade acusaria
+    instalações que não existem mais e o número só cresceria.
+    """
+    cfg = _config_ocs(db)
+    if cfg is None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "OCS Inventory não está configurado. Configure em "
+            "Administração → OCS Inventory.",
+        )
+
+    r = ocs_software.coletar(db, cfg, limite=limite)
+    audit(db, user, "coletar", "software_ocs", None, diff={"resumo": r.como_dict()})
+    db.commit()
+    return r.como_dict()
+
+
+@router.post("/ocs/reconhecer", dependencies=[Depends(require_write)])
+def ocs_reconhecer(db: Session = Depends(get_db),
+                   user: Usuario = Depends(get_current_user)):
+    """Recasa o já coletado com os padrões atuais.
+
+    ## Por que não basta rodar a coleta de novo
+
+    Ajustar um padrão em `Software` precisa refletir no que **já** está
+    gravado. Sem este endpoint a correção só valeria na próxima coleta — e o
+    operador concluiria que o ajuste não funcionou.
+
+    Não toca no OCS: trabalha só no banco, e por isso é rápido mesmo com
+    centenas de milhares de linhas.
+    """
+    mudados = ocs_software.aplicar_reconhecimento(db)
+    audit(db, user, "reconhecer", "software_ocs", None, diff={"mudados": mudados})
+    db.commit()
+    return {"reconhecidos": mudados, **ocs_software.resumo_do_banco(db)}
