@@ -1,700 +1,178 @@
 # Nexus
 
-O **Nexus** é um sistema web de gestão patrimonial com **dois inventários** (TI e Impressoras),
-**QR Code assinado HMAC-SHA256**, **impressão em impressora térmica** por
-dispositivo cadastrado (Raspberry Pi / compartilhamento / CUPS), **leitura por
-scanner físico**, **permissões granulares por usuário**, **banco de fotos** e
-PWA offline-first — em Material Design 3 com tema vermelho.
+**Controle de patrimônio de TI e impressoras.**
+
+Sabe quando alguém pergunta *"quantos notebooks nós temos?"* e ninguém sabe
+responder com certeza? O Nexus existe para isso não acontecer.
+
+Ele registra **o que a empresa tem**, **onde está**, **quem está usando** e
+**quanto custa** — e mantém isso atualizado sem depender da memória de
+ninguém.
 
 ---
 
-## 1. Funcionalidades
+## O que ele resolve
 
-### Navegação
-- **Login → Seleção de inventário**: ao entrar, o usuário escolhe qual inventário abrir (cards grandes de TI ou Impressoras). Só aparecem os inventários que ele pode acessar.
-- **Menu inicial do inventário**: tela com os módulos disponíveis e o botão **“Trocar inventário”** (volta para a seleção).
-- **Botão de menu no topo** em todas as telas, voltando sempre ao menu inicial do inventário.
-- Menu lateral (Navigation Rail no desktop / Bottom Nav no mobile) + botão de 3 barras com drawer.
+| A pergunta | A resposta no Nexus |
+|---|---|
+| Quantos equipamentos temos e onde estão? | Lista completa, por local, setor e responsável |
+| Quem está com este notebook? | Histórico de empréstimo, com data e devolução |
+| Quanto vale o nosso parque? | Valor de compra, depreciação e valor atual |
+| Quanto gastamos por mês? | Separa o que foi **comprado** do que é **alugado** |
+| Temos licença para todo esse software? | Cruza o instalado com o comprado |
+| Quais garantias estão vencendo? | Alerta de 90, 60 e 30 dias |
+| Quem apagou este equipamento do sistema? | Auditoria — todo registro tem autor e data |
 
-### Inventários
-- **Estoque/Ativos**: ativos patrimoniais (patrimônio, S/N, MAC) vs consumíveis (lote + mínimo). Status `estoque | reservado | em_uso | manutencao | descartado | emprestado`.
-- **Foto do ativo**: cada ativo pode receber uma imagem do Banco de Fotos, exibida na lista e no cartão de detalhe.
-- **Dashboard** por inventário: totais, alocados, manutenção, garantias 30/60/90d; extra TI (SO/RAM/departamento) e extra Impressoras (contador, custo/página, suprimentos baixos).
-- **Movimentações** e **Manutenções** (entidade própria, com anexos e transições de status).
-- **Atribuição** a colaboradores com **Termo de Responsabilidade em PDF** e **hash SHA-256**.
+---
 
-### QR Code, impressão e leitura
-- **QR Code assinado**: payload `TIATIVO:{id}:{ts}:{hmac_b64}` validado no servidor; geração individual e em massa.
-- **Dispositivos de impressão cadastráveis** (Administração → Impressão): informe o **hostname** (ex.: `RTAT0001`) e o **compartilhamento** (ex.: `\\RTAT0001\sip`), ou a URL do agente Raspberry, ou a fila do CUPS. Ao imprimir, o operador escolhe o dispositivo e o formato (ZPL/TSPL/PDF).
-- **Leitura por scanner físico** (sem câmera): o leitor digita o código e pressiona Enter; também é possível digitar o **patrimônio / nº de série** manualmente. Há o botão “Pronto para leitura”.
+## Os três inventários
 
-### Administração (somente admin)
-- **Usuários & permissões**: ao criar/editar um usuário, marque **quais inventários** ele acessa, **quais módulos** ficam liberados e se pode **criar/editar** e **excluir**. O backend aplica as mesmas regras (bloqueio real, não só visual).
-- **Dispositivos de impressão**: cadastro e edição do destino de impressão.
-- **Banco de Fotos** (estilo Zabbix): envie fotos, marque tags e reutilize nos ativos.
+O sistema separa o que é de naturezas diferentes, porque somar coisas
+diferentes produz número sem sentido:
+
+**🖥️ TI** — notebooks, desktops, monitores, periféricos.
+
+**🖨️ Impressoras** — equipamentos, suprimentos, contador de páginas.
+
+**💿 Software e licenças** — o que está instalado contra o que foi comprado.
+É o módulo que responde *"estamos em risco numa auditoria?"*
+
+---
+
+## O dia a dia
+
+### Chegar e registrar
+
+Cada equipamento recebe um **QR Code** que vai colado nele. A partir daí,
+basta ler com o celular para abrir a ficha — sem procurar patrimônio na lista.
+
+O QR pode ser **impresso em impressora térmica**, comum em almoxarifado, ou em
+folha comum.
+
+### Movimentar, emprestar, manter
+
+Três coisas que acontecem toda semana e que o sistema registra:
+
+- **Movimentação** — entrou, saiu, mudou de lugar
+- **Empréstimo** — quem levou, quando devolve (com aviso de atraso)
+- **Manutenção** — o que quebrou, o que foi feito, quanto custou
+
+### Conferir
+
+A **contagem** é o inventário físico: o sistema gera a lista, você percorre os
+locais conferindo item por item, e as divergências ficam registradas.
+
+### Dar baixa
+
+Quando um equipamento sai de vez, ele precisa de destino — venda, sucata,
+doação ou perda. O sistema emite um **certificado de descarte** com o motivo,
+o responsável e o destinatário.
+
+---
+
+## O que a gestão vê
+
+### Financeiro
+
+```
+Comprado (patrimônio)      Locado (serviço)      Software (assinatura)
+R$ 60.000                  R$ 8.500/mês          R$ 1.665/mês
+```
+
+**As três naturezas nunca são somadas.** Equipamento alugado não é patrimônio
+da empresa — não deprecia e não entra no valor. Somar tudo daria um "valor do
+parque" que não corresponde a nada.
 
 ### Relatórios
-- **Gráficos de inventário** (SVG puro, sem dependências): status (rosca), categoria, localização, departamento, valor patrimonial, garantias (30/60/90), movimentações por mês (entradas x saídas), manutenções, SO/RAM (TI) e contador/suprimentos (Impressoras).
-- **Exportação CSV/PDF** de inventário, ativos por usuário, movimentações, manutenções, garantias e consumíveis abaixo do mínimo + **filtros salvos**.
 
-### Segurança e plataforma
-- **JWT** (access 15min + refresh 7d), **bcrypt**, papéis `admin|ti|leitor|auditor` e **permissões por usuário**, rate limit em `/login` e `/scan`, auditoria de mutações (diff + IP), headers de segurança, soft delete (LGPD).
-- **PWA** instalável e offline-first (service worker cache-first + fila IndexedDB).
+Gráficos de composição, distribuição por setor, garantias vencendo e a
+evolução dos custos.
 
----
+Os **filtros valem para o relatório inteiro** — período, unidade, forma de
+aquisição e contrato. Não existe gráfico filtrado ao lado de gráfico sem
+filtro: os números pareceriam certos e não seriam.
 
-## 2. Estrutura
+### Contratos de locação
 
-```
-estoque-qr/
-├── app/
-│   ├── main.py            # FastAPI: CORS, headers, routers, static, health
-│   ├── config.py          # pydantic-settings (.env)
-│   ├── database.py        # engine/sessão SQLAlchemy 2.0
-│   ├── core/              # security, deps (roles+permissões), permissoes, rate limit
-│   ├── models/            # base, enums, core (usuario/imagem/dispositivo), ti, impressora
-│   ├── schemas/           # Pydantic v2 (estrito)
-│   ├── services/          # qr_service (HMAC), print_service, audit, pdf, counter
-│   └── routers/           # auth, cadastros, dashboard, produtos, ativos,
-│                          # movimentacoes, manutencoes, qrcode, print, scanner,
-│                          # relatorios, graficos, admin
-├── frontend/
-│   ├── index.html, styles.css, manifest.json, sw.js, app.js
-│   ├── js/                # api, state, router, ui, offline, lookups, charts, views/*
-│   └── icons/             # ícones PWA
-├── alembic/               # migrações (env.py ligado aos modelos)
-├── tests/                 # pytest
-├── schema.sql             # DDL PostgreSQL 16 (ENUM nativo, MACADDR, triggers)
-├── raspberry_print_agent.py
-├── docker-compose.yml
-├── Dockerfile
-└── requirements.txt
-```
+O custo mensal é **do contrato**, e o valor por equipamento é calculado
+dividindo pelos ativos vivos. Devolver um equipamento não reduz a fatura — o
+custo dos que ficam sobe, e o sistema mostra isso atualizado.
+
+Quando o contrato vence, aparece no sino. Se houver opção de compra, o
+equipamento passa de locado para comprado sem perder o histórico.
 
 ---
 
-## 3. Rodando do zero (desenvolvimento, sem Docker)
+## Segurança
 
-> Pré-requisitos: Python 3.11+.
+**Cada pessoa vê o que precisa.** Um técnico pode ter acesso a Ativos e
+Manutenções sem ver o Financeiro. As permissões são configuradas usuário por
+usuário.
 
-### 3.1 Opção rápida (scripts prontos)
+**Nada é apagado de verdade.** Uma exclusão fica registrada com autor e data,
+e o registro original é preservado.
 
-| Sistema | Comando |
+**A auditoria não pode ser editada.** Cada lançamento é encadeado
+matematicamente ao anterior — alterar uma linha quebra a corrente, e a
+verificação acusa.
+
+**Chaves de licença são tratadas como senha.** Ficam cifradas, aparecem
+mascaradas na tela, e revelar uma exige permissão própria — com registro de
+quem revelou e quando.
+
+**Verificação em duas etapas** disponível, com aplicativo autenticador.
+
+---
+
+## Quem usa o quê
+
+| Perfil | O que faz |
 |---|---|
-| Windows (duplo-clique) | `run.bat` |
-| Windows (PowerShell) | `.\run.ps1` |
-| Linux / macOS / Raspberry | `./run.sh` |
-
-O script escolhe o ambiente automaticamente (`.venv` → `.vendor` → cria o
-`.venv` e instala as dependências), sobe o servidor e mostra a URL e o login.
-Para outra porta: `.\run.ps1 -Port 9000` ou `PORT=9000 ./run.sh`.
-
-Depois abra **http://127.0.0.1:8000** e entre com:
-
-- **E-mail:** `admin@empresa.com`
-- **Senha:** `admin123`
-
-### Acessar de outra máquina (pelo IP)
-
-O servidor sobe escutando em `0.0.0.0` — ou seja, aceita acesso da rede. O
-próprio script mostra os endereços:
-
-```
-Neste computador :  http://127.0.0.1:8000
-Na rede local    :  http://192.168.7.12:8000
-```
-
-No celular ou em outra máquina, use o endereço **"Na rede local"**.
-
-Para restringir a este computador apenas (mais seguro): `.\run.ps1 -Local`.
-
-**Se outra máquina (ou o celular) não abrir**, verifique nesta ordem:
-
-1. **O firewall do Windows.** O script avisa quando não encontra regra. Libere
-   como Administrador:
-
-   ```powershell
-   New-NetFirewallRule -DisplayName "Nexus" -Direction Inbound `
-       -Protocol TCP -LocalPort 8000 -Action Allow
-   ```
-
-2. **Estão na mesma rede?** Compare o IP do computador (acima) com o do celular
-   (Configurações → Wi-Fi → detalhes). Precisam começar igual: `192.168.7.x`.
-
-3. **O celular está no Wi-Fi**, e não nos dados móveis?
-
-4. **Wi-Fi de visitantes / isolamento de clientes.** Redes de convidados e
-   algumas redes corporativas isolam os dispositivos: o celular não alcança o
-   PC. Teste com outro computador na rede com fio.
-
-5. **Teste rápido de conectividade** (no celular, pelo navegador):
-   `http://SEU-IP:8000/health` deve responder algo como
-   `{"status":"ok","database":true}`. Se não responder nada, é rede/firewall —
-   não é o sistema.
-
-### 3.2 Passo a passo manual
-
-```bash
-cd estoque-qr
-
-# 1. Ambiente virtual
-python -m venv .venv
-# Windows:
-.venv\Scripts\activate
-# Linux/macOS:
-source .venv/bin/activate
-
-# 2. Dependências
-pip install -r requirements.txt
-
-# 3. Configuração (opcional — já há padrões seguros para dev)
-copy .env.example .env        # Windows
-# cp .env.example .env         # Linux/macOS
-
-# 4. Sobe a API (cria as tabelas e o usuário admin automaticamente)
-uvicorn app.main:app --reload
-```
-
-> Não é preciso baixar nenhuma biblioteca de frontend: o scanner usa **leitor
-> físico** (teclado) ou digitação manual, e os gráficos são SVG puro — sem
-> dependências externas.
-
-> **O `python -m venv` falhou / o venv ficou sem `pip`?** Acontece com o Python
-> da Microsoft Store (o `ensurepip` dele falha). Use o `run.ps1`, que instala o
-> `pip` via `get-pip.py` automaticamente, ou instale o Python em
-> https://www.python.org/downloads/.
-
-> O padrão do `.env.example` usa SQLite (`sqlite:///./estoque.db`) para o dev
-> rodar com **zero infraestrutura**. Em produção use PostgreSQL (seção 4).
-
-### Testes
-
-```bash
-pip install -r requirements-dev.txt
-pytest -q
-```
+| **Almoxarifado / TI** | Cadastra, movimenta, empresta, abre manutenção, imprime etiquetas |
+| **Gestão** | Acompanha custos, contratos, garantias e relatórios |
+| **Administrador** | Cria usuários, define permissões, configura o sistema |
+| **Auditoria** | Consulta o histórico sem poder alterar nada |
 
 ---
 
-## 4. Produção com Docker Compose (PostgreSQL 16 + Nginx)
+## Como começar
 
-```bash
-cd estoque-qr
-# Ajuste .env com segredos fortes (JWT_SECRET, QR_HMAC_SECRET, senha admin)
-docker compose up -d --build
+**Instalação em um comando** (Windows):
+
+```
+run.bat
 ```
 
-Sobe `api` + `postgres:16` + `nginx`. A API roda em `:8000` e o Nginx em `:80`
-(reverso para a API). Para HTTPS Let's Encrypt, descomente os blocos em
-`nginx/nginx.conf` e emita o certificado com certbot.
+O sistema sobe, cria a base e exibe o endereço de acesso. No primeiro acesso,
+use o usuário administrador e **troque a senha** — o sistema pede.
 
-> Migrações: o `AUTO_CREATE_TABLES=true` cria o schema no boot (prático para o
-> 1º deploy). Para fluxo versionado, gere a migração inicial e aplique:
-> ```bash
-> alembic revision --autogenerate -m "initial"
-> alembic upgrade head
-> ```
-> O `schema.sql` documenta o DDL otimizado de produção (ENUMs nativos, MACADDR,
-> JSONB e triggers de manutenção).
+**Primeiros passos depois de entrar:**
+
+1. Cadastre as **unidades** e os **setores** da empresa
+2. Crie os **usuários** e defina o que cada um pode ver
+3. Importe ou cadastre os equipamentos
+4. Imprima as **etiquetas** e cole nos equipamentos
+5. Faça a primeira **contagem** para conferir
 
 ---
 
-## 5. Impressão térmica (Windows, Raspberry Pi / CUPS)
+## Onde encontrar mais
 
-Há **três formas** de imprimir. Você escolhe em **Administração → Impressão**,
-cadastrando um *Dispositivo de Impressão*.
-
-### 5.1 Fila compartilhada — Windows e Linux (sem Raspberry)
-
-Se a impressora já está **compartilhada** em uma máquina Windows, não precisa de
-agente nem de CUPS. O **mesmo cadastro** vale nos dois sistemas:
-
-| Campo | Valor |
+| Assunto | Onde |
 |---|---|
-| Tipo | **Windows — fila compartilhada** |
-| Compartilhamento | `\\DTAT7777\SATO` |
-| Formato | `zpl` (Zebra) ou `tspl` (TSC/Elgin) |
-
-O envio é feito com os **bytes crus** (ZPL/TSPL), que é o que uma impressora de
-etiquetas entende:
-
-| Sistema | Como o sistema envia |
-|---|---|
-| **Windows** | Grava os bytes no caminho UNC; o **spooler** entrega à impressora — igual ao clássico `copy /b etiqueta.zpl \\DTAT7777\SATO` |
-| **Linux** | Envia pelo **`smbclient`** (protocolo de impressão SPOOLSS), já que no Linux não existe caminho UNC de impressora |
-
-**No Linux**, instale o cliente Samba:
-
-```bash
-apt install smbclient        # Debian/Ubuntu
-dnf install samba-client     # RHEL/Fedora
-```
-
-Se a fila exigir credenciais (o padrão tenta acesso anônimo):
-
-```env
-PRINT_SMB_USUARIO=DOMINIO\svc_impressao
-PRINT_SMB_SENHA=senha
-```
-
-**Requisitos nos dois sistemas:**
-
-1. A impressora precisa estar **compartilhada** na máquina de origem.
-2. A conta que executa o sistema precisa ter **permissão de impressão** na fila.
-3. Formato **ZPL ou TSPL** — fila crua não entende PDF (o sistema avisa).
-4. Não use em container Linux para uma fila Windows **sem** o `smbclient`
-   instalado na imagem.
-
-Depois de cadastrar, use **Imprimir teste** para validar.
-
-> **Alternativa no Linux (mais robusta):** criar uma fila no CUPS com a URI
-> `smb://usuario:senha@DTAT7777/SATO` e cadastrar o dispositivo com tipo
-> **CUPS**. Assim o próprio CUPS cuida das credenciais e do spool.
-> A opção "fila compartilhada" no Linux é um atalho que dispensa configurar o CUPS.
-
-### 5.2 Raspberry Pi (ou qualquer Linux) com CUPS
-
-No Raspberry Pi (ou qualquer Linux com CUPS):
-
-```bash
-# Instala dependências e o agente
-pip install fastapi uvicorn pydantic
-# Configure sua impressora térmica no CUPS (lpadmin -p zebra -E -v ... -m raw)
-python raspberry_print_agent.py          # escuta em 0.0.0.0:9100
-```
-
-Aponte `PRINT_AGENT_URL` no `.env` da API para `http://<IP-do-Pi>:9100`.
-
-O agente recebe `POST /print` com o conteúdo da etiqueta em base64 e o formato
-(`zpl`/`tspl`/`pdf`) e:
-
-1. Se `printer` for um host/IP e o formato for `zpl`/`tspl`, envia **bytes crus via socket** (impressora térmica em rede);
-2. Caso contrário, usa **CUPS** (`lp -d printer -n copies [-o raw]`).
-
-`GET /health` retorna o heartbeat e as impressoras CUPS disponíveis.
-
-### systemd (exemplo)
-
-```ini
-# /etc/systemd/system/raspberry-print.service
-[Unit]
-Description=Raspberry Print Agent
-After=network.target
-
-[Service]
-ExecStart=/usr/bin/python3 /opt/estoque/raspberry_print_agent.py
-Restart=always
-User=pi
-
-[Install]
-WantedBy=multi-user.target
-```
+| Instalação, Docker, servidor, impressão, backup | [docs/operacao.md](docs/operacao.md) |
+| Como o módulo de software funciona | [docs/software.md](docs/software.md) |
+| Como a locação funciona | [docs/locacao.md](docs/locacao.md) |
 
 ---
 
-## 6. Segurança
+## Requisitos
 
-- **JWT** access (15 min) + refresh (7 dias) com rotação e blacklist em memória (Redis opcional em multi-réplica).
-- **bcrypt** para senhas; **HMAC-SHA256** para o QR.
-- **Permissões por usuário** (`inventarios`, `modulos`, `pode_escrever`, `pode_excluir`) aplicadas no backend por `require_module` / `require_escrita` / `require_exclusao` — não é só ocultação visual.
-- **Papéis** (`admin | ti | leitor | auditor`) definem o padrão; o admin pode ajustar caso a caso.
-- **Rate limit** em `/auth/login` e `/scanner/buscar` (janela deslizante em memória).
-- **Auditoria append-only** (`logs_auditoria`) com diff JSON e IP em toda mutação.
-- **Headers** HSTS/CSP/X-Frame-Options/X-Content-Type-Options.
-- **LGPD**: soft delete em tudo + exportação de dados via relatórios.
+**Para usar:** um navegador. Funciona no computador e no celular, e pode ser
+instalado como aplicativo.
+
+**Para instalar:** Windows, Linux ou Docker. Python 3.11 ou superior.
+Impressora térmica é opcional — as etiquetas também saem em folha comum.
 
 ---
 
-## 7. Critérios de aceite (checklist)
-
-- [x] Login com seleção de inventário e retorno ao menu inicial em todas as telas
-- [x] CRUD completo nos dois inventários
-- [x] QR com HMAC + validação server-side
-- [x] Dispositivo de impressão cadastrável (hostname + compartilhamento) e editável no admin
-- [x] Impressão individual e em massa
-- [x] Leitura por scanner físico (sem câmera) + digitação manual do identificador
-- [x] Dashboard com KPIs distintos por inventário
-- [x] Manutenção como entidade + histórico + anexos
-- [x] Termo PDF com hash de integridade
-- [x] Auth JWT + papéis + permissões granulares + auditoria de mutações
-- [x] Área de administração: usuários & permissões, impressão e banco de fotos
-- [x] Banco de fotos reutilizável e foto vinculada ao ativo
-- [x] Relatórios com gráficos de inventário + exportação CSV/PDF
-- [x] Assinatura de QR configurável, sem exigir reimpressão de etiquetas
-- [x] Login via AD/LDAP por grupo (ex.: `YM_ESTOQUE_TI`) configurável na tela
-- [x] Administrador local como exceção (não depende do AD)
-- [x] Etiquetas configuráveis com pré-visualização ao vivo, PDF e teste de impressão
-- [x] Backup com validação em banco temporário e restauração com travas
-- [x] Exportação/importação CSV total com remoção de duplicados
-- [x] PWA instalável, offline-first
-- [x] Navigation Rail (desktop) / Bottom Nav (mobile)
-- [x] Tema vermelho com fundo branco no claro e escuro avermelhado no dark
-- [x] Docker Compose sobe tudo com 1 comando
-
----
-
-## 8. Resetar o sistema (começar do zero)
-
-Para apagar os dados e voltar ao estado inicial (com o admin padrão), use o
-script de reset:
-
-| Sistema | Comando |
-|---|---|
-| Windows (duplo-clique) | `reset.bat` |
-| Windows (PowerShell) | `.\reset.ps1` |
-| Sem confirmação | `.\reset.ps1 -Forcar` |
-| Resetar tudo, incl. dependências | `.\reset.ps1 -Dependencias` |
-
-**O que ele apaga:** `estoque.db` (ativos, usuários, movimentações, manutenções)
-e a pasta `media/` (fotos, termos em PDF e anexos).
-
-**O que ele NÃO apaga:** o código e as dependências (`.venv` / `.vendor`) —
-a menos que use `-Dependencias`.
-
-O script avisa se o servidor ainda estiver rodando (o banco fica em uso) e
-tenta novamente algumas vezes, porque o Windows demora alguns segundos para
-liberar o arquivo depois de fechar o servidor.
-
-Depois do reset, o próximo start recria tudo sozinho, incluindo:
-
-- **E-mail:** `admin@empresa.com`
-- **Senha:** `admin123`
-
-### Resetar também o cache do NAVEGADOR
-
-O reset do servidor **não** limpa o cache do navegador. Depois de resetar, faça
-uma destas opções para garantir que ele carregue a versão mais recente:
-
-1. **Mais fácil:** abra o sistema numa **janela anônima / InPrivate** — ela não
-   tem service worker nem cache antigos.
-2. **Automático:** acesse `http://127.0.0.1:8000/?reset=1` — essa URL limpa o
-   service worker, os caches e a sessão local, e recarrega sozinha.
-3. **Manual:** `F12` → **Application** → **Service Workers** → *Unregister*;
-   e em **Storage** → *Clear site data* → recarregue.
-
-> No menu lateral (botão de 3 barras) existe o item **“Atualizar aplicativo”**,
-> que faz a mesma limpeza sem precisar do DevTools.
-
-### Atualizando de uma versão anterior (schema do banco)
-
-O schema ganhou tabelas e colunas novas (`imagens`, `dispositivos_impressao`,
-`ativos.foto_id`, `usuarios.permissoes`). Em desenvolvimento, o caminho mais
-simples é o reset acima (`.\reset.ps1`), que apaga o `estoque.db` e deixa o
-sistema recriar.
-
-Em produção com PostgreSQL, use `alembic revision --autogenerate` /
-`alembic upgrade head`, ou rode o `schema.sql` atualizado.
-
----
-
-## 9. Recursos avançados
-
-### 9.1 Assinatura do QR Code (sem reimprimir etiquetas)
-
-O payload é `TIATIVO:{id}:{timestamp}:{hmac}`. A leitura **sempre resolve o
-ativo pelo ID que está dentro do payload** — então etiquetas já impressas
-continuam funcionando mesmo que o segredo mude.
-
-| Variável | Para que serve |
-|---|---|
-| `QR_EXIGIR_ASSINATURA` | `true` (padrão) exige assinatura válida. `false` aceita a etiqueta pelo ID mesmo com assinatura divergente |
-| `QR_HMAC_SECRETS_ANTERIORES` | Lista de segredos antigos aceitos na validação (separados por vírgula) — permite **trocar o segredo sem reimprimir nada** |
-
-Toda leitura passa pela auditoria com o campo `assinatura_valida`, então é
-possível saber quando alguém usou uma etiqueta sem assinatura conferida.
-
-> **Importante:** guarde o `QR_HMAC_SECRET` junto com o backup. Ele faz parte do
-> backup, não só o banco.
-
-### 9.2 Login pelo Active Directory (LDAP)
-
-Configurável em **Administração → Autenticação (AD)**, sem mexer em arquivo:
-
-- Servidor, porta, TLS/LDAPS e validação de certificado
-- Base DN e conta de serviço (a senha é gravada **cifrada** no banco)
-- Filtro de usuário (ex.: `(sAMAccountName={usuario})`)
-- **Grupo de acesso** (ex.: `YM_ESTOQUE_TI`) — quem estiver nele entra no sistema
-- Grupo de administradores (opcional)
-- Provisão automática no primeiro login
-
-Dois botões antes de ativar: **Testar conexão** e **Testar login de um usuário**
-(que informa se a pessoa autenticou *e* se pertence ao grupo).
-
-**O administrador local é a exceção:** `SEED_ADMIN_EMAIL` autentica pela senha do
-sistema e **não depende do grupo do AD** — é a rota de emergência se o AD cair.
-
-> A chave de cifragem é derivada do `JWT_SECRET`. Se você trocar o `JWT_SECRET`,
-> a senha da conta de serviço fica ilegível — basta recadastrá-la na tela.
-
-### 9.3 Etiquetas configuráveis
-
-Em **Administração → Etiquetas** você define, com **pré-visualização ao vivo**:
-
-- **Tamanho** (mm) com presets (100×50, 80×40, 60×40, 50×30, 40×25, 30×20)
-- **DPI da impressora** — 203/300/600. É o ajuste que mais causa etiqueta saindo
-  no tamanho errado: a 203 dpi são 8 dots/mm, a 300 dpi são 11,8
-- **QR**: exibir, posição (esquerda/direita), tamanho e correção de erro (L/M/Q/H)
-- **Texto**: título, rodapé, prefixo do patrimônio, fonte, alinhamento, margens
-- **Campos exibidos**: 17 opções (patrimônio, modelo, série, setor, IP, contador…)
-
-A geometria é calculada **uma única vez** e alimenta ZPL, TSPL, PDF e a
-pré-visualização — por isso o que aparece na tela corresponde à impressão.
-A tela ainda **avisa quando o texto não cabe** na largura.
-
-Três formas de saída:
-
-- **Imprimir teste** — manda uma etiqueta de exemplo (TIAT0001) no dispositivo escolhido
-- **Baixar PDF** — o PDF sai no tamanho exato e pode ser impresso em qualquer
-  impressora, inclusive de escritório
-- **Impressão normal** — pelo inventário, usando o template do dispositivo
-
-Cada **Dispositivo de Impressão** pode ter o seu template (a portátil e a de
-mesa costumam usar etiquetas diferentes).
-
-### 9.4 Backup e restauração
-
-Em **Administração → Backups**:
-
-- Lista dos backups com data, tamanho, versão da app e resumo das tabelas
-- Status: último backup e há quantas horas (alerta acima de 72 h)
-- **Criar backup agora**, **baixar** e **validar**
-- **Restaurar** com as travas: valida num banco temporário → exige a senha do
-  admin → exige digitar `RESTAURAR` → **gera um backup do estado atual antes**
-- A pasta é definida por `BACKUP_DIR` — aponte para o compartilhamento de rede
-  montado no host (ex.: `/mnt/backups`)
-
-A validação restaura o arquivo num **banco temporário**, confere as tabelas
-obrigatórias e mostra o que tem dentro ("1523 ativos, 42 usuários") **sem tocar
-no banco em uso**. Só depois de você aprovar a troca acontece.
-
-> As **fotos, termos e anexos** ficam na pasta `media/` — o backup do banco não
-> os inclui. O sistema avisa isso na tela de restauração.
-
-**Agendando (produção):** um `pg_dump` diário com rotação resolve melhor que
-"a cada 3 dias" (o cron não expressa 72 h de forma limpa, e reinicia na virada
-do mês). O `pg_dump -Fc` é o formato correto — **copiar o volume do PostgreSQL
-cru pode gerar backup inconsistente**.
-
-### 9.5 Exportar / importar CSV
-
-- **Exportar CSV total** baixa um `.zip` com um CSV por tabela + manifesto.
-  Usa nomes (patrimônio, SKU, e-mail, nome do departamento) em vez de IDs, para
-  o arquivo ser legível e reimportável.
-- **Importar CSV** sempre roda primeiro em **simulação**, mostrando o que seria
-  feito — novos, duplicados e ignorados por entidade.
-- Os **duplicados são removidos** pela chave natural de cada entidade:
-  patrimônio (ativos), SKU (produtos), e-mail (usuários), nome (departamentos,
-  localizações, fornecedores, categorias), e combinações para movimentações e
-  manutenções.
-- Opcionalmente, **atualizar** os registros existentes em vez de apenas ignorar.
-
-Esse é o caminho para recuperar dados do dia a dia **sem** restaurar o banco
-inteiro — o restore completo fica reservado para recuperação de desastre.
-
----
-
-### 9.6 Etiquetas em branco (cadastrar depois)
-
-Em **Leitura → Etiquetas em branco** você gera QR Codes **sem dono**: etiquetas
-"zeradas", para imprimir, colar no equipamento e cadastrar depois.
-
-1. Informe a **quantidade** e clique em *Gerar etiquetas em branco*.
-2. Escolha o destino: **impressora cadastrada** ou **PDF** (tamanho exato, para
-   imprimir em qualquer impressora).
-3. Cole a etiqueta no equipamento.
-4. Na janela de leitura, leia o código: o sistema abre o **cadastro do
-   equipamento já vinculado àquela etiqueta** — basta preencher e salvar.
-5. Da próxima vez, o mesmo código abre o ativo normalmente.
-
-Detalhes que valem saber:
-
-- O código impresso é curto e legível (ex.: `JXPM7P5FC8`), **sem caracteres
-  ambíguos** (`I`, `O`, `0`, `1`), para permitir digitação manual se o leitor
-  falhar.
-- Cada etiqueta só pode ser vinculada a **um** ativo. Tentar reutilizar devolve
-  uma mensagem dizendo qual equipamento já está com ela.
-- A tela mostra quantas etiquetas estão **livres** por lote, e o botão de
-  imprimir fica desabilitado quando o lote todo já foi usado.
-- O payload das etiquetas em branco é assinado com o **mesmo segredo** do QR
-  normal (`QR_HMAC_SECRET`), então as regras de assinatura valem igual.
-- O QR Code em branco **continua válido** mesmo se o `QR_HMAC_SECRET` mudar, desde
-  que o segredo antigo esteja em `QR_HMAC_SECRETS_ANTERIORES`.
-
-> Dica: gere os lotes em blocos pequenos (10 a 30). Se um lote inteiro for
-> perdido ou impresso errado, dá para excluir as etiquetas ainda **livres**.
-
----
-
-## 10. Levar para o servidor (o que copiar e o que NÃO copiar)
-
-**Não zipe a pasta inteira.** Três coisas dão problema:
-
-| Item | Por quê |
-|---|---|
-| `.vendor` (145 MB) | guarda bibliotecas **compiladas** e só funciona na mesma versão de Python em que foi criada. Copiada para o servidor, dá `ModuleNotFoundError: pydantic_core`. **Não copie** — instale lá. |
-| `.venv` | contém **caminhos absolutos** da máquina de origem. Copiado, simplesmente não funciona. **Nunca copie.** |
-| `__pycache__`, caches, logs | só engordam o pacote |
-
-E **três coisas não podem ficar de fora**, senão há perda de dados:
-
-| Item | Por quê |
-|---|---|
-| **`.env`** | segredos `JWT_SECRET` e `QR_HMAC_SECRET`. Sem o segredo do QR, **as etiquetas já impressas param de ser lidas** |
-| **`estoque.db`** | os dados (ou use PostgreSQL) |
-| **`media/`** | fotos, termos e anexos |
-
-### O caminho mais seguro
-
-```powershell
-# Na máquina de origem
-.\publicar.ps1                       # pacote completo, para MIGRAR
-.\publicar.ps1 -SemDados             # instalação limpa (sem dados nem .env)
-```
-
-O script monta o `.zip` com o que importa e **recusa** o que não deve ir,
-mostrando no fim o que entrou (inclusive avisando se o `.env` estiver faltando).
-
-```powershell
-# No servidor
-# 1) Instale o Python 3.11+ (marque "Add python.exe to PATH")
-# 2) Descompacte, por exemplo, em C:\estoque
-cd C:\estoque
-.\run.ps1 -Setup        # cria o .venv com as dependências desta máquina
-.\run.ps1               # teste rápido: abra http://127.0.0.1:8000
-```
-
-Depois agende o `run-servidor.ps1` (seção 11) e libere a porta no firewall:
-
-```powershell
-New-NetFirewallRule -DisplayName "Nexus" -Direction Inbound `
-    -Protocol TCP -LocalPort 8000 -Action Allow
-```
-
-> **`.vendor` só é útil** quando o servidor tem **exatamente** a mesma versão de
-> Python da origem. Na dúvida, use `-Setup`.
-
-### Antes de expor na rede, confira o `.env`
-
-Rodando sem `.env`, o sistema usa os **segredos padrão do código** — que são
-públicos. Isso permite forjar login e etiqueta. Gere os seus:
-
-```powershell
-python -c "import secrets; print(secrets.token_urlsafe(48))"
-```
-
-Ao trocar o `QR_HMAC_SECRET`, coloque o valor antigo em
-`QR_HMAC_SECRETS_ANTERIORES` — assim as etiquetas já coladas continuam válidas.
-
----
-
-## 11. Rodar como serviço (Windows Server)
-
-O `run.bat` é para **uso manual** (tem `pause` no fim). Para o Agendador de
-Tarefas, use o `run-servidor.ps1`, que:
-
-- não tem `pause` (a tarefa travaria esperando tecla);
-- escuta em `0.0.0.0` (aceita acesso de outras máquinas);
-- grava log em `logs\servidor-AAAA-MM-DD.log`;
-- reinicia sozinho se o processo cair.
-
-```powershell
-$acao    = New-ScheduledTaskAction -Execute "powershell.exe" `
-           -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\estoque\run-servidor.ps1"' `
-           -WorkingDirectory "C:\estoque"
-$gatilho = New-ScheduledTaskTrigger -AtStartup
-$conf    = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
-           -DontStopIfGoingOnBatteries -RestartCount 999 `
-           -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Days 0)
-Register-ScheduledTask -TaskName "GestaoPatrimonial" -Action $acao -Trigger $gatilho `
-           -Settings $conf -User "SYSTEM" -RunLevel Highest
-```
-
-Pontos de atenção no Agendador:
-
-| Configuração | Por quê |
-|---|---|
-| **"Executar estando o usuário conectado ou não"** | senão a tarefa só roda com sessão aberta |
-| **"Parar a tarefa se ela for executada por mais de..."** → desmarcar | o padrão de 3 dias derruba o servidor sozinho |
-| **"Reiniciar a tarefa se ela falhar"** | recupera de queda do processo |
-| Trigger **"Ao iniciar o sistema"** | sobe junto com o servidor |
-
-Defina `JWT_SECRET` e `QR_HMAC_SECRET` (≥32 caracteres) em `.env` ou nas
-variáveis de ambiente da máquina. Perder o `QR_HMAC_SECRET` inutiliza as
-etiquetas já impressas.
-
-## 12. Implantar no Portainer (Docker)
-
-No Portainer: **Stacks → Add stack → Web editor**, cole o `docker-compose.yml`.
-
-**Requisitos:**
-
-- Um host Docker **Linux** (ou uma VM Linux). A imagem é `python:3.12-slim`;
-  Docker Desktop não roda em Windows Server — nesse caso use uma VM Linux ou o
-  recurso de containers Linux do próprio Windows Server.
-- **Variáveis obrigatórias** no stack: `JWT_SECRET` e `QR_HMAC_SECRET`
-  (o compose falha de propósito se não forem informadas).
-- **Volumes persistentes** — `media` e `backups` já estão declarados. Sem eles,
-  fotos, termos, anexos e backups vivem dentro do container e **são perdidos**
-  ao recriar a stack.
-- Para backup em pasta de rede: monte o compartilhamento **no host** e troque o
-  volume `backups` por um bind mount (`- /mnt/backups/estoque:/app/backups`).
-  Não monte SMB dentro do container (exigiria `SYS_ADMIN`).
-- Portas `80`/`443` (nginx) e `8000` (API) livres, ou ajuste `API_PORT`.
-- O arquivo `nginx/nginx.conf` precisa existir no repositório clonado.
-
-> O banco é o serviço `db` (PostgreSQL 16). Para **restaurar** um backup no
-> container, o `pg_restore` precisa estar disponível — a imagem `python:3.12-slim`
-> não traz os utilitários do PostgreSQL. Se você for usar a restauração pela
-> tela, instale `postgresql-client` na imagem (ou rode o `pg_restore` pelo host).
-
----
-
-## 13. Solução de problemas
-
-### "Mudei/atualizei o sistema e o navegador continua mostrando a versão antiga"
-
-O PWA usa **service worker** para funcionar offline. Ele guarda os arquivos em
-cache — e uma versão antiga pode ficar presa no navegador.
-
-**Como resolver (1x):**
-1. Feche todas as abas do sistema.
-2. Abra `http://127.0.0.1:8000` e pressione **Ctrl + Shift + R** (recarga
-   forçada, sem cache).
-3. Se ainda aparecer a versão antiga: `F12` → aba **Application** →
-   **Service Workers** → **Unregister** → **Storage** → **Clear site data** →
-   recarregue.
-
-**Como saber em qual versão você está:** a tela de seleção de inventário (e o
-menu lateral) mostram **“Versão 2.0.0”** no rodapé. Se não aparecer essa linha,
-você ainda está na versão antiga em cache.
-
-### Para quem for alterar o frontend
-
-Sempre que mexer no frontend, **aumente a versão** em dois lugares para forçar
-a atualização nos navegadores:
-
-- `frontend/js/version.js` → `APP_VERSION`
-- `frontend/sw.js` → `const VERSION = "v3"` (o cache é nomeado `patrimonio-vN`)
-
-Ao mudar a versão do `sw.js`, o service worker novo assume, **apaga os caches
-antigos** e a página se recarrega sozinha.
-
-### Erro de banco ("no such column" / "relation does not exist")
-
-O schema mudou e o banco é antigo. Apague o `estoque.db` (seção 8).
-
-### "Address already in use" (porta 8000 ocupada)
-
-Já existe uma instância rodando. Feche o outro terminal (`CTRL + C`) ou verifique:
-
-```powershell
-Get-NetTCPConnection -State Listen | Where-Object LocalPort -eq 8000
-```
-
-### Verificar se o frontend está íntegro
-
-Ferramenta que importa todos os módulos JS e aponta import/export quebrado:
-
-```bash
-node tests/check_frontend_modules.mjs
-```
