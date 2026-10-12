@@ -230,6 +230,10 @@ class LinhaConformidade(BaseModel):
     situacao: SituacaoConformidade
     # Os nomes que o OCS reportou, para explicar POR QUE contou assim.
     origens: list[str] = Field(default_factory=list)
+    # Software que a empresa exige em toda máquina. Quando aparece com
+    # `instalado = 0`, é a pendência mais importante do relatório: alguém
+    # decidiu que deveria estar em todas, e não está em nenhuma.
+    obrigatorio: bool = False
 
 
 class ResumoConformidade(BaseModel):

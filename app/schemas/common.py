@@ -129,6 +129,15 @@ class Permissoes(BaseModel):
     pode_escrever: bool = False
     pode_excluir: bool = False
 
+    # Permissões que não são por módulo nem booleanas — hoje só
+    # `licencas.ver_chave`.
+    #
+    # Revelar a chave de uma licença é diferente de ver a licença: a maioria
+    # das pessoas precisa da primeira. Sem este campo o administrador não
+    # tinha COMO conceder o acesso — `extra="forbid"` recusava o envio, e o
+    # backend consultava algo que ninguém escrevia.
+    permissoes_extra: list[str] = []
+
 
 class UsuarioBase(SemVazios):
     model_config = ConfigDict(extra="forbid")

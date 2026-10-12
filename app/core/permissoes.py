@@ -90,6 +90,11 @@ def permissoes_efetivas(usuario: Any) -> dict[str, Any]:
         if custom.get(chave) is not None:
             efetivas[chave] = bool(custom[chave])
 
+    # Extras não são booleanas nem por módulo: passam como lista, e o padrão
+    # do papel não concede nenhuma. Sem esta linha, o valor gravado no
+    # usuário ficaria invisível para quem consulta `permissoes_efetivas`.
+    efetivas["permissoes_extra"] = list(custom.get("permissoes_extra") or [])
+
     # Admin nunca perde acesso.
     if papel == "admin":
         efetivas.update(

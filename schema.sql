@@ -452,4 +452,187 @@ FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_templates_updated_at BEFORE UPDATE ON templates_etiqueta
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
+-- ===========================================================================
+-- Software, licenças e locação
+-- ===========================================================================
+-- Duas frentes que chegaram depois do esquema original e nunca foram
+-- refletidas aqui: os CONTRATOS (locação de equipamento) e o inventário de
+-- SOFTWARE/LICENÇAS.
+--
+-- Uma instalação PostgreSQL que siga este arquivo ficava sem as tabelas — e
+-- só funcionava com `AUTO_CREATE_TABLES` ligado. Este bloco fecha isso.
+--
+-- Os `IF NOT EXISTS` permitem rodar sobre uma base que já tenha as tabelas
+-- criadas pelo SQLAlchemy: nada é sobrescrito nem perdido.
+
+-- --- Locação: colunas novas no ativo -------------------------------------
+-- `forma_aquisicao` nasce 'comprado' de propósito: todo ativo cadastrado
+-- antes deste campo existir foi tratado como comprado, e continua correto
+-- sem migração de dado.
+ALTER TABLE ativos
+    ADD COLUMN IF NOT EXISTS forma_aquisicao VARCHAR(20) NOT NULL DEFAULT 'comprado';
+ALTER TABLE ativos
+    ADD COLUMN IF NOT EXISTS contrato_id INTEGER;
+ALTER TABLE ativos
+    ADD COLUMN IF NOT EXISTS valor_residual NUMERIC(14, 2);
+
+-- --- Contratos -----------------------------------------------------------
+CREATE TABLE IF NOT EXISTS contratos (
+    id              SERIAL PRIMARY KEY,
+    numero          VARCHAR(80) NOT NULL UNIQUE,
+    tipo            VARCHAR(20) NOT NULL DEFAULT 'locacao',
+    planta_id       INTEGER REFERENCES plantas(id),
+    fornecedor_id   INTEGER REFERENCES fornecedores(id),
+    inicio          DATE NOT NULL,
+    fim             DATE,
+    valor_mensal    NUMERIC(14, 2),
+    valor_total     NUMERIC(14, 2),
+    dia_vencimento  INTEGER,
+    observacoes     TEXT,
+    deleted_at      TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- A FK do ativo para o contrato entra DEPOIS: na primeira execução a tabela
+-- `contratos` ainda não existia quando `ativos` foi criada.
+DO $$
+BEGIN
+    ALTER TABLE ativos
+        ADD CONSTRAINT fk_ativos_contrato
+        FOREIGN KEY (contrato_id) REFERENCES contratos(id);
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE INDEX IF NOT EXISTS ix_ativos_contrato ON ativos(contrato_id);
+CREATE INDEX IF NOT EXISTS ix_ativos_forma ON ativos(forma_aquisicao);
+
+-- --- Software ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS softwares (
+    id           SERIAL PRIMARY KEY,
+    nome         VARCHAR(200) NOT NULL,
+    fabricante   VARCHAR(120),
+    versao       VARCHAR(60),
+    categoria    VARCHAR(80),
+    plataforma   VARCHAR(20) NOT NULL DEFAULT 'windows',
+    descricao    TEXT,
+    -- Padrões de reconhecimento separados por ';', casados contra o nome que
+    -- o OCS reporta. Sem eles o cruzamento não acha nada — ver
+    -- app/services/conformidade.py.
+    padroes      TEXT,
+    site         VARCHAR(300),
+    obrigatorio  BOOLEAN NOT NULL DEFAULT false,
+    planta_id    INTEGER REFERENCES plantas(id),
+    deleted_at   TIMESTAMPTZ,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ix_softwares_nome ON softwares(nome);
+CREATE INDEX IF NOT EXISTS ix_softwares_fabricante ON softwares(fabricante);
+
+-- --- Licenças ------------------------------------------------------------
+-- ATENÇÃO: a chave NÃO é gravada em claro.
+--   chave_cifrada   → o valor, cifrado com a chave mestra (app/core/segredos.py)
+--   chave_versao    → qual chave mestra abriu aquele valor (rotação)
+--   chave_impressao → as 4 últimas posições, para conferência humana
+--   chave_hash      → SHA-256 normalizado, para achar duplicata SEM decifrar
+--
+-- A chave mestra NÃO fica neste banco: sem ela, estas colunas são
+-- irrecuperáveis, e é isso que impede que quem rouba o dump leia as licenças.
+CREATE TABLE IF NOT EXISTS licencas (
+    id               SERIAL PRIMARY KEY,
+    software_id      INTEGER NOT NULL REFERENCES softwares(id),
+    tipo             VARCHAR(20) NOT NULL,
+    situacao         VARCHAR(20) NOT NULL DEFAULT 'ativa',
+    chave_cifrada    BYTEA,
+    chave_versao     INTEGER NOT NULL DEFAULT 1,
+    chave_impressao  VARCHAR(8),
+    chave_hash       VARCHAR(64),
+    seats            INTEGER NOT NULL DEFAULT 1,
+    validade         DATE,
+    numero_pedido    VARCHAR(80),
+    fornecedor_id    INTEGER REFERENCES fornecedores(id),
+    -- Assinatura SaaS É locação: reusa o contrato, com mensalidade e
+    -- vencimento — e o alerta de vencimento que já existe.
+    contrato_id      INTEGER REFERENCES contratos(id),
+    valor            NUMERIC(14, 2),
+    valor_mensal     NUMERIC(14, 2),
+    data_compra      DATE,
+    observacoes      TEXT,
+    planta_id        INTEGER REFERENCES plantas(id),
+    deleted_at       TIMESTAMPTZ,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ix_licencas_software ON licencas(software_id);
+CREATE INDEX IF NOT EXISTS ix_licencas_validade ON licencas(validade);
+-- Índice no hash: a checagem de duplicata é por igualdade, e não pode
+-- exigir varredura da tabela inteira a cada cadastro.
+CREATE INDEX IF NOT EXISTS ix_licencas_chave_hash ON licencas(chave_hash);
+
+-- --- Software instalado (o que o OCS reporta) ----------------------------
+CREATE TABLE IF NOT EXISTS softwares_instalados (
+    id           SERIAL PRIMARY KEY,
+    ativo_id     INTEGER NOT NULL REFERENCES ativos(id),
+    -- O nome como o OCS mandou, SEM normalizar: é o que permite explicar
+    -- depois por que uma instalação contou (ou não) e corrigir o padrão.
+    nome         VARCHAR(300) NOT NULL,
+    versao       VARCHAR(80),
+    fabricante   VARCHAR(120),
+    dominio      VARCHAR(20),
+    origem       VARCHAR(40) NOT NULL DEFAULT 'ocs',
+    coletado_em  TIMESTAMPTZ,
+    -- Qual software cadastrado reconheceu esta instalação. Nulo = nenhum,
+    -- e nulo é o caso que vira "sem licença" no relatório.
+    software_id  INTEGER REFERENCES softwares(id),
+    deleted_at   TIMESTAMPTZ,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ix_instalados_ativo ON softwares_instalados(ativo_id);
+CREATE INDEX IF NOT EXISTS ix_instalados_nome ON softwares_instalados(nome);
+CREATE INDEX IF NOT EXISTS ix_instalados_software ON softwares_instalados(software_id);
+CREATE INDEX IF NOT EXISTS ix_instalados_dominio ON softwares_instalados(dominio);
+
+-- --- Atribuições ---------------------------------------------------------
+-- Uma licença aplicada numa MÁQUINA (Office LTSC, AutoCAD) ou numa PESSOA
+-- (Microsoft 365, Adobe CC). Exatamente um dos dois é preenchido — modelar
+-- só um caso obrigaria a inventar um "ativo virtual" para representar gente.
+CREATE TABLE IF NOT EXISTS atribuicoes_licenca (
+    id                SERIAL PRIMARY KEY,
+    licenca_id        INTEGER NOT NULL REFERENCES licencas(id),
+    ativo_id          INTEGER REFERENCES ativos(id),
+    usuario_id        INTEGER REFERENCES usuarios(id),
+    versao_instalada  VARCHAR(60),
+    data_atribuicao   DATE,
+    origem            VARCHAR(40),
+    observacoes       TEXT,
+    deleted_at        TIMESTAMPTZ,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT ck_atribuicao_um_dono
+        CHECK ((ativo_id IS NULL) <> (usuario_id IS NULL))
+);
+CREATE INDEX IF NOT EXISTS ix_atribuicoes_licenca ON atribuicoes_licenca(licenca_id);
+CREATE INDEX IF NOT EXISTS ix_atribuicoes_ativo ON atribuicoes_licenca(ativo_id);
+CREATE INDEX IF NOT EXISTS ix_atribuicoes_usuario ON atribuicoes_licenca(usuario_id);
+
+-- --- Gatilhos de updated_at ----------------------------------------------
+CREATE TRIGGER trg_contratos_updated_at BEFORE UPDATE ON contratos
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER trg_softwares_updated_at BEFORE UPDATE ON softwares
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER trg_licencas_updated_at BEFORE UPDATE ON licencas
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER trg_instalados_updated_at BEFORE UPDATE ON softwares_instalados
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER trg_atribuicoes_updated_at BEFORE UPDATE ON atribuicoes_licenca
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+
 COMMIT;

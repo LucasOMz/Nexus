@@ -16,6 +16,7 @@
  * @module views/software
  */
 import { api } from "../api.js";
+import { state } from "../state.js";
 import { ctx } from "../context.js";
 import { el, icon, toast, dialog, skeleton, mostrarErro } from "../ui.js";
 
@@ -301,8 +302,22 @@ async function abaLicencas(caixa) {
 
 function botaoChave(l) {
   if (!l.tem_chave) return el("span", { class: "muted" }, "—");
+
+  const mascara = el("code", { style: "font-size:11.5px" }, l.chave_mascarada);
+
+  // Sem a permissão, mostra a máscara e uma explicação — nunca um botão que
+  // só falha depois do clique.
+  if (!state.podeExtra("licencas.ver_chave")) {
+    return el("span", { class: "row", style: "gap:6px;align-items:center" },
+      mascara,
+      el("span", {
+        class: "muted", style: "font-size:11.5px",
+        title: "Peça a permissão licencas.ver_chave em Administração → Usuários",
+      }, "sem permissão"));
+  }
+
   return el("span", { class: "row", style: "gap:6px;align-items:center" },
-    el("code", { style: "font-size:11.5px" }, l.chave_mascarada),
+    mascara,
     el("button", {
       class: "btn text small", type: "button", title: "A consulta fica na auditoria",
       onclick: async (ev) => {

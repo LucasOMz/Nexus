@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.core.deps import get_current_user, require_write
 from app.core.pagination import paginate
+from app.core.planta import planta_ativa
 from app.database import get_db
 from app.models.core import Anexo, Ativo, Manutencao, Movimentacao, Usuario
 from app.models.enums import StatusAtivo, StatusManut, TipoMov
@@ -47,6 +48,30 @@ def _restaurar_status_ativo(db: Session, ativo: Ativo) -> str:
     return novo.value
 
 
+
+def _so_da_planta(q, modelo, db: Session, planta: int | None):
+    """Restringe a consulta aos registros de ativos da planta.
+
+    `planta is None` (administrador na visão consolidada) devolve a consulta
+    intacta — é o que permite ver todas as unidades de propósito.
+    """
+    if planta is None:
+        return q
+    return q.filter(
+        modelo.ativo_id.in_(
+            db.query(Ativo.id).filter(
+                Ativo.planta_id == planta, Ativo.deleted_at.is_(None)
+            )
+        )
+    )
+
+
+def _da_planta(q, modelo, registro_id: int, db: Session, planta: int | None):
+    """Busca UM registro conferindo a planta. `None` se não for visível."""
+    return _so_da_planta(
+        q.filter(modelo.id == registro_id), modelo, db, planta
+    ).first()
+
 @router.get("", response_model=Page[ManutencaoOut])
 def list_manutencoes(
     ativo_id: int | None = Query(default=None),
@@ -55,8 +80,9 @@ def list_manutencoes(
     size: int = Query(default=20, ge=1, le=200),
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
-):
+    planta: int | None = Depends(planta_ativa),):
     q = db.query(Manutencao).filter(Manutencao.deleted_at.is_(None))
+    q = _so_da_planta(q, Manutencao, db, planta)
     if ativo_id is not None:
         q = q.filter(Manutencao.ativo_id == ativo_id)
     if status is not None:
@@ -66,9 +92,10 @@ def list_manutencoes(
 
 
 @router.get("/{manut_id}", response_model=ManutencaoOut)
-def get_manutencao(manut_id: int, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
-    obj = db.get(Manutencao, manut_id)
-    if obj is None or obj.deleted_at is not None:
+def get_manutencao(manut_id: int, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user),
+planta: int | None = Depends(planta_ativa),):
+    obj = _da_planta(db.query(Manutencao), Manutencao, manut_id, db, planta)
+    if obj is None:
         raise HTTPException(404, "Manutenção não encontrada")
     return obj
 
@@ -96,10 +123,10 @@ def create_manutencao(
 
 @router.patch("/{manut_id}", response_model=ManutencaoOut)
 def update_manutencao(
-    manut_id: int, body: ManutencaoUpdate, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_write)
-):
-    manut = db.get(Manutencao, manut_id)
-    if manut is None or manut.deleted_at is not None:
+    manut_id: int, body: ManutencaoUpdate, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_write),
+    planta: int | None = Depends(planta_ativa),):
+    manut = _da_planta(db.query(Manutencao), Manutencao, manut_id, db, planta)
+    if manut is None:
         raise HTTPException(404, "Manutenção não encontrada")
     data = body.model_dump(exclude_unset=True)
     novo_status = data.get("status")
@@ -139,10 +166,10 @@ def update_manutencao(
 
 @router.delete("/{manut_id}", status_code=204)
 def delete_manutencao(
-    manut_id: int, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_write)
-):
-    manut = db.get(Manutencao, manut_id)
-    if manut is None or manut.deleted_at is not None:
+    manut_id: int, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_write),
+    planta: int | None = Depends(planta_ativa),):
+    manut = _da_planta(db.query(Manutencao), Manutencao, manut_id, db, planta)
+    if manut is None:
         raise HTTPException(404, "Manutenção não encontrada")
     manut.deleted_at = datetime.now(timezone.utc)
     audit(db, user, "delete", "manutencao", manut.id, ip=_ip(request))
@@ -159,9 +186,10 @@ async def upload_anexo(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     user: Usuario = Depends(require_write),
+    planta: int | None = Depends(planta_ativa),
 ):
-    manut = db.get(Manutencao, manut_id)
-    if manut is None or manut.deleted_at is not None:
+    manut = _da_planta(db.query(Manutencao), Manutencao, manut_id, db, planta)
+    if manut is None:
         raise HTTPException(404, "Manutenção não encontrada")
 
     os.makedirs(os.path.join(settings.media_dir, "anexos"), exist_ok=True)
@@ -187,7 +215,8 @@ async def upload_anexo(
 
 
 @router.get("/{manut_id}/anexos")
-def list_anexos(manut_id: int, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
+def list_anexos(manut_id: int, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user),
+planta: int | None = Depends(planta_ativa),):
     return db.query(Anexo).filter(Anexo.entidade == "manutencao", Anexo.entidade_id == manut_id, Anexo.deleted_at.is_(None)).all()
 
 

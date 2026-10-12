@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.deps import get_current_user, require_write
 from app.core.pagination import paginate
+from app.core.planta import planta_ativa
 from app.database import get_db
 from app.models.core import Ativo, Movimentacao, Produto, Usuario
 from app.models.enums import StatusAtivo, TipoMov
@@ -26,6 +27,30 @@ _ATIVO_STATUS_EFEITO = {
 }
 
 
+
+def _so_da_planta(q, modelo, db: Session, planta: int | None):
+    """Restringe a consulta aos registros de ativos da planta.
+
+    `planta is None` (administrador na visão consolidada) devolve a consulta
+    intacta — é o que permite ver todas as unidades de propósito.
+    """
+    if planta is None:
+        return q
+    return q.filter(
+        modelo.ativo_id.in_(
+            db.query(Ativo.id).filter(
+                Ativo.planta_id == planta, Ativo.deleted_at.is_(None)
+            )
+        )
+    )
+
+
+def _da_planta(q, modelo, registro_id: int, db: Session, planta: int | None):
+    """Busca UM registro conferindo a planta. `None` se não for visível."""
+    return _so_da_planta(
+        q.filter(modelo.id == registro_id), modelo, db, planta
+    ).first()
+
 @router.get("", response_model=Page[MovimentacaoOut])
 def list_movimentacoes(
     tipo: TipoMov | None = Query(default=None),
@@ -37,8 +62,9 @@ def list_movimentacoes(
     size: int = Query(default=20, ge=1, le=200),
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
-):
+    planta: int | None = Depends(planta_ativa),):
     q = db.query(Movimentacao).filter(Movimentacao.deleted_at.is_(None))
+    q = _so_da_planta(q, Movimentacao, db, planta)
     # Carrega os relacionados de uma vez: o histórico mostra nomes, e sem isto
     # cada linha faria sua própria consulta (N+1).
     q = q.options(
@@ -64,9 +90,10 @@ def list_movimentacoes(
 
 
 @router.get("/{mov_id}", response_model=MovimentacaoOut)
-def get_movimentacao(mov_id: int, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
-    obj = db.get(Movimentacao, mov_id)
-    if obj is None or obj.deleted_at is not None:
+def get_movimentacao(mov_id: int, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user),
+planta: int | None = Depends(planta_ativa),):
+    obj = _da_planta(db.query(Movimentacao), Movimentacao, mov_id, db, planta)
+    if obj is None:
         raise HTTPException(404, "Movimentação não encontrada")
     return obj
 

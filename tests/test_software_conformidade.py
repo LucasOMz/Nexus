@@ -130,10 +130,24 @@ class TestCalcular:
         return s
 
     def _instalado(self, db, nome, quantas, dominio="ti"):
+        """Grava `quantas` instalações, cada uma num ativo **de verdade**.
+
+        Usar um `ativo_id` inventado parecia mais simples, mas o relatório
+        junta com a tabela de ativos — para saber a planta, e para não contar
+        instalação de máquina que já não existe. Com id falso, a linha some e
+        o teste mede zero.
+        """
+        from app.models.core import Ativo, Planta
         from app.models.software import SoftwareInstalado
 
+        planta = db.query(Planta).first()
         for i in range(quantas):
-            db.add(SoftwareInstalado(nome=nome, ativo_id=900000 + i, dominio=dominio))
+            a = Ativo(dominio=dominio, tipo_item="ativo",
+                      patrimonio=f"INST-{nome[:6]}-{i}",
+                      planta_id=planta.id if planta else None, status="estoque")
+            db.add(a)
+            db.flush()
+            db.add(SoftwareInstalado(nome=nome, ativo_id=a.id, dominio=dominio))
         db.commit()
 
     def test_conta_instalacoes_por_padrao(self, db_session):

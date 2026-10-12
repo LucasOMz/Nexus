@@ -175,6 +175,27 @@ export const state = {
   podeInventario(dominio) {
     return this.inventariosPermitidos().includes(dominio);
   },
+
+  /**
+   * Permissão que não é por módulo nem booleana — hoje só
+   * licencas.ver_chave.
+   *
+   * ## Por que a tela precisa saber
+   *
+   * O botão Revelar aparecia para todo mundo e só falhava depois, com 403.
+   * Botão que existe e não funciona é pior que botão ausente: a pessoa
+   * clica, leva um erro que não explica nada, e conclui que o sistema está
+   * quebrado — em vez de entender que não tem o acesso.
+   *
+   * A checagem aqui é de CONVENIÊNCIA. Quem manda é o backend: esconder o
+   * botão não protege nada, só evita o clique inútil.
+   */
+  podeExtra(permissao) {
+    if (this.isAdmin) return true;
+    const efetivas = this.user?.permissoes_efetivas || this.user?.permissoes || {};
+    const extras = efetivas.permissoes_extra || [];
+    return Array.isArray(extras) && extras.includes(permissao);
+  },
 };
 
 export { ROTULO_INVENTARIO };

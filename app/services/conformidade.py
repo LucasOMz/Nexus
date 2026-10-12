@@ -34,6 +34,7 @@ from decimal import Decimal
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.models.core import Ativo
 from app.models.enums import SituacaoConformidade, TipoLicenca
 from app.models.software import (
     AtribuicaoLicenca,
@@ -124,7 +125,9 @@ def situacao(licenciado: int, instalado: int) -> SituacaoConformidade:
     return SituacaoConformidade.CONFORME
 
 
-def instalados_por_nome(db: Session, dominio: str | None = None) -> list[tuple[str, int]]:
+def instalados_por_nome(
+    db: Session, dominio: str | None = None, planta_id: int | None = None
+) -> list[tuple[str, int]]:
     """Nomes instalados e quantas máquinas têm cada um — **do OCS**.
 
     Agrupado no banco: um parque de 5.000 máquinas pode reportar 300.000
@@ -134,7 +137,14 @@ def instalados_por_nome(db: Session, dominio: str | None = None) -> list[tuple[s
     q = (
         db.query(SoftwareInstalado.nome, func.count(func.distinct(SoftwareInstalado.ativo_id)))
         .filter(SoftwareInstalado.deleted_at.is_(None))
+        # Sem esta junção, a contagem somava TODAS as plantas: a tela
+        # filtrava os softwares, mas o número de instalações misturava
+        # as unidades — e continuava parecendo plausível.
+        .join(Ativo, Ativo.id == SoftwareInstalado.ativo_id)
+        .filter(Ativo.deleted_at.is_(None))
     )
+    if planta_id is not None:
+        q = q.filter(Ativo.planta_id == planta_id)
     if dominio:
         q = q.filter(SoftwareInstalado.dominio == dominio)
     return q.group_by(SoftwareInstalado.nome).all()
@@ -171,6 +181,41 @@ def instalados_das_atribuicoes(db: Session) -> list[tuple[str, int]]:
     return linhas
 
 
+
+def _licencas_vivas(software: Software) -> list[Licenca]:
+    """As licenças que **contam** para conformidade.
+
+    ## Por que não basta `deleted_at is None`
+
+    Uma licença pode estar no banco e não valer mais:
+
+    - **cancelada** — o contrato acabou; os seats não são mais da empresa;
+    - **expirada** — a data passou; instalação com ela é uso irregular.
+
+    Contá-las faz o sistema parecer conforme quando não está. É o pior
+    resultado possível aqui: a pessoa lê "em conformidade" e não age.
+
+    `suspensa` **conta**, de propósito: suspender é uma decisão temporária
+    (disputa de contrato, projeto parado) e os seats continuam contratados.
+    Tratá-la como cancelada faria a empresa parecer descoberta quando ainda
+    tem o direito.
+    """
+    from app.models.enums import SituacaoLicenca
+
+    validas = {SituacaoLicenca.ATIVA, SituacaoLicenca.SUSPENSA}
+    vivas = []
+    for lic in software.licencas:
+        if lic.deleted_at is not None:
+            continue
+        if lic.situacao not in validas:
+            continue
+        # Vencida só sai quando o tipo realmente vence: perpétua não tem data.
+        if lic.vencida:
+            continue
+        vivas.append(lic)
+    return vivas
+
+
 def calcular(db: Session, softwares: list[Software],
              instalados: list[tuple[str, int]] | None = None) -> list[dict]:
     """Cruza a lista de softwares cadastrados com o que está instalado.
@@ -202,7 +247,7 @@ def calcular(db: Session, softwares: list[Software],
 
     linhas = []
     for s in softwares:
-        vivas = [lic for lic in s.licencas if lic.deleted_at is None]
+        vivas = _licencas_vivas(s)
         licenciado = sum(lic.seats for lic in vivas)
         custo = sum(
             (lic.valor_mensal or Decimal("0")) for lic in vivas
@@ -210,7 +255,13 @@ def calcular(db: Session, softwares: list[Software],
         )
         instalado = consumo.get(s.id, 0)
 
-        if licenciado == 0 and instalado == 0:
+        # Um software OBRIGATÓRIO que não está instalado é a pendência mais
+        # importante que este relatório pode mostrar: alguém decidiu que ele
+        # deveria estar em toda máquina, e não está em nenhuma.
+        #
+        # Sem esta exceção, o `continue` abaixo descartava exatamente esse
+        # caso — e o campo `obrigatorio` nunca produzia o que promete.
+        if licenciado == 0 and instalado == 0 and not s.obrigatorio:
             continue  # cadastrado, sem uso e sem licença: não é linha de risco
 
         linhas.append({
@@ -222,6 +273,7 @@ def calcular(db: Session, softwares: list[Software],
             "diferenca": instalado - licenciado,
             "situacao": situacao(licenciado, instalado),
             "origens": origens.get(s.id, [])[:8],
+            "obrigatorio": bool(s.obrigatorio),
             "custo_mensal": custo,
         })
 
@@ -241,9 +293,22 @@ def calcular(db: Session, softwares: list[Software],
             "situacao": SituacaoConformidade.SEM_LICENCA,
             "origens": [nome],
             "custo_mensal": Decimal("0"),
+            "obrigatorio": False,
         })
 
     return linhas
+
+
+def _peso(linha: dict) -> int:
+    """Obrigatório ausente preocupa mais que qualquer outra linha.
+
+    É a única situação em que a empresa decidiu que algo deveria estar em
+    toda máquina e **não está em nenhuma** — e o campo `obrigatorio` existe
+    justamente para isso aparecer.
+    """
+    if linha.get("obrigatorio") and linha.get("instalado", 0) == 0:
+        return -1
+    return ORDEM.get(linha["situacao"], 9)
 
 
 ORDEM = {
@@ -261,7 +326,7 @@ def ordenar(linhas: list[dict]) -> list[dict]:
     A tela abre por aqui: quem entra quer saber se está em risco, não quantos
     títulos existem. Ordenar por nome enterraria o problema na página 4.
     """
-    return sorted(linhas, key=lambda x: (ORDEM.get(x["situacao"], 9), -abs(x["diferenca"])))
+    return sorted(linhas, key=lambda x: (_peso(x), -abs(x["diferenca"])))
 
 
 def resumo(linhas: list[dict]) -> dict:

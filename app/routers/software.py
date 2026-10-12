@@ -74,33 +74,34 @@ PERMISSAO_REVELAR = "licencas.ver_chave"
 def exigir_permissao_de_revelacao(user: Usuario) -> None:
     """A permissão que separa 'ver a licença' de 'ler a chave'.
 
-    ## Por que é uma função, e não uma dependência
+    ## De onde vem a permissão
 
-    Como `Depends`, o `Depends` interno não era resolvido e o parâmetro
-    chegava como o próprio objeto `Depends` — o erro só aparece no request,
-    nunca no import. Chamada explícita dentro da rota, a ordem é óbvia e o
-    erro, impossível.
+    `permissoes_efetivas` — que já combina o padrão do papel com o que o
+    administrador customizou no usuário. Ler `user.permissoes` cru perderia
+    o padrão do papel e daria resultado diferente do resto do sistema.
+
+    ## O que a ausência significa
+
+    Sem a permissão, a resposta é 403 — e o botão na tela nem aparece. A
+    chave continua saindo por um caminho único, auditado, e só para quem foi
+    explicitamente autorizado.
     """
-    permissoes = getattr(user, "permissoes", None) or {}
-    concedidas: set[str] = set()
+    from app.core.permissoes import permissoes_efetivas
 
-    if isinstance(permissoes, dict):
-        modulos = permissoes.get("modulos", permissoes)
-        if isinstance(modulos, dict):
-            concedidas = set(modulos.get("permissoes_extra", []) or [])
-        elif isinstance(modulos, list):
-            concedidas = set(modulos)
+    efetivas = permissoes_efetivas(user)
+    concedidas = set(efetivas.get("permissoes_extra") or [])
 
-    # Administrador sempre pode — é quem responde pela auditoria do fabricante.
+    # Administrador sempre pode — é quem responde pela auditoria do
+    # fabricante, e trancá-lo fora deixaria o sistema sem quem revele.
     papel = getattr(user.papel, "value", user.papel)
     if papel == "admin" or PERMISSAO_REVELAR in concedidas:
         return
 
     raise HTTPException(
         status.HTTP_403_FORBIDDEN,
-        f"Sem permissão para revelar chaves de licença ({PERMISSAO_REVELAR}).",
+        f"Sem permissão para revelar chaves de licença ({PERMISSAO_REVELAR}). "
+        f"Peça ao administrador em Administração → Usuários.",
     )
-
 
 def _aplicar_chave(destino: Licenca, texto: str | None, user: Usuario, db: Session,
                    acao: str) -> None:
@@ -554,7 +555,9 @@ def conformidade(db: Session = Depends(get_db),
     softwares = qs.all()
 
     # Com OCS: o que está instalado de fato. Sem OCS: o que foi atribuído.
-    instalados = conformidade_service.instalados_por_nome(db)
+    # A planta vai junto: sem ela a contagem somaria as unidades e o
+    # número continuaria parecendo plausível.
+    instalados = conformidade_service.instalados_por_nome(db, planta_id=planta)
     if not instalados:
         instalados = conformidade_service.instalados_das_atribuicoes(db)
 
