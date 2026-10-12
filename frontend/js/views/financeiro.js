@@ -136,6 +136,46 @@ async function telaResumo(caixa) {
         )
       : null,
 
+    // --- Software: assinatura --------------------------------------------
+    // A TERCEIRA natureza. Fica fora do parque porque não há equipamento
+    // nenhum associado — é serviço pago todo mês. Somar ao patrimônio daria
+    // um "valor do parque" que não corresponde a nada.
+    (sw.titulos ?? 0) > 0
+      ? el("div", {},
+          el("h3", { style: "margin:26px 0 10px" }, "Software (assinatura)"),
+          el("div", { class: "resumo-numeros" },
+            numero(sw.titulos ?? 0, "Títulos"),
+            numero(sw.seats ?? 0, "Seats"),
+            numero(dinheiro(sw.custo_mensal), "Custo mensal"),
+            numero(dinheiro(sw.custo_anual), "Próximos 12 meses", "aviso"),
+            (sw.vencendo || []).length > 0
+              ? numero((sw.vencendo || []).length, "A vencer (60 dias)", "erro")
+              : null,
+          ),
+          // A frase vem do BACKEND, não daqui: assim quem consumir a API por
+          // outro caminho recebe o mesmo aviso.
+          el("p", { class: "muted", style: "font-size:12.5px;margin-top:10px" },
+            sw.observacao || ""),
+          (sw.vencendo || []).length
+            ? el("div", { class: "table-wrap", style: "margin-top:12px" },
+                el("table", { class: "tabela-numeros" },
+                  el("thead", {}, el("tr", {},
+                    el("th", {}, "Assinatura"),
+                    el("th", { class: "num" }, "Mensal"),
+                    el("th", {}, "Vence"))),
+                  el("tbody", {}, ...sw.vencendo.map((v) => el("tr", {},
+                    el("td", { class: "col-nome" }, v.nome),
+                    el("td", { class: "num" }, dinheiro(v.valor_mensal)),
+                    // Vencida aparece como vencida: `dias` negativo é o caso
+                    // mais grave e não pode ser lido como "faltam -10".
+                    el("td", {}, el("span", { class: `chip ${v.urgente ? "erro" : "aviso"}` },
+                      v.dias < 0
+                        ? `vencida há ${Math.abs(v.dias)} dias`
+                        : `${v.dias} dias`)),
+                  )))))
+            : null)
+      : null,
+
     // --- Garantias (só fazem sentido no comprado) ------------------------
     el("h3", { style: "margin:26px 0 10px" }, "Garantias por situação"),
     el("div", { class: "resumo-numeros" },

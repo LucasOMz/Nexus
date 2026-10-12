@@ -30,8 +30,8 @@ const ABAS = [
 const estado = { aba: "conformidade", softwareId: null };
 
 const SITUACAO = {
-  excedente: { rotulo: "Excedente", tom: "erro", dica: "Instalado acima do licenciado — risco em auditoria" },
-  sem_licenca: { rotulo: "Sem licença", tom: "erro", dica: "Instalado e nenhuma licença cadastrada" },
+  excedente: { rotulo: "Excedente", tom: "danger", dica: "Instalado acima do licenciado — risco em auditoria" },
+  sem_licenca: { rotulo: "Sem licença", tom: "danger", dica: "Instalado e nenhuma licença cadastrada" },
   ocioso: { rotulo: "Ocioso", tom: "aviso", dica: "Licença comprada sem uso — dinheiro parado" },
   conforme: { rotulo: "Conforme", tom: "ok", dica: "Instalado dentro do licenciado" },
   nao_instalado: { rotulo: "Não instalado", tom: "", dica: "Cadastrado, sem uso e sem licença" },
@@ -64,16 +64,18 @@ export async function renderSoftware(root) {
 }
 
 function barraAbas(root) {
-  const barra = el("div", { class: "abas" });
+  const barra = el("div", { class: "tabs" });
   for (const [chave, rotulo, icone] of ABAS) {
     barra.append(el("button", {
-      class: `aba${estado.aba === chave ? " ativa" : ""}`,
+      // Reusa o padrão de abas que já existe (`.tabs button.active`) em vez
+      // de inventar `.aba`, que não teria CSS nenhum.
+      class: estado.aba === chave ? "active" : "",
       type: "button",
       onclick: async () => {
         estado.aba = chave;
-        for (const b of barra.children) b.classList.remove("ativa");
+        for (const b of barra.children) b.classList.remove("active");
         const indice = ABAS.findIndex((a) => a[0] === chave);
-        barra.children[indice].classList.add("ativa");
+        barra.children[indice].classList.add("active");
         await abrir(chave, root.querySelector(".conteudo-software"));
       },
       html: `${icon(icone, 16)} <span>${rotulo}</span>`,

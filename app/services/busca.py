@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.models.core import Ativo, Planta, Produto, Usuario
 from app.models.impressora import AtivoImpressora
+from app.models.software import Software
 from app.models.ti import AtivoTI
 
 # Quantos resultados por grupo. A busca mostra os primeiros de cada tipo; quem
@@ -170,6 +171,39 @@ def buscar(db: Session, termo: str, planta_id: int | None = None) -> Resultado:
             rota=f"#/produtos/{p.id}",
         )
         for p in produtos
+    ]
+
+    # --- Software e licenças ---------------------------------------------
+    # ## O que NÃO é pesquisado
+    #
+    # A chave da licença **não entra**. Indexá-la transformaria a busca num
+    # vazamento: bastaria digitar quatro caracteres para descobrir a chave de
+    # qualquer licença, sem passar pelo endpoint de revelação, sem exigir a
+    # permissão e **sem deixar rastro na auditoria**.
+    #
+    # Busca-se o nome do produto e o fabricante — que é o que a pessoa sabe.
+    softwares = (
+        db.query(Software)
+        .filter(
+            Software.deleted_at.is_(None),
+            or_(
+                _contem(Software.nome, limpo),
+                _contem(Software.fabricante, limpo),
+                _contem(Software.categoria, limpo),
+            ),
+        )
+        .order_by(Software.nome)
+        .limit(POR_GRUPO)
+        .all()
+    )
+    r.grupos["Software"] = [
+        Achado(
+            grupo="Software",
+            titulo=s.nome,
+            detalhe=s.fabricante or "",
+            rota="#/software",
+        )
+        for s in softwares
     ]
 
     # --- Usuários ---------------------------------------------------------

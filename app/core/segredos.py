@@ -92,8 +92,54 @@ class SegredoIlegivel(RuntimeError):
 
 
 def disponivel() -> bool:
-    """A criptografia está instalada e configurada?"""
-    return Fernet is not None and bool(os.environ.get(VARIAVEL))
+    """A criptografia está instalada **e** a chave mestra é alcançável?
+
+    Consulta a configuração primeiro, e o ambiente depois — a mesma ordem de
+    `_chave_mestra`. Checar só `os.environ` faria esta função responder
+    "indisponível" numa instalação perfeitamente configurada pelo `.env`.
+    """
+    if Fernet is None:
+        return False
+    try:
+        return bool(_chave_mestra())
+    except ChaveMestraAusente:
+        return False
+
+
+def _da_configuracao(versao: int) -> str | None:
+    """A chave mestra vinda do `Settings` — o `.env` lido pelo Pydantic.
+
+    ## Por que isto existe
+
+    O `Settings` do Pydantic lê o `.env` para dentro do **objeto** e **não**
+    escreve em `os.environ`. Um módulo que consulte só `os.environ` recebe
+    `None` numa instalação normal, **mesmo com a variável no `.env`**.
+
+    Era o que acontecia: a cifra existia, os testes passavam (eles escrevem
+    em `os.environ` de verdade, com `monkeypatch`) e cadastrar licença com
+    chave falhava na implantação.
+
+    A ordem é configuração primeiro, ambiente depois — o ambiente continua
+    valendo para Docker, systemd e para os testes.
+    """
+    try:
+        from app.config import settings
+    except Exception:  # pragma: no cover - import circular improvável
+        return None
+
+    if versao == _versao_da_configuracao():
+        return (settings.chave_licencas or "").strip() or None
+    # Versões antigas (rotação): não têm campo próprio no Settings.
+    return getattr(settings, f"chave_licencas_v{versao}", None)
+
+
+def _versao_da_configuracao() -> int:
+    try:
+        from app.config import settings
+
+        return max(1, int(settings.chave_licencas_versao or VERSAO_PADRAO))
+    except Exception:  # pragma: no cover
+        return VERSAO_PADRAO
 
 
 def _chave_mestra(versao: int | None = None) -> bytes:
@@ -115,29 +161,53 @@ def _chave_mestra(versao: int | None = None) -> bytes:
     """
     versao = versao_atual() if versao is None else versao
     atual = versao_atual()
+
+    # A ORDEM é ambiente primeiro, configuração depois.
+    #
+    # Variável de ambiente vence o `.env` — é a convenção (o próprio
+    # pydantic-settings faz assim) e é o que se espera em container: a imagem
+    # traz um `.env` de referência e o operador sobrescreve pelo ambiente, sem
+    # editar arquivo dentro do contêiner.
+    #
+    # Inverti isto na primeira versão e os testes pegaram: `monkeypatch`
+    # escreve em `os.environ` justamente para simular a sobrescrita, e com a
+    # configuração na frente ele não tinha efeito nenhum.
+    bruta = None
     nomes = [VARIAVEL]
     if versao != atual:
         nomes = [f"{VARIAVEL}_V{versao}", VARIAVEL]
-
     for nome in nomes:
-        bruta = os.environ.get(nome)
-        if not bruta:
-            continue
-        texto = bruta.strip().encode()
-        # Aceita tanto a chave pronta do Fernet (44 chars base64) quanto uma
-        # frase: derivar com SHA-256 evita exigir que o operador gere base64.
-        try:
-            base64.urlsafe_b64decode(texto)
-            if len(texto) == 44:
-                return texto
-        except Exception:
-            pass
-        return base64.urlsafe_b64encode(hashlib.sha256(texto).digest())
+        achado = os.environ.get(nome)
+        if achado:
+            bruta = achado
+            break
 
-    raise ChaveMestraAusente(
-        f"{VARIAVEL} não está definida. Sem ela as licenças ficam "
-        f"irrecuperáveis — guarde-a num cofre separado do banco."
-    )
+    # Sem nada no ambiente, a configuração do sistema — o `.env` lido pelo
+    # Pydantic, que **não** popula `os.environ`. É o caminho normal de
+    # implantação, e era exatamente o que faltava.
+    if not bruta:
+        bruta = _da_configuracao(versao)
+
+    if not bruta:
+        raise ChaveMestraAusente(
+            "Defina NEXUS_CHAVE_LICENCAS no .env (ou no ambiente). Sem ela as "
+            "licenças ficam irrecuperáveis — guarde-a num cofre separado do "
+            "banco, porque o backup do banco não a contém."
+        )
+
+    texto = bruta.strip().encode()
+    if not texto:
+        raise ChaveMestraAusente(f"{VARIAVEL} está definida mas vazia.")
+
+    # Aceita tanto a chave pronta do Fernet (44 chars base64) quanto uma
+    # frase: derivar com SHA-256 evita exigir que o operador gere base64.
+    try:
+        base64.urlsafe_b64decode(texto)
+        if len(texto) == 44:
+            return texto
+    except Exception:
+        pass
+    return base64.urlsafe_b64encode(hashlib.sha256(texto).digest())
 
 
 def gerar_chave() -> str:

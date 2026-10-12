@@ -40,6 +40,7 @@ const modulos = [
   "js/easteregg.js", "js/versao_servidor.js", "js/seletor_ativo.js", "js/notificacoes.js",
   "js/views/calendario.js", "js/views/reporte.js", "js/views/admin_ocs.js", "js/views/admin_banco.js", "js/barra_lateral.js", "js/ordenar.js",
   "js/views/login.js", "js/views/inventario.js", "js/views/dashboard.js",
+  "js/views/software.js", "js/views/descarte.js", "js/views/admin_lgpd.js",
   "js/views/ativos.js", "js/views/produtos.js", "js/views/movimentacoes.js",
   "js/views/manutencoes.js", "js/views/scanner.js", "js/views/relatorios.js",
   "js/views/cadastros.js", "js/views/admin.js", "js/views/admin_etiquetas.js",

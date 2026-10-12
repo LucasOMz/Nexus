@@ -21,6 +21,7 @@ const TILES = [
   { path: "seguranca", modulo: "seguranca", rotulo: "Segurança da conta", icone: "settings", desc: "Verificação em duas etapas e códigos de recuperação" },
   { path: "monitor", modulo: "monitor", rotulo: "Monitor de impressoras", icone: "print", desc: "Contador e tonner lidos direto da impressora" },
   { path: "emprestimos", modulo: "emprestimos", rotulo: "Empréstimos", icone: "calendario", desc: "Reserva, retirada com termo, devolução e vistoria" },
+  { path: "software", modulo: "software", rotulo: "Software e licenças", icone: "produtos", desc: "Licenças, conformidade e o que está instalado" },
   { path: "descarte", modulo: "descarte", rotulo: "Certificado de descarte", icone: "trash", desc: "Baixa de ativo com destino, fundamento e selo de conferência" },
   { path: "contratos", modulo: "contratos", rotulo: "Contratos", icone: "relatorios", desc: "Locação, comodato e compra — custo mensal e vencimento" },
   { path: "financeiro", modulo: "financeiro", rotulo: "Financeiro", icone: "relatorios", desc: "Valor do parque, garantias, custo por departamento e por página" },

@@ -17,6 +17,7 @@ from app.core.planta import aplicar_filtro, planta_ativa
 from app.database import get_db
 from app.models.contrato import Contrato
 from app.models.core import Ativo, Departamento, Manutencao, Movimentacao, Produto, Usuario
+from app.models.enums import SituacaoLicenca, TipoLicenca
 from app.models.impressora import LeituraContador
 from app.services import financeiro
 
@@ -147,9 +148,58 @@ def resumo(
     _: Usuario = Depends(get_current_user),
     planta_id: int | None = Depends(planta_ativa),
 ):
-    """Números do parque: valor hoje, depreciação, TCO e garantias."""
+    """Números do parque: valor hoje, depreciação, TCO e garantias.
+
+    ## Três naturezas, nunca somadas
+
+    O retorno traz `comprado` e `locado` (do parque) e agora também
+    `software` — as assinaturas. São coisas diferentes: patrimônio que
+    deprecia, mensalidade de equipamento e mensalidade de serviço. Somá-las
+    daria um número sem significado.
+    """
     itens = _montar(db, _ativos(db, planta_id, dominio))
-    return financeiro.resumo_do_parque(itens)
+    r = financeiro.resumo_do_parque(itens)
+    r["software"] = financeiro.resumo_de_software(
+        _assinaturas(db, planta_id, dominio)
+    )
+    return r
+
+
+def _assinaturas(db: Session, planta_id: int | None,
+                 dominio: str | None = None) -> list[dict]:
+    """As licenças de software do tipo **assinatura**, com o nome do produto.
+
+    Só assinatura: licença perpétua é compra pontual — já foi paga, não tem
+    mensalidade, e incluí-la faria o custo mensal saltar no mês da compra e
+    desaparecer no seguinte.
+
+    O filtro de domínio não se aplica: software não é de TI nem de
+    impressora, é da empresa. Passar `dominio` aqui esconderia a assinatura
+    ao olhar só as impressoras.
+    """
+    from app.models.software import Licenca, Software
+
+    q = (
+        db.query(
+            Software.nome,
+            Licenca.valor_mensal,
+            Licenca.seats,
+            Licenca.validade,
+        )
+        .join(Software, Software.id == Licenca.software_id)
+        .filter(
+            Licenca.deleted_at.is_(None),
+            Software.deleted_at.is_(None),
+            Licenca.tipo == TipoLicenca.ASSINATURA,
+            Licenca.situacao == SituacaoLicenca.ATIVA,
+        )
+    )
+    q = aplicar_filtro(q, Licenca, planta_id)
+
+    return [
+        {"nome": nome, "valor_mensal": valor, "seats": seats, "validade": validade}
+        for nome, valor, seats, validade in q.all()
+    ]
 
 
 @router.get("/depreciacao")

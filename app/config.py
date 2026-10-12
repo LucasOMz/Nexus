@@ -1,4 +1,4 @@
-﻿"""Configuração central via variáveis de ambiente (pydantic-settings).
+"""Configuração central via variáveis de ambiente (pydantic-settings).
 
 Um único objeto `settings` é importado por todo o sistema, mantendo as
 configurações em um ponto só e tipadas (Type hints obrigatórios).
@@ -8,7 +8,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Annotated
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -42,6 +42,33 @@ class Settings(BaseSettings):
     # acesso anônimo. No Windows não são usadas — lá o spooler usa a conta do serviço.
     print_smb_usuario: str = ""
     print_smb_senha: str = ""
+
+    # --- Chave mestra das licenças de software -----------------------------
+    # Cifra as chaves de licença em repouso (app/core/segredos.py).
+    #
+    # ## Por que está AQUI, e não só no `os.environ`
+    #
+    # O `Settings` lê o `.env` para dentro do objeto — e **não** popula
+    # `os.environ`. Um módulo que leia `os.environ.get("NEXUS_CHAVE_LICENCAS")`
+    # recebe `None` numa instalação normal, mesmo com a variável no `.env`.
+    #
+    # Era exatamente o que acontecia: a cifra existia, os testes passavam
+    # (eles escrevem em `os.environ` de verdade) e **cadastrar licença com
+    # chave falhava na implantação**. Declarar aqui é o que liga a
+    # configuração ao modo real de subir o sistema.
+    #
+    # `segredos.py` consulta este campo primeiro e cai para `os.environ`
+    # depois — o fallback mantém funcionando quem define a variável no
+    # ambiente (Docker, systemd, testes).
+    #
+    # O ALIAS é necessário: o Pydantic deriva o nome da variável do CAMPO
+    # (`chave_licencas` → `CHAVE_LICENCAS`), e sem ele `NEXUS_CHAVE_LICENCAS`
+    # no `.env` seria ignorada em silêncio — o mesmo tipo de falha que este
+    # campo existe para corrigir.
+    chave_licencas: str = Field(default="", validation_alias="NEXUS_CHAVE_LICENCAS")
+    # Versão da chave em uso. Girar exige subir este número junto com a troca
+    # do valor: os registros antigos carregam a versão com que foram cifrados.
+    chave_licencas_versao: int = Field(default=1, validation_alias="NEXUS_CHAVE_LICENCAS_VERSAO")
 
     # --- Reporte de erro ---------------------------------------------------
     # Recurso TEMPORÁRIO (fase de implantação). Desligue com

@@ -29,8 +29,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core import segredos
-from app.core.deps import get_current_user, require_module, require_write
-from app.core.planta import aplicar_filtro, planta_ativa
+from app.core.deps import (
+    get_current_user,
+    require_delete,
+    require_module,
+    require_write,
+)
+from app.core.planta import aplicar_filtro, exigir_planta_do_usuario, planta_ativa
 from app.database import get_db
 from app.models.core import Ativo, Usuario
 from app.models.enums import SituacaoLicenca
@@ -171,6 +176,72 @@ def _auditar(db: Session, user: Usuario, acao: str, entidade: str, entidade_id: 
 
 
 
+
+def _no_escopo(obj, planta: int | None, nome: str = "Registro"):
+    """Confere se o objeto é visível na planta do usuário.
+
+    ## Por que 404, e não 403
+
+    Um 403 confirma que o registro **existe** — e isso já é informação sobre
+    outra unidade ("existe a licença #42"). O 404 não distingue "não existe"
+    de "não é seu", que é o comportamento correto aqui.
+
+    ## A licença corporativa
+
+    `planta_id` nulo significa **corporativo**: uma licença de volume da
+    empresa toda não pertence a uma unidade. Escondendo-a de quem filtra por
+    planta, o administrador de uma unidade não veria as licenças que a
+    empresa já comprou — e compraria de novo.
+    """
+    if obj is None or getattr(obj, "deleted_at", None):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"{nome} não encontrado.")
+
+    if planta is None:
+        return obj  # administrador na visão consolidada
+
+    dono = getattr(obj, "planta_id", None)
+    if dono is not None and dono != planta:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"{nome} não encontrado.")
+    return obj
+
+
+def _licenca_no_escopo(db: Session, licenca_id: int, planta: int | None) -> Licenca:
+    """A licença, conferindo o escopo pela própria planta dela."""
+    return _no_escopo(db.get(Licenca, licenca_id), planta, "Licença")
+
+
+def _planta_do_corpo(planta: int | None, user: Usuario) -> int | None:
+    """Valida a planta vinda do corpo da requisição.
+
+    ## O furo que isto fecha
+
+    O `planta_id` do corpo era gravado direto: um usuário comum podia criar
+    um software na planta de outra unidade só informando o id — e passaria a
+    enxergá-lo depois, porque as listas filtram por planta.
+
+    ## Duas checagens, não uma
+
+    `exigir_planta_do_usuario` garante que **há** planta (usuário sem planta
+    veria todas). Mas não basta: um usuário da unidade A informando o id da
+    unidade B passaria. A segunda checagem é a que compara com a planta
+    **dele**, e era a que faltava.
+
+    Administrador continua livre — é quem move registro entre unidades.
+    """
+    exigir_planta_do_usuario(user, planta)
+
+    papel = getattr(user.papel, "value", user.papel)
+    if papel == "admin":
+        return planta
+
+    if planta is not None and planta != user.planta_id:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Você só pode criar registros na sua própria planta.",
+        )
+    return planta
+
+
 # ---------------------------------------------------------------------------
 # Software
 # ---------------------------------------------------------------------------
@@ -193,8 +264,7 @@ def listar_software(
 def criar_software(dados: SoftwareIn, db: Session = Depends(get_db),
                    user: Usuario = Depends(get_current_user),
                    planta: int | None = Depends(planta_ativa)):
-    if dados.planta_id is None:
-        dados.planta_id = planta
+    dados.planta_id = _planta_do_corpo(dados.planta_id or planta, user)
     s = Software(**dados.model_dump())
     db.add(s)
     db.flush()
@@ -206,20 +276,20 @@ def criar_software(dados: SoftwareIn, db: Session = Depends(get_db),
 
 @router.get("/softwares/{software_id}", response_model=SoftwareOut)
 def obter_software(software_id: int, db: Session = Depends(get_db),
-                   user: Usuario = Depends(get_current_user)):
-    s = db.get(Software, software_id)
-    if not s or s.deleted_at:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Software não encontrado.")
+                   user: Usuario = Depends(get_current_user),
+                   planta: int | None = Depends(planta_ativa),
+               ):
+    s = _no_escopo(db.get(Software, software_id), planta, "Software")
     return s
 
 
 @router.put("/softwares/{software_id}", response_model=SoftwareOut,
             dependencies=[Depends(require_write)])
 def editar_software(software_id: int, dados: SoftwareIn, db: Session = Depends(get_db),
-                    user: Usuario = Depends(get_current_user)):
-    s = db.get(Software, software_id)
-    if not s or s.deleted_at:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Software não encontrado.")
+                    user: Usuario = Depends(get_current_user),
+                    planta: int | None = Depends(planta_ativa),
+                ):
+    s = _no_escopo(db.get(Software, software_id), planta, "Software")
     antes = serialize_entity(s)
     for k, v in dados.model_dump().items():
         setattr(s, k, v)
@@ -230,12 +300,12 @@ def editar_software(software_id: int, dados: SoftwareIn, db: Session = Depends(g
 
 
 @router.delete("/softwares/{software_id}", status_code=status.HTTP_204_NO_CONTENT,
-               dependencies=[Depends(require_write)])
+               dependencies=[Depends(require_delete)])
 def apagar_software(software_id: int, db: Session = Depends(get_db),
-                    user: Usuario = Depends(get_current_user)):
-    s = db.get(Software, software_id)
-    if not s or s.deleted_at:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Software não encontrado.")
+                    user: Usuario = Depends(get_current_user),
+                    planta: int | None = Depends(planta_ativa),
+                ):
+    s = _no_escopo(db.get(Software, software_id), planta, "Software")
 
     vivas = [lic for lic in s.licencas if lic.deleted_at is None]
     if vivas:
@@ -292,8 +362,7 @@ def criar_licenca(dados: LicencaIn, db: Session = Depends(get_db),
 
     corpo = dados.model_dump()
     texto = corpo.pop("chave", None)
-    if corpo.get("planta_id") is None:
-        corpo["planta_id"] = planta
+    corpo["planta_id"] = _planta_do_corpo(corpo.get("planta_id") or planta, user)
 
     lic = Licenca(**corpo)
     db.add(lic)
@@ -311,20 +380,20 @@ def criar_licenca(dados: LicencaIn, db: Session = Depends(get_db),
 
 @router.get("/licencas/{licenca_id}", response_model=LicencaOut)
 def obter_licenca(licenca_id: int, db: Session = Depends(get_db),
-                  user: Usuario = Depends(get_current_user)):
-    lic = db.get(Licenca, licenca_id)
-    if not lic or lic.deleted_at:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Licença não encontrada.")
+                  user: Usuario = Depends(get_current_user),
+                  planta: int | None = Depends(planta_ativa),
+              ):
+    lic = _licenca_no_escopo(db, licenca_id, planta)
     return _out(lic)
 
 
 @router.put("/licencas/{licenca_id}", response_model=LicencaOut,
             dependencies=[Depends(require_write)])
 def editar_licenca(licenca_id: int, dados: LicencaIn, db: Session = Depends(get_db),
-                   user: Usuario = Depends(get_current_user)):
-    lic = db.get(Licenca, licenca_id)
-    if not lic or lic.deleted_at:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Licença não encontrada.")
+                   user: Usuario = Depends(get_current_user),
+                   planta: int | None = Depends(planta_ativa),
+               ):
+    lic = _licenca_no_escopo(db, licenca_id, planta)
 
     antes = serialize_entity(lic)
     corpo = dados.model_dump()
@@ -343,12 +412,12 @@ def editar_licenca(licenca_id: int, dados: LicencaIn, db: Session = Depends(get_
 
 
 @router.delete("/licencas/{licenca_id}", status_code=status.HTTP_204_NO_CONTENT,
-               dependencies=[Depends(require_write)])
+               dependencies=[Depends(require_delete)])
 def apagar_licenca(licenca_id: int, db: Session = Depends(get_db),
-                   user: Usuario = Depends(get_current_user)):
-    lic = db.get(Licenca, licenca_id)
-    if not lic or lic.deleted_at:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Licença não encontrada.")
+                   user: Usuario = Depends(get_current_user),
+                   planta: int | None = Depends(planta_ativa),
+               ):
+    lic = _licenca_no_escopo(db, licenca_id, planta)
     lic.deleted_at = datetime.now(timezone.utc)
     _auditar(db, user, "apagar", "licenca", lic.id, antes=lic)
     db.commit()
@@ -359,7 +428,8 @@ def apagar_licenca(licenca_id: int, db: Session = Depends(get_db),
 # ---------------------------------------------------------------------------
 @router.get("/licencas/{licenca_id}/revelar", response_model=ChaveRevelada)
 def revelar_chave(licenca_id: int, db: Session = Depends(get_db),
-                  user: Usuario = Depends(get_current_user)):
+                  user: Usuario = Depends(get_current_user),
+                  planta: int | None = Depends(planta_ativa)):
     """Devolve a chave em claro. **Toda chamada é auditada.**
 
     ## Por que a auditoria aqui não é opcional
@@ -374,9 +444,7 @@ def revelar_chave(licenca_id: int, db: Session = Depends(get_db),
     """
     exigir_permissao_de_revelacao(user)
 
-    lic = db.get(Licenca, licenca_id)
-    if not lic or lic.deleted_at:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Licença não encontrada.")
+    lic = _licenca_no_escopo(db, licenca_id, planta)
     if not lic.tem_chave():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Esta licença não tem chave cadastrada.")
 
@@ -417,10 +485,10 @@ def _atribuicao_out(a: AtribuicaoLicenca) -> AtribuicaoOut:
 @router.post("/licencas/{licenca_id}/atribuicoes", response_model=AtribuicaoOut,
              status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_write)])
 def atribuir(licenca_id: int, dados: AtribuicaoIn, db: Session = Depends(get_db),
-             user: Usuario = Depends(get_current_user)):
-    lic = db.get(Licenca, licenca_id)
-    if not lic or lic.deleted_at:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Licença não encontrada.")
+             user: Usuario = Depends(get_current_user),
+             planta: int | None = Depends(planta_ativa),
+         ):
+    lic = _licenca_no_escopo(db, licenca_id, planta)
 
     if lic.seats_livres <= 0:
         # Atribuir além dos seats comprados é exatamente o que gera risco em
@@ -446,9 +514,12 @@ def atribuir(licenca_id: int, dados: AtribuicaoIn, db: Session = Depends(get_db)
 
 
 @router.delete("/licencas/{licenca_id}/atribuicoes/{atribuicao_id}",
-               status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_write)])
+               status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_delete)])
 def liberar(licenca_id: int, atribuicao_id: int, db: Session = Depends(get_db),
-            user: Usuario = Depends(get_current_user)):
+            user: Usuario = Depends(get_current_user),
+            planta: int | None = Depends(planta_ativa),
+        ):
+    _licenca_no_escopo(db, licenca_id, planta)
     a = db.get(AtribuicaoLicenca, atribuicao_id)
     if not a or a.deleted_at or a.licenca_id != licenca_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Atribuição não encontrada.")

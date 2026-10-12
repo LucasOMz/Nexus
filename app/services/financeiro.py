@@ -433,3 +433,80 @@ def resumo_do_parque(itens: list[dict], agora: datetime | None = None) -> dict[s
         "garantias": garantias,
         "garantias_vencendo": garantias.get("vencendo", 0) + garantias.get("atencao", 0),
     }
+
+
+def resumo_de_software(assinaturas: list[dict]) -> dict[str, Any]:
+    """Custo das assinaturas de software — a **terceira natureza**.
+
+    ## Por que é um bloco separado, e não mais um número somado
+
+    O parque já tem duas naturezas que não se somam:
+
+        Comprado  → patrimônio que deprecia
+        Locado    → mensalidade de equipamento
+
+    A assinatura de software é a terceira: **serviço pago todo mês**, sem
+    equipamento nenhum associado. Somar as três daria um "valor do parque"
+    sem significado — e foi exatamente o erro que o módulo financeiro já
+    corrigiu uma vez, ao separar comprado de locado.
+
+    ## O que entra aqui
+
+    Só **assinatura**. Licença perpétua é compra pontual: já foi paga, não
+    tem mensalidade, e misturá-la aqui faria o custo mensal saltar no mês da
+    compra e sumir no seguinte.
+
+    Cada item esperado:
+        {"nome": str, "valor_mensal": float, "seats": int, "validade": date|None}
+    """
+    total_mensal = 0.0
+    total_seats = 0
+    titulos = 0
+    vencendo: list[dict] = []
+
+    hoje = date.today()
+
+    for a in assinaturas:
+        mensal = float(a.get("valor_mensal") or 0)
+        if mensal <= 0:
+            continue
+        titulos += 1
+        total_mensal += mensal
+        total_seats += int(a.get("seats") or 0)
+
+        validade = a.get("validade")
+        if isinstance(validade, datetime):
+            validade = validade.date()
+        if not isinstance(validade, date):
+            continue
+
+        dias = (validade - hoje).days
+        # 60 dias é a janela em que ainda dá tempo de renegociar. Abaixo de
+        # 30, a renovação já é urgência — e o tom muda.
+        if dias <= 60:
+            vencendo.append({
+                "nome": a.get("nome") or "—",
+                "validade": validade.isoformat(),
+                "dias": dias,
+                "valor_mensal": round(mensal, 2),
+                "urgente": dias <= 30,
+            })
+
+    vencendo.sort(key=lambda x: x["dias"])
+
+    return {
+        "titulos": titulos,
+        "seats": total_seats,
+        "custo_mensal": round(total_mensal, 2),
+        # O anual é o número que a gestão usa para orçar. Calculado, e não
+        # gravado: reajuste de contrato mudaria o valor sem ninguém lembrar
+        # de corrigir o campo.
+        "custo_anual": round(total_mensal * 12, 2),
+        "vencendo": vencendo,
+        # A frase que evita a leitura errada — sem ela, alguém soma este
+        # valor ao patrimônio.
+        "observacao": (
+            "Assinatura é serviço, não patrimônio: o custo é a mensalidade e "
+            "não há valor residual. Não somar ao valor do parque."
+        ),
+    }

@@ -58,7 +58,18 @@ class TestCifra:
         assert segredos.decifrar(None) is None
 
     def test_chave_mestra_ausente_avisa_o_que_fazer(self, monkeypatch):
+        """A mensagem precisa ser acionável: diz o nome da variável.
+
+        ## Por que limpar DUAS fontes
+
+        A chave pode vir do ambiente (`os.environ`) ou da configuração (o
+        `.env` lido pelo Pydantic). "Não configurada" só é verdade quando
+        **nenhuma** das duas tem valor — apagar só o ambiente deixaria o
+        `.env` responder, e o teste passaria a medir outra coisa.
+        """
         monkeypatch.delenv(segredos.VARIAVEL, raising=False)
+        monkeypatch.setattr(segredos, "_da_configuracao", lambda _v: None)
+
         with pytest.raises(segredos.ChaveMestraAusente) as e:
             segredos.cifrar(CHAVE)
         # A mensagem precisa ser acionável: diz o nome da variável.

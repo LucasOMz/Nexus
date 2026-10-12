@@ -24,6 +24,7 @@ import { renderContagens } from "./js/views/contagens.js";
 import { renderFinanceiro } from "./js/views/financeiro.js";
 import { renderContratos } from "./js/views/contratos.js";
 import { renderDescarte } from "./js/views/descarte.js";
+import { renderSoftware } from "./js/views/software.js";
 import { renderEmprestimos } from "./js/views/emprestimos.js";
 import { renderMonitor } from "./js/views/monitor_impressoras.js";
 import { renderSeguranca } from "./js/views/seguranca.js";
@@ -48,6 +49,7 @@ const MODULOS = {
   financeiro: { rotulo: "Financeiro", icone: "relatorios" },
   contratos: { rotulo: "Contratos", icone: "relatorios" },
   descarte: { rotulo: "Certificado de descarte", icone: "trash" },
+  software: { rotulo: "Software e licenças", icone: "produtos" },
   emprestimos: { rotulo: "Empréstimos", icone: "calendario" },
   monitor: { rotulo: "Monitor de impressoras", icone: "print" },
   seguranca: { rotulo: "Segurança da conta", icone: "settings" },
@@ -70,6 +72,7 @@ const VIEWS = {
   financeiro: renderFinanceiro,
   contratos: renderContratos,
   descarte: renderDescarte,
+  software: renderSoftware,
   emprestimos: renderEmprestimos,
   monitor: renderMonitor,
   seguranca: renderSeguranca,
