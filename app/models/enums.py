@@ -163,3 +163,32 @@ class SituacaoConformidade(StrEnum):
     OCIOSO = "ocioso"            # instalado < licenciado — dinheiro parado
     SEM_LICENCA = "sem_licenca"  # instalado e nenhuma licença cadastrada
     NAO_INSTALADO = "nao_instalado"
+
+
+class MetricaLicenca(StrEnum):
+    """Como a licença é CONTADA — e por que isso muda o número.
+
+    ## O problema que este campo resolve
+
+    O OCS conta **máquinas**. A licença conta **seats**. Para o Office LTSC,
+    os dois são a mesma coisa: o direito acompanha o computador.
+
+    Para Microsoft 365 e Adobe CC, **não são**: o seat é por PESSOA, e uma
+    pessoa pode usar dois computadores.
+
+        Você tem 10 licenças. 10 pessoas usam.
+        Maria tem notebook e desktop → 11 máquinas com o programa instalado.
+        → o sistema compara 11 instalações com 10 seats e acusa EXCEDENTE.
+
+    Está errado, e o erro **custa dinheiro**: alguém compra uma licença que
+    não falta. E piora a cada máquina nova, mesmo sem entrar gente nova.
+
+    ## Por que o campo não tem padrão silencioso
+
+    A escolha é **perguntada**, não assumida. Um valor padrão faria o
+    operador passar reto e o cálculo seguir errado sem ninguém perceber —
+    que é exatamente o problema que este campo existe para resolver.
+    """
+
+    DISPOSITIVO = "dispositivo"
+    USUARIO = "usuario"

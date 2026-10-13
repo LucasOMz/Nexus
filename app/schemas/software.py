@@ -34,6 +34,7 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.enums import (
+    MetricaLicenca,
     PlataformaSoftware,
     SituacaoConformidade,
     SituacaoLicenca,
@@ -97,6 +98,13 @@ class LicencaIn(SemVazios):
     situacao: SituacaoLicenca = SituacaoLicenca.ATIVA
     seats: int = Field(default=1, ge=1)
 
+    # OBRIGATÓRIO e SEM padrão — de propósito.
+    #
+    # Um valor assumido faria o operador passar reto e o cálculo seguir
+    # errado em silêncio. Perguntando, ele é obrigado a pensar no caso dele
+    # — e a escolha errada vira escolha, não omissão.
+    metrica: MetricaLicenca
+
     # Texto puro na entrada. O router cifra e **descarta** o valor original;
     # ele nunca é gravado nem devolvido.
     chave: str | None = Field(default=None, max_length=500)
@@ -143,6 +151,7 @@ class LicencaOut(BaseModel):
     tipo: TipoLicenca
     situacao: SituacaoLicenca
     seats: int
+    metrica: MetricaLicenca
     validade: date | None = None
     numero_pedido: str | None = None
     fornecedor_id: int | None = None
@@ -234,6 +243,22 @@ class LinhaConformidade(BaseModel):
     # `instalado = 0`, é a pendência mais importante do relatório: alguém
     # decidiu que deveria estar em todas, e não está em nenhuma.
     obrigatorio: bool = False
+    # Como esta linha foi contada: por máquina ou por pessoa.
+    #
+    # A tela mostra, porque **11 pessoas e 11 máquinas são a mesma cifra e
+    # significam coisas diferentes** — sem saber qual foi usada, o número não
+    # é interpretável.
+    metrica: str = "dispositivo"
+    # --- T11: a explicação -------------------------------------------------
+    #
+    # O número sozinho (+13) não diz se a ação é comprar licença ou corrigir
+    # cadastro — e as duas custam coisas muito diferentes.
+    explicacao: str = ""
+    acao: str = ""
+    padroes: list[str] = Field(default_factory=list)
+    # Só preenchido quando nenhum nome casou: quase sempre o problema está no
+    # padrão, e não na licença.
+    alerta_padrao: str | None = None
 
 
 class ResumoConformidade(BaseModel):
@@ -243,4 +268,30 @@ class ResumoConformidade(BaseModel):
     sem_licenca: int
     custo_mensal: Decimal
     linhas: list[LinhaConformidade] = Field(default_factory=list)
-    atualizado_em: datetime
+    # A **última coleta no OCS** — não a hora desta consulta.
+    #
+    # Nulo significa "nunca coletado", e é a resposta honesta: devolver a hora
+    # atual faria um inventário de três meses parecer recém-atualizado, que é
+    # o pior tipo de data errada — tranquiliza.
+    atualizado_em: datetime | None = None
+
+
+class ResumoFabricante(BaseModel):
+    """Quanto do gasto e do uso está com cada fornecedor.
+
+    ## Por que agrupar por fabricante
+
+    Responde **com quem renegociar**. Um parque com 60% do gasto concentrado
+    num fornecedor tem poder de negociação — e isso não aparece numa lista
+    ordenada por nome de software.
+    """
+
+    fabricante: str
+    titulos: int
+    seats: int
+    em_uso: int
+    custo_mensal: Decimal
+    excedente: int
+    ocioso: int
+    # Fatia do custo mensal total, em pontos percentuais.
+    participacao: float = 0.0

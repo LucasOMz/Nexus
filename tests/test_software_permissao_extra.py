@@ -103,7 +103,7 @@ class TestFluxoCompleto:
         sw = client.post("/api/v1/softwares", json={"nome": "Office"},
                          headers=auth_headers).json()
         return client.post("/api/v1/licencas",
-                           json={"software_id": sw["id"], "tipo": "volume",
+                           json={"software_id": sw["id"], "tipo": "volume", "metrica": "dispositivo",
                                  "seats": 5, "chave": CHAVE},
                            headers=auth_headers).json()
 

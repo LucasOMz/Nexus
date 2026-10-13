@@ -27,8 +27,9 @@ maiúsculas.
 from __future__ import annotations
 
 import fnmatch
+import unicodedata
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import func
@@ -49,10 +50,35 @@ def normalizar(nome: str | None) -> str:
 
     O OCS varia maiúsculas, espaços duplos e sufixos de versão entre
     coletas — a comparação não pode depender disso.
+
+    ## Por que também remove acento
+
+    Num sistema em português, `Antivírus`, `Configuração`, `Impressão` e
+    `Aplicação` são comuns. O OCS reporta com acento; o operador digita o
+    padrão sem (`antivirus*`) — e os dois **não casavam**.
+
+    A consequência era o número mentindo: o software sumia da contagem de
+    instalados e aparecia como "sem licença", ou o inverso. Nenhum dos dois
+    dá erro — só leva a decidir errado.
+
+    ## O que NÃO é alterado
+
+    O **nome original continua gravado** em `softwares_instalados.nome`. Esta
+    função só padroniza para comparar; a tela mostra o texto como o OCS
+    mandou, com acento. Sem isso, a evidência de por que uma instalação
+    contou (ou não) se perderia.
+
+    A normalização é a mesma dos dois lados — nome instalado e padrão — então
+    `Aplicação` e `Aplicacao` passam a ser o mesmo, que é o comportamento
+    desejado: são o mesmo programa escrito de duas formas.
     """
     if not nome:
         return ""
-    return " ".join(nome.strip().lower().split())
+    # NFD separa a letra do acento; descartar os "combining marks" devolve a
+    # letra base. `ç` vira `c`, `ã` vira `a` — e a comparação fica estável.
+    decomposto = unicodedata.normalize("NFD", nome)
+    sem_acento = "".join(c for c in decomposto if not unicodedata.combining(c))
+    return " ".join(sem_acento.strip().lower().split())
 
 
 def casa(nome_instalado: str, padroes: list[str]) -> bool:
@@ -216,6 +242,38 @@ def _licencas_vivas(software: Software) -> list[Licenca]:
     return vivas
 
 
+
+def usuarios_distintos(db: Session, software_id: int) -> int:
+    """Quantas PESSOAS distintas usam este software.
+
+    ## Por que não vem do OCS
+
+    `Ativo` não guarda quem usa a máquina. O OCS sabe que o programa está
+    instalado no computador da Maria — e não que é a Maria quem o usa.
+
+    Então a contagem por pessoa vem das **atribuições**: quem foi designado.
+    Depende de alguém ter registrado, e é o único dado que existe para isso.
+
+    Conta `usuario_id` distinto: duas licenças atribuídas à mesma pessoa
+    somam **uma**, que é o ponto de medir por pessoa.
+    """
+    from app.models.software import AtribuicaoLicenca
+    from app.models.software import Licenca as _Licenca
+
+    return (
+        db.query(func.count(func.distinct(AtribuicaoLicenca.usuario_id)))
+        .join(_Licenca, _Licenca.id == AtribuicaoLicenca.licenca_id)
+        .filter(
+            _Licenca.software_id == software_id,
+            _Licenca.deleted_at.is_(None),
+            AtribuicaoLicenca.deleted_at.is_(None),
+            AtribuicaoLicenca.usuario_id.isnot(None),
+        )
+        .scalar()
+        or 0
+    )
+
+
 def calcular(db: Session, softwares: list[Software],
              instalados: list[tuple[str, int]] | None = None) -> list[dict]:
     """Cruza a lista de softwares cadastrados com o que está instalado.
@@ -255,6 +313,22 @@ def calcular(db: Session, softwares: list[Software],
         )
         instalado = consumo.get(s.id, 0)
 
+        # A MÉTRICA decide o que se compara.
+        #
+        # Por dispositivo: instalações contadas pelo OCS — o que ele sabe
+        # medir. Por pessoa: atribuições a usuários distintos, porque o OCS
+        # não sabe de quem é a máquina (`Ativo` não tem responsável).
+        #
+        # A licença manda. Se alguma do software é por pessoa, a comparação
+        # é por pessoa: misturar as unidades na mesma linha daria um número
+        # sem significado — 11 máquinas contra 10 pessoas.
+        por_pessoa = any(
+            getattr(lic.metrica, "value", lic.metrica) == "usuario"
+            for lic in vivas
+        )
+        if por_pessoa:
+            instalado = usuarios_distintos(db, s.id)
+
         # Um software OBRIGATÓRIO que não está instalado é a pendência mais
         # importante que este relatório pode mostrar: alguém decidiu que ele
         # deveria estar em toda máquina, e não está em nenhuma.
@@ -274,6 +348,11 @@ def calcular(db: Session, softwares: list[Software],
             "situacao": situacao(licenciado, instalado),
             "origens": origens.get(s.id, [])[:8],
             "obrigatorio": bool(s.obrigatorio),
+            # Como esta linha foi contada. A tela mostra, para o número ser
+            # interpretável: 11 pessoas e 11 máquinas são a mesma cifra e
+            # significam coisas diferentes.
+            "metrica": "usuario" if por_pessoa else "dispositivo",
+            "metrica": "usuario" if por_pessoa else "dispositivo",
             "custo_mensal": custo,
         })
 
@@ -295,6 +374,17 @@ def calcular(db: Session, softwares: list[Software],
             "custo_mensal": Decimal("0"),
             "obrigatorio": False,
         })
+
+    # --- T11: a explicação, que é o que faz o relatório decidir ---------
+    #
+    # O número sozinho (+13) não diz se a ação é comprar licença ou corrigir
+    # cadastro — e as duas custam coisas muito diferentes. A explicação
+    # distingue; a `acao` diz o próximo passo.
+    padroes_por_software = {s.id: s.lista_de_padroes() for s in softwares}
+    for linha in linhas:
+        linha.update(
+            explicar(linha, padroes_por_software.get(linha["software_id"], []))
+        )
 
     return linhas
 
@@ -320,6 +410,86 @@ ORDEM = {
 }
 
 
+
+def explicar(linha: dict, padroes: list[str]) -> dict:
+    """A causa da situação, a ação recomendada e os padrões tentados.
+
+    ## Por que a explicação importa mais que o número
+
+    `+13` sozinho não diz o que fazer. A diferença entre **comprar 13
+    licenças** e **corrigir um padrão** é de milhares de reais — e o número
+    não distingue as duas.
+
+    A explicação distingue, e a `acao` diz o próximo passo.
+    """
+    situacao = linha["situacao"]
+    lic = linha["licenciado"]
+    inst = linha["instalado"]
+    diff = abs(linha["diferenca"])
+    por_pessoa = linha.get("metrica") == "usuario"
+    unidade = "pessoa(s)" if por_pessoa else "máquina(s)"
+
+    if situacao == SituacaoConformidade.CONFORME:
+        explicacao = (
+            f"{inst} {unidade} em uso para {lic} seat(s) — dentro do "
+            f"licenciado."
+        )
+        acao = "Nada a fazer."
+
+    elif situacao == SituacaoConformidade.EXCEDENTE:
+        explicacao = (
+            f"{inst} {unidade} em uso e apenas {lic} seat(s) comprado(s). "
+            f"{diff} acima do licenciado."
+        )
+        # A ação muda conforme a métrica — e é aqui que o operador descobre
+        # se o problema é compra ou cadastro.
+        acao = (
+            "Comprar mais seats, ou revisar: parte do uso pode estar "
+            "atribuída a quem não precisa."
+        )
+
+    elif situacao == SituacaoConformidade.SEM_LICENCA:
+        if lic == 0 and inst == 0:
+            explicacao = "Software obrigatório que não está instalado em nenhuma máquina."
+            acao = "Verificar por que a instalação não foi feita."
+        else:
+            explicacao = (
+                f"{inst} {unidade} com o programa instalado e **nenhuma "
+                f"licença cadastrada**."
+            )
+            acao = (
+                "Cadastrar a licença se ela existe, ou **confirmar que o "
+                "padrão de reconhecimento está certo** antes de comprar — "
+                "pode ser software livre ou cadastro faltando."
+            )
+
+    elif situacao == SituacaoConformidade.OCIOSO:
+        explicacao = (
+            f"{lic} seat(s) comprado(s) e {inst} {unidade} em uso — "
+            f"{diff} sem uso."
+        )
+        acao = (
+            "Seats livres. Verificar se há demanda represada ou se a compra "
+            "foi maior que o necessário."
+        )
+    else:
+        explicacao = "Cadastrado, sem uso e sem licença."
+        acao = "Revisar o cadastro."
+
+    return {
+        "explicacao": explicacao,
+        "acao": acao,
+        "padroes": padroes,
+        # Quando não casou nada, os padrões são a pista mais útil: quase
+        # sempre o problema está neles, e não na licença.
+        "alerta_padrao": (
+            "Nenhum nome do OCS casou com os padrões deste software. "
+            "Os números acima podem estar incompletos."
+            if (not linha.get("origens") and padroes and inst == 0)
+            else None
+        ),
+    }
+
 def ordenar(linhas: list[dict]) -> list[dict]:
     """O que preocupa primeiro.
 
@@ -329,13 +499,69 @@ def ordenar(linhas: list[dict]) -> list[dict]:
     return sorted(linhas, key=lambda x: (_peso(x), -abs(x["diferenca"])))
 
 
-def resumo(linhas: list[dict]) -> dict:
-    """Os números do topo da tela."""
+def ultima_coleta(db: Session) -> datetime | None:
+    """Quando o OCS reportou software pela última vez.
+
+    ## Por que não é datetime.now()
+
+    A tela mostrava a hora em que ela mesma foi consultada — e não a hora em
+    que o dado foi coletado. Um inventário de três meses aparecia como
+    recém-atualizado.
+
+    **É o pior tipo de data errada: tranquiliza.** Quem lê conclui que o dado
+    é fresco e decide em cima dele. Devolver None quando não há coleta é
+    mais honesto que devolver a hora atual.
+    """
+    from app.models.software import SoftwareInstalado
+
+    return (
+        db.query(func.max(SoftwareInstalado.coletado_em))
+        .filter(SoftwareInstalado.deleted_at.is_(None))
+        .scalar()
+    )
+
+
+
+def para_csv(linhas: list[dict]) -> str:
+    """O relatório em CSV, para abrir no Excel e levar para reunião.
+
+    Separador `;` e decimal `,` — o padrão do Excel em português. Com vírgula,
+    o arquivo abre com as colunas todas grudadas numa só, e quem recebe
+    conclui que o sistema exporta errado.
+
+    O BOM no começo é o que faz o acento aparecer certo no Excel do Windows.
+    """
+    import csv
+    import io as _io
+
+    buf = _io.StringIO()
+    campos = [
+        "software", "fabricante", "licenciado", "instalado", "diferenca",
+        "situacao", "metrica", "explicacao", "acao", "padroes", "origens",
+    ]
+    w = csv.DictWriter(buf, fieldnames=campos, delimiter=";",
+                       extrasaction="ignore", lineterminator="\n")
+    w.writeheader()
+    for linha in linhas:
+        registro = dict(linha)
+        registro["padroes"] = "; ".join(linha.get("padroes") or [])
+        registro["origens"] = "; ".join(linha.get("origens") or [])
+        w.writerow(registro)
+
+    return "\ufeff" + buf.getvalue()
+
+def resumo(linhas: list[dict], coletado_em: datetime | None = None) -> dict:
+    """Os números do topo da tela.
+
+    coletado_em é a data REAL da coleta no OCS — ver ultima_coleta. O
+    padrão None significa "nunca coletado", e é a resposta certa quando
+    não houve coleta nenhuma.
+    """
     return {
         "titulos": len(linhas),
         "excedente": sum(1 for x in linhas if x["situacao"] == SituacaoConformidade.EXCEDENTE),
         "ocioso": sum(1 for x in linhas if x["situacao"] == SituacaoConformidade.OCIOSO),
         "sem_licenca": sum(1 for x in linhas if x["situacao"] == SituacaoConformidade.SEM_LICENCA),
         "custo_mensal": sum((x["custo_mensal"] for x in linhas), Decimal("0")),
-        "atualizado_em": datetime.now(timezone.utc),
+        "atualizado_em": coletado_em,
     }

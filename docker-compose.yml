@@ -1,10 +1,33 @@
 # =====================================================================
-# Nexus — stack completa (api + postgres + nginx)
+# Nexus — stack (api + postgres)
 # Suba tudo com:  docker compose up -d --build
 #
 # IMPORTANTE: os volumes abaixo guardam os dados que NÃO podem se perder.
 # Sem eles, fotos/termos/anexos e backups vivem dentro do container e
 # desaparecem ao recriar a stack (docker compose up --build).
+#
+# ---------------------------------------------------------------------
+# Sobre o NGINX (removido em 3.24.0)
+#
+# Esta stack tinha um `nginx` fazendo proxy para a API. Ele foi removido
+# porque **não fazia nada**: o TLS estava comentado, não havia cache nem
+# compressão, e a API já é publicada direto na porta 8000.
+#
+# Pior: o `client_max_body_size 25m` dele não protegia nada, porque a porta
+# 8000 está aberta — qualquer um chamava a API direto, ao lado do proxy.
+# Era um posto de pedágio ao lado de uma estrada aberta.
+#
+# ## Quando ele volta
+#
+# Quando houver domínio e certificado. Aí ele deixa de ser enfeite e passa
+# a ser a peça que termina o TLS — e o ajuste que importa é **fechar a porta
+# 8000**, deixando só o nginx exposto. Sem isso, o limite continua
+# contornável.
+#
+# ## Antes de expor na internet
+#
+# Sem TLS, senha e token trafegam em texto claro. Em rede interna ou VPN,
+# tudo bem. Na internet aberta, não.
 # =====================================================================
 services:
   db:
@@ -44,6 +67,18 @@ services:
       # Backups: pasta persistente DENTRO do container (volume abaixo).
       BACKUP_DIR: /app/backups
       BACKUP_RETER: ${BACKUP_RETER:-30}
+      # Chave mestra das licenças de software.
+      #
+      # ATENÇÃO: sem ela, cadastrar licença com chave falha — o módulo de
+      # software não tem como cifrar. E se ela se perder, as chaves
+      # cadastradas ficam IRRECUPERÁVEIS: o backup do banco não a contém,
+      # de propósito.
+      #
+      # Guarde num cofre separado. Para girar sem perder o legado:
+      #   NEXUS_CHAVE_LICENCAS_V1     = <a chave antiga>
+      #   NEXUS_CHAVE_LICENCAS_VERSAO = 2
+      NEXUS_CHAVE_LICENCAS: ${NEXUS_CHAVE_LICENCAS:?defina a chave mestra das licenças}
+      NEXUS_CHAVE_LICENCAS_VERSAO: ${NEXUS_CHAVE_LICENCAS_VERSAO:-1}
     volumes:
       # Fotos, termos e anexos. NUNCA remova este volume.
       - media:/app/media
@@ -54,20 +89,7 @@ services:
     ports:
       - "${API_PORT:-8000}:8000"
 
-  nginx:
-    image: nginx:1.27-alpine
-    restart: unless-stopped
-    depends_on:
-      - api
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - certs:/etc/letsencrypt
-
 volumes:
   pgdata:
-  certs:
   media:
   backups:

@@ -40,15 +40,19 @@ from sqlalchemy import func  # noqa: E402
 
 from app.database import SessionLocal  # noqa: E402
 from app.models.contrato import Contrato  # noqa: E402
-from app.models.core import (  # noqa: E402
+from app.models.core import (  # noqa: E402  # noqa: E402
     Ativo,
     Categoria,
     Departamento,
     Fornecedor,
     Imagem,
     Localizacao,
+    Manutencao,
+    Movimentacao,
     Planta,
+    Produto,
 )
+from app.models.emprestimo import Emprestimo  # noqa: E402
 from app.models.enums import (  # noqa: E402
     Conectividade,
     Dominio,
@@ -58,7 +62,11 @@ from app.models.enums import (  # noqa: E402
     TipoImpressao,
     TipoItem,
 )
-from app.models.impressora import AtivoImpressora  # noqa: E402
+from app.models.impressora import (  # noqa: E402
+    AtivoImpressora,
+    LeituraContador,
+    SuprimentoImpressora,
+)
 from app.models.ti import AtivoTI  # noqa: E402
 
 MARCA = "AMOSTRA"
@@ -315,12 +323,45 @@ def limpar(db) -> None:
     db.query(AtivoImpressora).filter(AtivoImpressora.ativo_id.in_(ids)).delete(synchronize_session=False)
     db.query(Ativo).filter(Ativo.id.in_(ids)).delete(synchronize_session=False)
 
+    # --- Entidades que APONTAM para os ativos -----------------------------
+    #
+    # A ordem importa: primeiro quem depende, depois o ativo. Apagar o ativo
+    # antes deixaria estes registros órfãos no instante entre as operações —
+    # e "órfão" aqui vira tela quebrada, não aviso.
+    #
+    # Cada um pela marca em `observacoes`: sem isso, a limpeza levaria junto
+    # dado real que estivesse na mesma tabela.
+    removidos: dict[str, int] = {}
+
+    def apagar(nome: str, modelo, filtro) -> None:
+        n = db.query(modelo).filter(filtro).delete(synchronize_session=False)
+        removidos[nome] = n
+
+    apagar("Movimentações", Movimentacao, Movimentacao.observacoes.like(f"{MARCA}%"))
+    apagar("Manutenções", Manutencao, Manutencao.observacoes.like(f"{MARCA}%"))
+    apagar("Empréstimos", Emprestimo, Emprestimo.observacoes.like(f"{MARCA}%"))
+    apagar("Leituras", LeituraContador, LeituraContador.observacoes.like(f"{MARCA}%"))
+
+    # Suprimentos não têm `observacoes` — vão pelos ativos que serão apagados.
+    if ids:
+        removidos["Suprimentos"] = (
+            db.query(SuprimentoImpressora)
+            .filter(SuprimentoImpressora.ativo_id.in_(ids))
+            .delete(synchronize_session=False)
+        )
+
+    apagar("Produtos", Produto, Produto.descricao.like(f"{MARCA}%"))
+
     contratos = db.query(Contrato).filter(Contrato.observacoes.like(f"{MARCA}%")).all()
     for c in contratos:
         db.delete(c)
 
     db.commit()
+
     print(f"  Removidos {len(ids)} ativo(s) e {len(contratos)} contrato(s) de amostra.")
+    for nome, n in removidos.items():
+        if n:
+            print(f"    {nome}: {n}")
 
 
 def main() -> None:

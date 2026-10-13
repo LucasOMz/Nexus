@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -38,7 +39,7 @@ from app.core.deps import (
 from app.core.planta import aplicar_filtro, exigir_planta_do_usuario, planta_ativa
 from app.database import get_db
 from app.models.core import Ativo, Usuario
-from app.models.enums import SituacaoLicenca
+from app.models.enums import SituacaoConformidade, SituacaoLicenca
 from app.models.software import AtribuicaoLicenca, Licenca, Software
 from app.schemas.software import (
     AtribuicaoIn,
@@ -48,6 +49,7 @@ from app.schemas.software import (
     LicencaOut,
     LinhaConformidade,
     ResumoConformidade,
+    ResumoFabricante,
     SoftwareIn,
     SoftwareOut,
 )
@@ -532,6 +534,93 @@ def liberar(licenca_id: int, atribuicao_id: int, db: Session = Depends(get_db),
 # ---------------------------------------------------------------------------
 # Conformidade
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Listagem de atribuições — as duas visões
+# ---------------------------------------------------------------------------
+@router.get("/licencas/{licenca_id}/atribuicoes", response_model=list[AtribuicaoOut])
+def listar_atribuicoes_da_licenca(
+    licenca_id: int,
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(get_current_user),
+    planta: int | None = Depends(planta_ativa),
+):
+    """Quem usa esta licença, e quais seats estão livres.
+
+    O escopo é conferido pela licença: uma atribuição não tem planta própria,
+    ela herda a da licença. Sem isso, daria para listar quem usa a licença de
+    outra unidade sabendo o id.
+    """
+    lic = _licenca_no_escopo(db, licenca_id, planta)
+
+    return [
+        _atribuicao_out(a)
+        for a in (
+            db.query(AtribuicaoLicenca)
+            .filter(
+                AtribuicaoLicenca.licenca_id == lic.id,
+                AtribuicaoLicenca.deleted_at.is_(None),
+            )
+            .order_by(AtribuicaoLicenca.id)
+            .all()
+        )
+    ]
+
+
+@router.get("/atribuicoes", response_model=list[AtribuicaoOut])
+def listar_atribuicoes(
+    ativo_id: int | None = Query(default=None),
+    usuario_id: int | None = Query(default=None),
+    software_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(get_current_user),
+    planta: int | None = Depends(planta_ativa),
+):
+    """A visão inversa: o que este ativo — ou esta pessoa — tem direito.
+
+    ## Por que existe
+
+    O caminho natural de quem opera é a partir do **equipamento** ou da
+    **pessoa**, não da licença. Sem esta rota, responder *"posso formatar
+    esta máquina?"* exigiria abrir licença por licença.
+
+    ## Os filtros
+
+    Todos opcionais e combináveis. Sem nenhum, devolve tudo o que a planta
+    permite — o que é útil para auditoria e para exportar.
+
+    O escopo vem da **licença**, que é quem tem planta: a atribuição não tem
+    planta própria. Sem este filtro, a rota listaria atribuições de qualquer
+    unidade.
+    """
+    q = (
+        db.query(AtribuicaoLicenca)
+        .join(Licenca, Licenca.id == AtribuicaoLicenca.licenca_id)
+        .filter(
+            AtribuicaoLicenca.deleted_at.is_(None),
+            Licenca.deleted_at.is_(None),
+        )
+    )
+
+    # Escopo por planta. Licença corporativa (`planta_id` nulo) vale em toda
+    # unidade — é o que significa corporativo.
+    if planta is not None:
+        q = q.filter(
+            (Licenca.planta_id.is_(None)) | (Licenca.planta_id == planta)
+        )
+
+    if ativo_id is not None:
+        q = q.filter(AtribuicaoLicenca.ativo_id == ativo_id)
+    if usuario_id is not None:
+        q = q.filter(AtribuicaoLicenca.usuario_id == usuario_id)
+    if software_id is not None:
+        q = q.filter(Licenca.software_id == software_id)
+
+    return [
+        _atribuicao_out(a)
+        for a in q.order_by(AtribuicaoLicenca.id.desc()).limit(500).all()
+    ]
+
+
 @router.get("/conformidade", response_model=ResumoConformidade)
 def conformidade(db: Session = Depends(get_db),
                  user: Usuario = Depends(get_current_user),
@@ -550,21 +639,14 @@ def conformidade(db: Session = Depends(get_db),
     Quem entra quer saber se está em risco, não quantos títulos existem.
     A ordenação põe excedente e sem-licença no topo.
     """
-    qs = db.query(Software).filter(Software.deleted_at.is_(None))
-    qs = aplicar_filtro(qs, Software, planta)
-    softwares = qs.all()
-
-    # Com OCS: o que está instalado de fato. Sem OCS: o que foi atribuído.
-    # A planta vai junto: sem ela a contagem somaria as unidades e o
-    # número continuaria parecendo plausível.
-    instalados = conformidade_service.instalados_por_nome(db, planta_id=planta)
-    if not instalados:
-        instalados = conformidade_service.instalados_das_atribuicoes(db)
-
-    linhas = conformidade_service.ordenar(
-        conformidade_service.calcular(db, softwares, instalados)
+    # Uma montagem só, compartilhada com o CSV e o resumo por fabricante —
+    # repetir faria os três divergirem no dia em que um fosse ajustado.
+    linhas = _linhas_conformidade(db, planta)
+    # A data REAL da coleta, não a hora desta consulta — ver
+    # conformidade.ultima_coleta.
+    r = conformidade_service.resumo(
+        linhas, conformidade_service.ultima_coleta(db)
     )
-    r = conformidade_service.resumo(linhas)
 
     return ResumoConformidade(
         titulos=r["titulos"], excedente=r["excedente"], ocioso=r["ocioso"],
@@ -573,6 +655,26 @@ def conformidade(db: Session = Depends(get_db),
                                      if k in LinhaConformidade.model_fields})
                 for x in linhas],
         atualizado_em=r["atualizado_em"],
+    )
+
+
+def _linhas_conformidade(db: Session, planta: int | None) -> list[dict]:
+    """As linhas de conformidade, já com escopo de planta e explicação.
+
+    Extraído porque **três** endpoints precisam do mesmo cálculo: a tela, o
+    CSV e o resumo por fabricante. Repetir a montagem em cada um faria os
+    três divergirem no dia em que um fosse ajustado.
+    """
+    qs = db.query(Software).filter(Software.deleted_at.is_(None))
+    qs = aplicar_filtro(qs, Software, planta)
+    softwares = qs.all()
+
+    instalados = conformidade_service.instalados_por_nome(db, planta_id=planta)
+    if not instalados:
+        instalados = conformidade_service.instalados_das_atribuicoes(db)
+
+    return conformidade_service.ordenar(
+        conformidade_service.calcular(db, softwares, instalados)
     )
 
 # ---------------------------------------------------------------------------
@@ -655,3 +757,154 @@ def ocs_reconhecer(db: Session = Depends(get_db),
     audit(db, user, "reconhecer", "software_ocs", None, diff={"mudados": mudados})
     db.commit()
     return {"reconhecidos": mudados, **ocs_software.resumo_do_banco(db)}
+
+
+@router.get("/licencas/{licenca_id}/historico")
+def historico_da_licenca(
+    licenca_id: int,
+    limite: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(get_current_user),
+    planta: int | None = Depends(planta_ativa),
+):
+    """Quem mexeu nesta licença, quando e o quê.
+
+    ## De onde vem
+
+    Da auditoria, que já registra tudo — criar, editar, atribuir, liberar e
+    revelar chave. Este endpoint só filtra e dá o escopo.
+
+    ## Por que não usar `/auditoria` direto
+
+    Aquele exige **administrador**. Quem cuida das licenças não é
+    necessariamente admin, e precisa saber que a licença mudou — quem
+    atribuiu, quando, e se alguém revelou a chave.
+
+    ## O valor da chave não aparece
+
+    O diff da auditoria grava `<protegido>` no lugar do segredo — ver
+    `CAMPOS_PROTEGIDOS`. A auditoria é imutável, então uma chave gravada nela
+    estaria vazada para sempre.
+    """
+    # Confere o escopo: quem não enxerga a licença não vê o histórico dela.
+    lic = _licenca_no_escopo(db, licenca_id, planta)
+
+    from app.models.core import LogAuditoria
+    from app.models.core import Usuario as _Usuario
+
+    registros = (
+        db.query(LogAuditoria, _Usuario.nome)
+        .outerjoin(_Usuario, _Usuario.id == LogAuditoria.usuario_id)
+        .filter(
+            LogAuditoria.entidade == "licenca",
+            LogAuditoria.entidade_id == lic.id,
+        )
+        .order_by(LogAuditoria.id.desc())
+        .limit(limite)
+        .all()
+    )
+
+    ROTULO = {
+        "criar": "Licença criada",
+        "editar": "Licença alterada",
+        "apagar": "Licença removida",
+        "atribuir": "Seat atribuído",
+        "liberar": "Seat liberado",
+        "revelar_chave": "Chave revelada",
+    }
+
+    return {
+        "licenca_id": lic.id,
+        "eventos": [
+            {
+                "id": log.id,
+                "acao": getattr(log.acao, "value", log.acao),
+                "descricao": ROTULO.get(
+                    getattr(log.acao, "value", log.acao), log.acao
+                ),
+                "usuario": nome or "—",
+                "quando": log.created_at,
+                "ip": log.ip,
+                # O diff já vem com `<protegido>` nos campos sensíveis.
+                "diff": log.diff,
+                # A revelação da chave é o evento que mais interessa a quem
+                # audita: é o único em que um SEGREDO saiu do sistema.
+                "relevante": getattr(log.acao, "value", log.acao) == "revelar_chave",
+            }
+            for log, nome in registros
+        ],
+    }
+
+
+@router.get("/conformidade.csv")
+def conformidade_csv(
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(get_current_user),
+    planta: int | None = Depends(planta_ativa),
+):
+    """O relatório de conformidade em CSV, com a explicação de cada linha.
+
+    ## Por que exportar
+
+    Quem decide compra de licença **leva o número para uma reunião** — e uma
+    tela não vai junto. Sem exportar, alguém redigita, e o número redigitado
+    deixa de ser o número do sistema.
+
+    O CSV sai com a explicação e a ação recomendada: é o que permite decidir
+    fora do sistema sem perder o contexto.
+    """
+    linhas = _linhas_conformidade(db, planta)
+    conteudo = conformidade_service.para_csv(linhas)
+
+    from fastapi.responses import Response
+
+    return Response(
+        content=conteudo,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": 'attachment; filename="conformidade.csv"',
+            # `no-store`: o arquivo tem nome de software e contagem do parque.
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@router.get("/conformidade/fabricantes", response_model=list[ResumoFabricante])
+def conformidade_por_fabricante(
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(get_current_user),
+    planta: int | None = Depends(planta_ativa),
+):
+    """Custo e uso agrupados por fabricante.
+
+    Responde **com quem renegociar**: um parque com o gasto concentrado num
+    fornecedor só tem poder de negociação — e isso não aparece numa lista
+    ordenada por nome de software.
+    """
+    linhas = _linhas_conformidade(db, planta)
+
+    grupos: dict[str, dict] = {}
+    for x in linhas:
+        chave = (x.get("fabricante") or "Não informado").strip() or "Não informado"
+        g = grupos.setdefault(chave, {
+            "fabricante": chave, "titulos": 0, "seats": 0, "em_uso": 0,
+            "custo_mensal": Decimal("0"), "excedente": 0, "ocioso": 0,
+        })
+        g["titulos"] += 1
+        g["seats"] += x["licenciado"]
+        g["em_uso"] += x["instalado"]
+        g["custo_mensal"] += x.get("custo_mensal") or Decimal("0")
+        if x["situacao"] == SituacaoConformidade.EXCEDENTE:
+            g["excedente"] += 1
+        elif x["situacao"] == SituacaoConformidade.OCIOSO:
+            g["ocioso"] += 1
+
+    total = sum((g["custo_mensal"] for g in grupos.values()), Decimal("0")) or Decimal("1")
+    saida = []
+    for g in grupos.values():
+        g["participacao"] = round(float(g["custo_mensal"] / total) * 100, 1)
+        saida.append(g)
+
+    # O maior gasto primeiro — é ele que interessa para negociar.
+    saida.sort(key=lambda g: g["custo_mensal"], reverse=True)
+    return saida

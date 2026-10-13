@@ -94,26 +94,39 @@ class TestSoftwareObrigatorio:
         assert linha["instalado"] == 5
         assert linha["obrigatorio"] is True
 
-    def test_acento_ainda_nao_casa(self, db_session):
-        """⚠️ Limitação conhecida, e não um comportamento desejado.
+    def test_acento_casa(self, db_session):
+        """Num sistema em português, acento é a regra — não a exceção.
 
-        `normalizar` baixa a caixa e colapsa espaços, mas **não remove
-        acentos**. O OCS costuma reportar `Antivírus` (com acento) e o padrão
-        é digitado `antivirus*` (sem) — e os dois não casam.
+        O OCS reporta `Antivírus`; o operador digita `antivirus*`. Até pouco
+        tempo os dois **não casavam**, e o software sumia da contagem de
+        instalados — aparecendo como "sem licença", sem erro nenhum.
 
-        Num sistema em português isso aparece em `Antivírus`, `Configuração`,
-        `Impressão`, `Aplicação`. O software some da contagem e vira "sem
-        licença" — o número mente para baixo.
-
-        O teste fixa o comportamento **atual** para que a correção, quando
-        vier, quebre aqui de propósito e alguém perceba.
+        O teste anterior travava o comportamento antigo de propósito, para
+        que a correção o quebrasse e alguém percebesse. **Foi o que
+        aconteceu** — ele falhou com a mensagem certa no primeiro dia.
         """
         from app.services import conformidade as c
 
-        assert c.casa("Antivírus", ["antivirus*"]) is False, (
-            "se isto passou a casar, a normalização de acentos foi "
-            "implementada — atualize este teste e remova o aviso"
-        )
+        for nome, padrao in (
+            ("Antivírus Corporativo", "antivirus*"),
+            ("Configuração de Rede", "configuracao*"),
+            ("Impressão Fiscal", "impressao*"),
+            ("Aplicação Financeira", "aplicacao*"),
+        ):
+            assert c.casa(nome, [padrao]) is True, f"{nome} não casou com {padrao}"
+
+    def test_o_nome_original_preserva_o_acento(self, db_session):
+        """A normalização é só para COMPARAR — a tela mostra como o OCS mandou.
+
+        Se o acento fosse removido na gravação, a evidência de por que uma
+        instalação contou (ou não) se perderia — e não haveria com o que
+        comparar para corrigir um padrão errado.
+        """
+        from app.services import conformidade as c
+
+        original = "Antivírus Corporativo"
+        assert c.normalizar(original) == "antivirus corporativo"
+        assert original == "Antivírus Corporativo", "a função alterou a entrada"
 
     def test_sem_acento_casa(self, db_session):
         """O caminho que funciona hoje: mesmo texto dos dois lados."""

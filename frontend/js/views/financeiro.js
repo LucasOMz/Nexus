@@ -90,6 +90,10 @@ async function telaResumo(caixa) {
 
   const comp = r.comprado || {};
   const loc = r.locado || {};
+  // As assinaturas de software — a terceira natureza. Vem do backend em
+  // `resumo.software`; o `|| {}` evita quebra se a API for anterior a este
+  // bloco e não devolver a chave.
+  const sw = r.software || {};
 
   caixa.append(
     el("p", { class: "muted", style: "font-size:12.5px;margin:0 0 12px" },

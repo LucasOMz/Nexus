@@ -73,21 +73,32 @@ def _fabricante(item: dict) -> str | None:
     return None
 
 
-def listar_softwares(cfg: Any, maquina_id: Any) -> list[dict]:
-    """A lista de programas de uma máquina. Tolerante a falha.
+def listar_softwares(cfg: Any, maquina_id: Any) -> list[dict] | None:
+    """A lista de programas de uma máquina.
 
-    Uma máquina que não responde não pode derrubar a coleta inteira — ela
-    simplesmente não contribui, e o resumo mostra quantas falharam.
+    ## `None` e `[]` significam coisas diferentes
+
+    - **`None`** — a máquina não respondeu. O dado anterior continua
+      valendo, e o resumo conta a falha.
+    - **`[]`** — resposta válida com zero programas. É informação: os
+      programas foram desinstalados, e a lista antiga precisa sair.
+
+    Tratar as duas como iguais foi o que fazia um software desinstalado
+    continuar contando como instalado — e a conformidade acusar uso
+    irregular para sempre.
     """
     try:
         with ocs_service._cliente(cfg) as cli:
             r = cli.get(f"/ocsapi/v1/computer/{maquina_id}/software")
             if r.status_code != 200:
-                return []
+                # Falha de comunicação: `None`, não lista vazia. A diferença
+                # decide se o snapshot anterior é preservado ou apagado — ver
+                # o comentário de `coletar`.
+                return None
             dados = r.json()
     except Exception as e:  # noqa: BLE001 - a coleta não pode parar por uma máquina
         log.debug("OCS: software de %s falhou: %s", maquina_id, e)
-        return []
+        return None
 
     if isinstance(dados, dict):
         for chave in ("software", "data", "items", "results"):
@@ -174,10 +185,16 @@ def coletar(
         resumo.maquinas += 1
         itens = listar_softwares(cfg, ocs_id)
 
-        if not itens:
+        # `None` = falha de comunicação: preserva o que já está gravado, e
+        # conta a falha. Uma coleta que não aconteceu não é prova de que o
+        # software foi desinstalado.
+        if itens is None:
             resumo.falhas += 1
             continue
 
+        # Daqui para baixo, `itens` é uma RESPOSTA VÁLIDA — inclusive quando
+        # vazia. Lista vazia significa que os programas saíram, e a próxima
+        # linha apaga o snapshot antigo.
         if substituir:
             db.query(SoftwareInstalado).filter(
                 SoftwareInstalado.ativo_id == ativo_id,
@@ -245,18 +262,36 @@ def aplicar_reconhecimento(db: Session) -> int:
 
     decisao = {n: _reconhecer(n, mapa) for n in nomes}
 
-    mudados = 0
+    # ## T3: recasa TUDO, não só o que está nulo
+    #
+    # Antes, o filtro `software_id.is_(None)` fazia o reconhecer só preencher
+    # vazio: corrigir um padrão errado **não consertava** o que já havia sido
+    # associado. O operador ajustava, rodava, e nada mudava — concluindo que
+    # o ajuste não funcionou.
+    #
+    # Agora a comparação é com o valor atual, e só grava quem MUDOU. Sem esse
+    # cuidado, um parque de 300 mil linhas levaria 300 mil UPDATEs inúteis.
+    nomes_por_software: dict[int | None, list[str]] = {}
     for nome, software_id in decisao.items():
-        mudados += (
-            db.query(SoftwareInstalado)
-            .filter(
-                SoftwareInstalado.nome == nome,
-                SoftwareInstalado.software_id.is_(None),
-                SoftwareInstalado.deleted_at.is_(None),
-            )
-            .update({"software_id": software_id}, synchronize_session=False)
-            if software_id else 0
+        nomes_por_software.setdefault(software_id, []).append(nome)
+
+    mudados = 0
+    for software_id, nomes in nomes_por_software.items():
+        q = db.query(SoftwareInstalado).filter(
+            SoftwareInstalado.nome.in_(nomes),
+            SoftwareInstalado.deleted_at.is_(None),
         )
+        if software_id is None:
+            # Deixou de ser reconhecido: desvincula o que estava ligado.
+            q = q.filter(SoftwareInstalado.software_id.isnot(None))
+            mudados += q.update({"software_id": None}, synchronize_session=False)
+        else:
+            # Só quem aponta para OUTRO software (ou nenhum) precisa mudar.
+            q = q.filter(
+                (SoftwareInstalado.software_id.is_(None))
+                | (SoftwareInstalado.software_id != software_id)
+            )
+            mudados += q.update({"software_id": software_id}, synchronize_session=False)
 
     db.commit()
     return mudados

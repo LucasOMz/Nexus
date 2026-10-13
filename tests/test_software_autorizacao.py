@@ -50,7 +50,7 @@ def duas_plantas(client, auth_headers):
                          json={"nome": f"Software {sigla}", "planta_id": planta.id},
                          headers=auth_headers).json()
         lic = client.post("/api/v1/licencas",
-                          json={"software_id": sw["id"], "tipo": "volume", "seats": 5,
+                          json={"software_id": sw["id"], "tipo": "volume", "metrica": "dispositivo", "seats": 5,
                                 "chave": f"{CHAVE[:-1]}{sigla}", "planta_id": planta.id},
                           headers=auth_headers).json()
         feitos[sigla] = {"planta": planta.id, "software": sw, "licenca": lic}
@@ -185,7 +185,7 @@ class TestLicencaCorporativa:
         sw = client.post("/api/v1/softwares",
                          json={"nome": "Volume Corporativo"}, headers=auth_headers).json()
         lic = client.post("/api/v1/licencas",
-                          json={"software_id": sw["id"], "tipo": "volume", "seats": 100,
+                          json={"software_id": sw["id"], "tipo": "volume", "metrica": "dispositivo", "seats": 100,
                                 "chave": "CORP-9999-8888-7777"},
                           headers=auth_headers).json()
         assert lic["planta_id"] is None, "deveria ser corporativa"

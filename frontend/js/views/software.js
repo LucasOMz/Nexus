@@ -367,6 +367,13 @@ function formLicenca(caixa, softwares) {
     el("option", { value: "trial" }, "Trial"));
   selTipo.addEventListener("change", () => { campos.tipo = selTipo.value; });
 
+  // Sem opção marcada por padrão — ver o comentário no formulário.
+  const selMetrica = el("select", {},
+    el("option", { value: "" }, "Escolha…"),
+    el("option", { value: "dispositivo" }, "Por máquina — o direito acompanha o computador"),
+    el("option", { value: "usuario" }, "Por pessoa — o direito acompanha o colaborador"));
+  selMetrica.addEventListener("change", () => { campos.metrica = selMetrica.value; });
+
   const entrada = (chave, rotulo, tipo = "text", dica = null) => {
     const i = el("input", { type: tipo });
     i.addEventListener("input", () => { campos[chave] = i.value; });
@@ -380,6 +387,24 @@ function formLicenca(caixa, softwares) {
       el("div", { class: "field" }, el("label", {}, "Software *"), selSoftware),
       el("div", { class: "field" }, el("label", {}, "Tipo *"), selTipo),
       entrada("seats", "Seats *", "number"),
+
+      // --- Métrica: PERGUNTADA, não assumida ---------------------------
+      //
+      // Nenhuma opção vem marcada, e o salvar fica bloqueado até a escolha.
+      // Um valor padrão faria o operador passar reto — e o cálculo seguiria
+      // errado sem ninguém perceber, que é justamente o que a métrica existe
+      // para evitar.
+      el("div", { class: "field" },
+        el("label", {}, "Como esta licença é contada? *"),
+        selMetrica,
+        el("span", { class: "dica" },
+          "Office LTSC, AutoCAD e OEM são por máquina. "
+          + "Microsoft 365 e Adobe CC são por pessoa.")),
+      el("p", { class: "recado info", style: "margin:0" },
+        "Isto muda a conta. Uma pessoa pode usar dois computadores — se a "
+        + "licença for por pessoa, contar máquinas acusa excesso que não "
+        + "existe, e alguém compra licença que não falta."),
+
       entrada("chave", "Chave", "text",
         "Cifrada ao salvar. Não é devolvida em nenhuma listagem."),
       entrada("validade", "Validade", "date", "Deixe vazio em perpétua."),
@@ -390,6 +415,9 @@ function formLicenca(caixa, softwares) {
         label: "Salvar", variant: "filled",
         onClick: async () => {
           if (!campos.seats) { toast("Informe os seats"); return false; }
+          // A métrica é obrigatória: sem ela a API recusa, e a mensagem
+          // genérica de validação não diria qual campo faltou.
+          if (!campos.metrica) { toast("Escolha como a licença é contada"); return false; }
           try {
             await api.post("/licencas", campos);
             toast("Licença cadastrada");
@@ -405,32 +433,159 @@ function formLicenca(caixa, softwares) {
 // Atribuições
 // ---------------------------------------------------------------------------
 async function abaAtribuicoes(caixa) {
-  const lista = await api.get("/licencas");
+  const [licencas, softwares, atribuicoes] = await Promise.all([
+    api.get("/licencas"),
+    api.get("/softwares").catch(() => []),
+    api.get("/atribuicoes").catch(() => []),
+  ]);
+  const nome = Object.fromEntries((softwares || []).map((s) => [s.id, s.nome]));
   caixa.innerHTML = "";
 
-  const comUso = lista.filter((l) => l.seats_usados > 0);
+  const comUso = licencas.filter((l) => l.seats_usados > 0 || l.seats_livres > 0);
+
+  caixa.append(el("div", { class: "row between wrap", style: "gap:10px;align-items:center" },
+    el("p", { class: "muted", style: "margin:0" },
+      `${atribuicoes.length} atribuição(ões). Cada uma liga uma licença a uma `
+      + "máquina ou a uma pessoa."),
+    el("button", {
+      class: "btn filled small", type: "button",
+      onclick: () => formAtribuir(caixa, licencas, softwares),
+    }, "Atribuir")));
+
   if (!comUso.length) {
-    caixa.append(vazio("Nenhuma atribuição",
-      "As atribuições ligam uma licença a uma máquina ou a uma pessoa. "
-      + "São elas que mostram quais seats estão em uso."));
+    caixa.append(vazio("Nenhuma licença cadastrada",
+      "Cadastre uma licença primeiro — é ela que tem os seats a distribuir."));
     return;
   }
 
-  caixa.append(el("p", { class: "muted", style: "margin:0 0 14px" },
-    "Cada licença mostra quantos seats estão atribuídos. Libere um seat para "
-    + "reaproveitá-lo noutra máquina."));
-
+  // Uma lista por licença, com as atribuições e a ação de liberar.
   for (const l of comUso) {
-    caixa.append(el("div", { class: "card", style: "margin-bottom:12px" },
+    const minhas = atribuicoes.filter((a) => a.licenca_id === l.id);
+    const cheia = l.seats_livres === 0;
+
+    caixa.append(el("div", { class: "card", style: "margin-top:14px" },
       el("div", { class: "row between wrap", style: "gap:8px;align-items:center" },
-        el("b", {}, `Licença #${l.id} — ${l.tipo}`),
-        el("span", { class: `chip ${l.seats_livres ? "ok" : "erro"}` },
+        el("div", {},
+          el("b", {}, nome[l.software_id] || `Licença #${l.id}`),
+          el("div", { class: "muted", style: "font-size:12px" },
+            `${l.tipo} · ${l.metrica === "usuario"
+              ? "contada por pessoa"
+              : "contada por máquina"}`)),
+        el("span", { class: `chip ${cheia ? "danger" : "ok"}` },
           `${l.seats_usados}/${l.seats} em uso`)),
-      el("p", { class: "muted", style: "font-size:12.5px;margin:6px 0 0" },
-        l.seats_livres
-          ? `${l.seats_livres} seat(s) livre(s).`
-          : "Todos os seats em uso. Atribuir outro é risco em auditoria.")));
+
+      minhas.length
+        ? el("div", { class: "table-wrap", style: "margin-top:10px" },
+            el("table", { class: "tabela-numeros" },
+              el("thead", {}, el("tr", {},
+                el("th", {}, "Atribuída a"),
+                el("th", {}, "Versão"),
+                el("th", {}, "Origem"),
+                el("th", { class: "num" }, "Ações"))),
+              el("tbody", {}, ...minhas.map((a) => el("tr", {},
+                el("td", { class: "col-nome" },
+                  a.ativo_patrimonio || a.usuario_nome || "—",
+                  el("div", { class: "muted", style: "font-size:11.5px" },
+                    a.ativo_patrimonio ? "máquina" : "pessoa")),
+                el("td", {}, a.versao_instalada || "—"),
+                el("td", {}, a.origem || "—"),
+                el("td", { class: "num" },
+                  el("button", {
+                    class: "btn text small", type: "button",
+                    onclick: () => liberar(caixa, l.id, a),
+                  }, "Liberar")))))))
+        : el("p", { class: "muted", style: "font-size:12.5px;margin:10px 0 0" },
+            cheia
+              ? "Todos os seats em uso, mas nenhuma atribuição registrada — "
+                + "o número vem de outro caminho."
+              : "Nenhum seat atribuído ainda."),
+
+      cheia
+        ? el("p", { class: "recado aviso", style: "margin:10px 0 0" },
+            "Todos os seats em uso. Atribuir outro seria uso acima do "
+            + "comprado — libere um ou adquira mais.")
+        : null));
   }
+}
+
+async function liberar(caixa, licencaId, a) {
+  const quem = a.ativo_patrimonio || a.usuario_nome || "este registro";
+  if (!window.confirm(`Liberar o seat de ${quem}?`)) return;
+  try {
+    await api.del(`/licencas/${licencaId}/atribuicoes/${a.id}`);
+    toast("Seat liberado");
+    await abrir("atribuicoes", caixa);
+  } catch (e) { mostrarErro(e); }
+}
+
+function formAtribuir(caixa, licencas, softwares) {
+  const porNome = Object.fromEntries((softwares || []).map((s) => [s.id, s.nome]));
+  const disponiveis = licencas.filter((l) => l.seats_livres > 0);
+
+  if (!disponiveis.length) {
+    toast("Nenhuma licença com seat livre");
+    return;
+  }
+
+  const campos = { licenca_id: disponiveis[0].id, tipoDono: "ativo" };
+  const selLicenca = el("select", {}, ...disponiveis.map((l) => el("option", {
+    value: l.id,
+  }, `${porNome[l.software_id] || `#${l.id}`} — ${l.seats_livres} livre(s)`)));
+  selLicenca.addEventListener("change", () => {
+    campos.licenca_id = Number(selLicenca.value);
+  });
+
+  const entradaAtivo = el("input", { type: "number", placeholder: "ID do ativo" });
+  entradaAtivo.addEventListener("input", () => { campos.ativo_id = Number(entradaAtivo.value); });
+  const entradaUsuario = el("input", { type: "number", placeholder: "ID do usuário" });
+  entradaUsuario.addEventListener("input", () => { campos.usuario_id = Number(entradaUsuario.value); });
+
+  const selDono = el("select", {},
+    el("option", { value: "ativo" }, "Máquina (ativo)"),
+    el("option", { value: "usuario" }, "Pessoa (usuário)"));
+  selDono.addEventListener("change", () => { campos.tipoDono = selDono.value; });
+
+  const campoDono = el("div", { class: "field" },
+    el("label", {}, "Atribuir a *"), entradaAtivo);
+  selDono.addEventListener("change", () => {
+    campoDono.innerHTML = "";
+    campoDono.append(
+      el("label", {}, campos.tipoDono === "ativo" ? "Atribuir a — máquina *" : "Atribuir a — pessoa *"),
+      campos.tipoDono === "ativo" ? entradaAtivo : entradaUsuario);
+  });
+
+  dialog({
+    title: "Atribuir seat",
+    body: el("div", {},
+      el("div", { class: "field" }, el("label", {}, "Licença *"), selLicenca),
+      el("div", { class: "field" }, el("label", {}, "Tipo *"), selDono),
+      campoDono,
+      el("p", { class: "recado info", style: "margin:0" },
+        "Para licença contada **por pessoa**, atribua a um usuário — é assim "
+        + "que a contagem de seats por pessoa é feita. Para licença por "
+        + "máquina, atribua ao ativo.")),
+    actions: [
+      { label: "Cancelar", variant: "text" },
+      {
+        label: "Atribuir", variant: "filled",
+        onClick: async () => {
+          const corpo = { licenca_id: campos.licenca_id };
+          if (campos.tipoDono === "ativo") {
+            if (!campos.ativo_id) { toast("Informe o ID do ativo"); return false; }
+            corpo.ativo_id = campos.ativo_id;
+          } else {
+            if (!campos.usuario_id) { toast("Informe o ID do usuário"); return false; }
+            corpo.usuario_id = campos.usuario_id;
+          }
+          try {
+            await api.post(`/licencas/${corpo.licenca_id}/atribuicoes`, corpo);
+            toast("Seat atribuído");
+            await abrir("atribuicoes", caixa);
+          } catch (e) { mostrarErro(e); return false; }
+        },
+      },
+    ],
+  });
 }
 
 // ---------------------------------------------------------------------------

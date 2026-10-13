@@ -1,6 +1,40 @@
 # Inventário de Software e Licenças
 
-Documento de projeto. Ainda **não implementado** — este é o desenho.
+**Implementado.** Este documento é o desenho original do módulo — e continua
+sendo a referência das decisões, porque explica **por que** cada uma foi
+tomada.
+
+## O que existe hoje
+
+| Camada | Estado |
+|---|---|
+| Modelos (`Software`, `Licenca`, `AtribuicaoLicenca`, `SoftwareInstalado`) | ✅ |
+| Cifra da chave, com rotação (`app/core/segredos.py`) | ✅ |
+| Exclusão do `diff` da auditoria | ✅ |
+| API completa, com `/revelar` auditado e permissão própria | ✅ |
+| Coleta no OCS Inventory | ✅ |
+| Conformidade por padrão de reconhecimento | ✅ |
+| Tela com 4 áreas | ✅ |
+| Financeiro e busca integrados | ✅ |
+| `schema.sql` com as tabelas | ✅ |
+
+## O que ficou FORA do plano original
+
+Registrado aqui para o documento não dar a impressão de que está tudo pronto:
+
+| Pendência | Efeito |
+|---|---|
+| **Tela de atribuições não gerencia** | não há como atribuir nem liberar pela interface |
+| **Sem listagem de atribuições na API** | a tela não tem de onde tirar os dados |
+| **Métrica por dispositivo × por usuário** | compara máquinas com seats e **acusa excesso falso** |
+| **`reconhecer` só corrige associações nulas** | mudar o padrão não conserta o que já foi associado |
+| **Coleta síncrona, sem agendamento** | uma requisição por máquina, numa chamada só |
+| **`atualizado_em` é a hora da consulta** | dado antigo parece recente |
+| **Coleta vazia preserva o estado antigo** | programa desinstalado continua contando |
+
+O plano de trabalho para fechar cada um está em
+[software-pendencias.md](software-pendencias.md) — com ordem por dependência e
+as decisões que faltam tomar.
 
 ---
 

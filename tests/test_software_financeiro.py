@@ -139,7 +139,7 @@ class TestSeparacaoNoResumo:
                          json={"nome": "Microsoft 365", "fabricante": "Microsoft"},
                          headers=auth_headers).json()
         client.post("/api/v1/licencas",
-                    json={"software_id": sw["id"], "tipo": "assinatura",
+                    json={"software_id": sw["id"], "tipo": "assinatura", "metrica": "dispositivo",
                           "seats": 50, "valor_mensal": "1500.00",
                           "validade": (date.today() + timedelta(days=200)).isoformat()},
                     headers=auth_headers)
@@ -155,7 +155,7 @@ class TestSeparacaoNoResumo:
                          json={"nome": "AutoCAD", "fabricante": "Autodesk"},
                          headers=auth_headers).json()
         client.post("/api/v1/licencas",
-                    json={"software_id": sw["id"], "tipo": "perpetua",
+                    json={"software_id": sw["id"], "tipo": "perpetua", "metrica": "dispositivo",
                           "seats": 5, "valor": "20000.00"},
                     headers=auth_headers)
 
@@ -167,7 +167,7 @@ class TestSeparacaoNoResumo:
                          json={"nome": "Slack", "fabricante": "Salesforce"},
                          headers=auth_headers).json()
         lic = client.post("/api/v1/licencas",
-                          json={"software_id": sw["id"], "tipo": "assinatura",
+                          json={"software_id": sw["id"], "tipo": "assinatura", "metrica": "dispositivo",
                                 "seats": 100, "valor_mensal": "800.00"},
                           headers=auth_headers).json()
 
@@ -176,7 +176,7 @@ class TestSeparacaoNoResumo:
 
         # Cancelada: o custo tem que sair, senão o orçamento fica inflado.
         client.put(f"/api/v1/licencas/{lic['id']}",
-                   json={"software_id": sw["id"], "tipo": "assinatura",
+                   json={"software_id": sw["id"], "tipo": "assinatura", "metrica": "dispositivo",
                          "seats": 100, "valor_mensal": "800.00",
                          "situacao": "cancelada"},
                    headers=auth_headers)

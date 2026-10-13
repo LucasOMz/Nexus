@@ -42,7 +42,12 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, BaseModel, sa_enum
-from app.models.enums import PlataformaSoftware, SituacaoLicenca, TipoLicenca
+from app.models.enums import (
+    MetricaLicenca,
+    PlataformaSoftware,
+    SituacaoLicenca,
+    TipoLicenca,
+)
 
 if TYPE_CHECKING:
     from app.models.core import Ativo, Planta, Usuario
@@ -130,6 +135,15 @@ class Licenca(BaseModel, Base):
 
     # --- O direito -------------------------------------------------------
     seats: Mapped[int] = mapped_column(Integer, default=1)
+
+    # Como a licença é CONTADA: por máquina ou por pessoa.
+    #
+    # O padrão DISPOSITIVO existe só para os registros anteriores a este
+    # campo — eles seguem sendo contados como sempre foram. Na CRIAÇÃO pela
+    # API o valor é OBRIGATÓRIO: o sistema pergunta em vez de assumir.
+    metrica: Mapped[MetricaLicenca] = mapped_column(
+        sa_enum(MetricaLicenca), default=MetricaLicenca.DISPOSITIVO, index=True
+    )
     # Nulo em perpétua e em open source: perpétua não vence.
     validade: Mapped[date | None] = mapped_column(Date, index=True)
 

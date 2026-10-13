@@ -48,7 +48,7 @@ def software(client, auth_headers):
 @pytest.fixture
 def licenca(client, auth_headers, software):
     r = client.post("/api/v1/licencas",
-                    json={"software_id": software["id"], "tipo": "volume",
+                    json={"software_id": software["id"], "tipo": "volume", "metrica": "dispositivo",
                           "seats": 50, "chave": CHAVE, "valor": "15000.00"},
                     headers=auth_headers)
     assert r.status_code == 201, r.text
@@ -93,7 +93,7 @@ class TestChaveNaoVaza:
 
     def test_editar_nao_devolve_a_chave(self, client, auth_headers, licenca, software):
         r = client.put(f"/api/v1/licencas/{licenca['id']}",
-                       json={"software_id": software["id"], "tipo": "volume",
+                       json={"software_id": software["id"], "tipo": "volume", "metrica": "dispositivo",
                              "seats": 60, "chave": CHAVE},
                        headers=auth_headers)
         assert r.status_code == 200, r.text
@@ -157,7 +157,7 @@ class TestRevelar:
 
     def test_licenca_sem_chave_nao_revela(self, client, auth_headers, software):
         r = client.post("/api/v1/licencas",
-                        json={"software_id": software["id"], "tipo": "open_source",
+                        json={"software_id": software["id"], "tipo": "open_source", "metrica": "dispositivo",
                               "seats": 1},
                         headers=auth_headers)
         assert r.status_code == 201
@@ -198,7 +198,7 @@ class TestDuplicata:
     def test_a_mesma_chave_nao_entra_duas_vezes(self, client, auth_headers, software, licenca):
         """Chave repetida faz a conformidade contar duas vezes."""
         r = client.post("/api/v1/licencas",
-                        json={"software_id": software["id"], "tipo": "volume",
+                        json={"software_id": software["id"], "tipo": "volume", "metrica": "dispositivo",
                               "seats": 10, "chave": CHAVE},
                         headers=auth_headers)
         assert r.status_code == 409
@@ -206,7 +206,7 @@ class TestDuplicata:
     def test_a_deteccao_ignora_formatacao(self, client, auth_headers, software, licenca):
         """`abc-123` e `ABC123` são a mesma chave — e o erro provável."""
         r = client.post("/api/v1/licencas",
-                        json={"software_id": software["id"], "tipo": "volume",
+                        json={"software_id": software["id"], "tipo": "volume", "metrica": "dispositivo",
                               "seats": 10, "chave": "abcd 1234 efgh 5678"},
                         headers=auth_headers)
         assert r.status_code == 409
@@ -215,14 +215,14 @@ class TestDuplicata:
 class TestRegras:
     def test_assinatura_exige_valor_mensal(self, client, auth_headers, software):
         r = client.post("/api/v1/licencas",
-                        json={"software_id": software["id"], "tipo": "assinatura",
+                        json={"software_id": software["id"], "tipo": "assinatura", "metrica": "dispositivo",
                               "seats": 5},
                         headers=auth_headers)
         assert r.status_code == 422
 
     def test_perpetua_nao_aceita_validade(self, client, auth_headers, software):
         r = client.post("/api/v1/licencas",
-                        json={"software_id": software["id"], "tipo": "perpetua",
+                        json={"software_id": software["id"], "tipo": "perpetua", "metrica": "dispositivo",
                               "seats": 5, "validade": "2030-01-01"},
                         headers=auth_headers)
         assert r.status_code == 422
@@ -230,7 +230,7 @@ class TestRegras:
     def test_nao_atribui_alem_dos_seats(self, client, auth_headers, software):
         """Atribuir além do comprado é o que gera risco em auditoria."""
         r = client.post("/api/v1/licencas",
-                        json={"software_id": software["id"], "tipo": "volume", "seats": 1},
+                        json={"software_id": software["id"], "tipo": "volume", "metrica": "dispositivo", "seats": 1},
                         headers=auth_headers)
         lic = r.json()
 

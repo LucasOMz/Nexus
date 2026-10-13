@@ -116,10 +116,15 @@ class TestExtracaoDoNome:
 
 class TestListar:
     def test_tolera_falha_da_maquina(self, cfg, monkeypatch):
-        """Uma máquina que não responde não pode derrubar a coleta."""
+        """Uma máquina que não responde não pode derrubar a coleta.
+
+        Devolve **`None`**, e não `[]`: falha de comunicação é diferente de
+        resposta válida com zero programas. A distinção decide se o snapshot
+        anterior é preservado ou apagado — ver `listar_softwares`.
+        """
         monkeypatch.setattr(o.ocs_service, "_cliente",
                             lambda c: ClienteFalso({}, falhar={"9"}))
-        assert o.listar_softwares(cfg, "9") == []
+        assert o.listar_softwares(cfg, "9") is None
 
     def test_aceita_lista_direta(self, cfg, monkeypatch):
         monkeypatch.setattr(o.ocs_service, "_cliente",

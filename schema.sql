@@ -550,6 +550,17 @@ CREATE TABLE IF NOT EXISTS licencas (
     chave_impressao  VARCHAR(8),
     chave_hash       VARCHAR(64),
     seats            INTEGER NOT NULL DEFAULT 1,
+    -- Como a licença é CONTADA: por máquina ou por pessoa.
+    --
+    -- O OCS conta máquinas; a licença conta seats. Para Office LTSC os dois
+    -- são a mesma coisa. Para Microsoft 365 e Adobe CC NÃO são — o seat é
+    -- por pessoa, e uma pessoa pode usar dois computadores.
+    --
+    -- O padrão 'dispositivo' existe para os registros anteriores a este
+    -- campo. Na criação pela API o valor é OBRIGATÓRIO: o sistema pergunta
+    -- em vez de assumir, porque um padrão silencioso deixaria o cálculo
+    -- errado sem ninguém perceber.
+    metrica          VARCHAR(20) NOT NULL DEFAULT 'dispositivo',
     validade         DATE,
     numero_pedido    VARCHAR(80),
     fornecedor_id    INTEGER REFERENCES fornecedores(id),
