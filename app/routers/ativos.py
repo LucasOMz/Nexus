@@ -41,7 +41,7 @@ from app.schemas.ativos import (
     SuprimentoOut,
 )
 from app.schemas.common import Page
-from app.services import zerado_service
+from app.services import unicidade, zerado_service
 from app.services.audit_service import audit
 from app.services.counter_service import register_leitura
 from app.services.pdf_service import build_termo_pdf
@@ -221,6 +221,15 @@ def create_ativo(
 ):
     if db.query(Ativo).filter(Ativo.patrimonio == body.patrimonio, Ativo.deleted_at.is_(None)).first():
         raise HTTPException(409, "Patrimônio já cadastrado")
+
+    # A checagem acima só olha os VIVOS — e está certa. Mas a constraint
+    # UNIQUE do banco vale para todas as linhas, inclusive as excluídas: o
+    # soft delete não libera o valor.
+    #
+    # Sem isto, excluir um ativo e recadastrar o mesmo patrimônio falha com
+    # 409 vindo do banco, **contradizendo a tela** — que não mostra nada ali.
+    unicidade.liberar(db, Ativo, "patrimonio", body.patrimonio, limite=80)
+
     data = body.model_dump(exclude={"ti", "impressora"})
     # Por segurança só aceitamos payload de ETIQUETA EM BRANCO vindo do cliente.
     # Um payload TIATIVO arbitrário não é gravado (a leitura resolve pelo ID de
