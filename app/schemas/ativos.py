@@ -120,6 +120,20 @@ class AtivoUpdate(SemVazios):
     data_aquisicao: date | None = None
     data_garantia: date | None = None
     valor: float | None = Field(default=None, ge=0)
+    # --- Locação ---------------------------------------------------------
+    #
+    # **Faltavam aqui, e a edição do ativo quebrava com 422.**
+    #
+    # `AtivoUpdate` herda de `SemVazios`, e não de `AtivoBase` — então os
+    # campos que a locação acrescentou entraram na criação e no retorno, mas
+    # não na edição. O formulário os envia sempre; com `extra="forbid"`, o
+    # salvamento era recusado com "campo não reconhecido".
+    #
+    # A mensagem ainda mandava "repassar ao suporte" — o pior desfecho
+    # possível para um problema interno.
+    forma_aquisicao: FormaAquisicao | None = None
+    contrato_id: int | None = None
+    valor_residual: float | None = Field(default=None, ge=0)
     observacoes: str | None = None
     foto_id: int | None = None
     ti: AtivoTIBase | None = None
