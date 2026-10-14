@@ -181,7 +181,14 @@ def _versao_do_cliente_pg(texto: str) -> int | None:
         return int(m.group(1))
 
     # 2. Cópia de uma imagem oficial `postgres:N`.
+    #
+    # Três formas, e todas aparecem na prática:
+    #   COPY --from=postgres:16 /usr/lib/postgresql/16/bin/ ...
+    #   FROM postgres:16 AS origem        (estágio fonte, com COPY depois)
     m = re.search(r"from=[\w./:-]*postgres:(\d+)", texto, re.I)
+    if m:
+        return int(m.group(1))
+    m = re.search(r"^\s*FROM\s+postgres:(\d+)", texto, re.I | re.M)
     if m:
         return int(m.group(1))
 
