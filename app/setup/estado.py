@@ -34,16 +34,42 @@ PASTA_EMPRESA = RAIZ / "media" / "empresa"
 def instalado() -> bool:
     """O sistema já está configurado?
 
-    Existe o marcador? Então sim.
+    ## 1. Configuração por ambiente (Docker, Kubernetes, systemd)
 
-    **Instalação anterior ao assistente:** quem já usava o sistema não tem o
-    marcador. Nesse caso a resposta vem do próprio banco — se ele já tem a
-    estrutura, o sistema está instalado e o assistente **não pode** abrir. O
-    marcador é criado na hora, para as próximas vezes.
+    Quando `NEXUS_CONFIG_POR_AMBIENTE=1`, a resposta é **sim** — sem olhar
+    marcador nem banco.
 
-    Sem esta checagem, reiniciar depois de atualizar mostraria o assistente a
-    quem já tem o sistema em uso — dando a impressão de que os dados sumiram.
+    **Isto existe porque o assistente e o Docker não se conhecem.**
+
+    O assistente grava `.env` e `.instalado` em `/app`. Em container, isso
+    traz dois problemas somados:
+
+    - **`/app` não é volume** — os dois arquivos somem quando o container é
+      recriado, e o assistente reabre pedindo o login de fábrica;
+    - **as variáveis do compose vencem o `.env`** — o assistente escreve a
+      configuração e ela é descartada, porque `os.environ` tem precedência.
+
+    O resultado era o pior possível: o assistente **abria**, coletava as
+    escolhas, e **nenhuma delas valia**. Quem instalava via Docker concluía
+    que o sistema ignorou o que foi configurado — e ignorou mesmo.
+
+    ## 2. Marcador presente
+
+    Instalação feita pelo assistente, em ambiente onde ele funciona.
+
+    ## 3. Banco já tem estrutura
+
+    Quem já usava o sistema antes do assistente não tem o marcador. Nesse
+    caso a resposta vem do banco, e o marcador é criado para as próximas
+    vezes.
+
+    **Sem esta checagem, reiniciar depois de atualizar mostraria o
+    assistente a quem já tem o sistema em uso** — dando a impressão de que
+    os dados sumiram.
     """
+    if os.environ.get("NEXUS_CONFIG_POR_AMBIENTE") == "1":
+        return True
+
     if ARQUIVO_MARCADOR.exists():
         return True
 

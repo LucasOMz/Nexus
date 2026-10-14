@@ -60,6 +60,14 @@ services:
       QR_EXIGIR_ASSINATURA: ${QR_EXIGIR_ASSINATURA:-true}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://seu-dominio.com}
       ENV: production
+      # Declara que a configuracao vem do ambiente (este compose), e NAO do
+      # assistente de primeiro acesso.
+      #
+      # Sem isto, o assistente abria mesmo com tudo configurado aqui: ele
+      # grava .env e .instalado em /app, que NAO e volume — os dois somem a
+      # cada recriacao — e as variaveis deste compose vencem o .env de
+      # qualquer forma. Resultado: coletava as escolhas e nenhuma valia.
+      NEXUS_CONFIG_POR_AMBIENTE: 1
       AUTO_CREATE_TABLES: "true"
       PRINT_AGENT_URL: ${PRINT_AGENT_URL:-http://raspberry:9100}
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@empresa.com}
