@@ -92,13 +92,22 @@ export async function renderContratos(root) {
 
   alvo.innerHTML = "";
   if (!contratos.length) {
-    alvo.append(emptyState({
-      icon: "relatorios",
-      titulo: filtro === "vencendo"
+    // `emptyState` é POSICIONAL: (icone, titulo, texto).
+    //
+    // Aqui estava sendo chamado com um objeto — as outras 22 telas usam a
+    // forma posicional. Com o objeto, `title` chegava `undefined` e a tela
+    // mostrava literalmente a palavra "undefined" no lugar da mensagem.
+    //
+    // Não havia erro no console: `undefined` interpolado numa template
+    // string é uma string válida. O defeito era só visual — e por isso
+    // nenhum guard pegou.
+    alvo.append(emptyState(
+      "relatorios",
+      filtro === "vencendo"
         ? "Nenhum contrato vencendo nos próximos 90 dias"
         : filtro === "abertos" ? "Nenhum contrato em aberto" : "Nenhum contrato cadastrado",
-      desc: "Cadastre uma locação para acompanhar o custo mensal e o vencimento.",
-    }));
+      "Cadastre uma locação para acompanhar o custo mensal e o vencimento.",
+    ));
   } else {
     for (const c of contratos) alvo.append(cartao(c, root));
   }
