@@ -1,0 +1,84 @@
+# =====================================================================
+# Nexus — testes rodando DENTRO do container
+#
+#   docker compose -f docker-compose.test.yml run --rm testes
+#
+# ## Por que existe
+#
+# A suíte roda no host (Windows, `.vendor`, o Python do runtime). **A imagem
+# é outra coisa.** Quando Docker passa a ser o ambiente de produção, testar
+# fora dele deixa de provar qualquer coisa sobre ele.
+#
+# Foi exatamente essa distância que escondeu dois defeitos, ambos visíveis
+# só no container:
+#
+#   - `pysnmp` ausente    → monitor de impressoras sem SNMP
+#   - `pg_dump` ausente   → **backup nunca era criado**
+#
+# Nenhum dos 1228 testes no host poderia ter pego — eles não olham para a
+# imagem.
+#
+# ## Por que um compose separado, e não um serviço no principal
+#
+# Porque o compose principal sobe **produção**. Misturar um serviço de teste
+# ali faria ele subir junto num `docker compose up`, rodando pytest no
+# servidor de quem só quer usar o sistema.
+# =====================================================================
+
+services:
+  # Banco limpo, só para os testes. Sem volume: cada execução começa do zero,
+  # então um teste não enxerga o dado deixado pelo anterior.
+  db-teste:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: teste
+      POSTGRES_PASSWORD: teste
+      POSTGRES_DB: teste
+    # Sem `volumes:` de propósito — o banco é descartável.
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U teste -d teste"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  testes:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # Com SNMP: é uma das dependências cuja ausência já causou defeito, e o
+      # teste precisa exercitar a mesma imagem da produção.
+      args:
+        SNMP: "1"
+    depends_on:
+      db-teste:
+        condition: service_healthy
+    environment:
+      # PostgreSQL de verdade — o mesmo motor da produção. Rodar a suíte em
+      # SQLite aqui daria uma falsa segurança: as diferenças entre os dois
+      # (tipos, constraints, `VARCHAR`, unicidade) são justamente onde os
+      # defeitos de implantação aparecem.
+      DATABASE_URL: postgresql+psycopg://teste:teste@db-teste:5432/teste
+      ENV: test
+      JWT_SECRET: segredo-de-teste-nao-usar-em-producao
+      QR_HMAC_SECRET: outro-segredo-de-teste-nao-usar-em-producao
+      NEXUS_CHAVE_LICENCAS: Ovo2zKQ4nC7lFJ9dR1pW8sT3yB6mX0aH5uE7gI2kN4cM=
+      SEED_ADMIN_EMAIL: admin@teste.local
+      SEED_ADMIN_PASSWORD: senha-de-teste
+      # Os testes que dependem de OCS/SNMP pulam sozinhos quando não há
+      # serviço — não é preciso mock para o básico.
+      AUTO_CREATE_TABLES: "true"
+    volumes:
+      # O código vem do host, para não ser preciso reconstruir a imagem a
+      # cada alteração durante o desenvolvimento.
+      - ./app:/app/app:ro
+      - ./frontend:/app/frontend:ro
+      - ./tests:/app/tests:ro
+      - ./scripts:/app/scripts:ro
+    working_dir: /app
+    # `requirements-dev.txt` é instalado na hora: a imagem de produção não
+    # deve carregar pytest.
+    command: >
+      sh -c "pip install --no-cache-dir -q -r requirements-dev.txt
+             && python -m pytest -q --color=no"
