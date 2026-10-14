@@ -105,7 +105,7 @@ RUN echo "/opt/pg-libs" > /etc/ld.so.conf.d/pg16.conf \
 # cache da instalação a cada mudança no outro arquivo, e a camada mais cara
 # do build seria refeita à toa.
 COPY requirements.txt requirements-snmp.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --progress-bar off -r requirements.txt
 
 # --- SNMP: dependência do monitor de impressoras ----------------------
 #
@@ -130,7 +130,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # imagem menor — ou não usa impressora — constrói com `--build-arg SNMP=0`.
 ARG SNMP=1
 RUN if [ "$SNMP" = "1" ]; then \
-        pip install --no-cache-dir -r requirements-snmp.txt; \
+        pip install --no-cache-dir --progress-bar off -r requirements-snmp.txt; \
     else \
         echo "SNMP desativado no build (SNMP=0): o monitor usara contador manual."; \
     fi
