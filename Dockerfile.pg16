@@ -1,0 +1,105 @@
+# =====================================================================
+# Alternativa: cliente PostgreSQL 16 SEM repositório externo
+#
+#   docker build -f Dockerfile.pg16 -t nexus:pg16 .
+#
+# ## O problema que isto resolve
+#
+# `python:3.12-slim` não traz `pg_dump`, e o backup do sistema precisa dele.
+#
+# A Debian entrega o cliente **15**, e `pg_dump` recusa dumpar um servidor
+# mais novo que ele:
+#
+#     pg_dump: error: server version: 16.x; pg_dump version: 15.x
+#     pg_dump: error: aborting because of server version mismatch
+#
+# A saída anterior era buscar o 16 em `apt.postgresql.org` — repositório de
+# terceiro, com `curl` e chave GPG. Em rede corporativa, proxy e inspeção TLS
+# derrubam isso, e a falha acontece **antes** do `pip install`: a imagem
+# inteira deixa de existir.
+#
+# ## A ideia
+#
+# O Portainer **já baixa** `postgres:16` para o serviço `db` do compose. A
+# imagem oficial traz o `pg_dump` 16. Então basta **copiar o binário** dela.
+#
+# Nenhuma requisição nova: nenhum host externo, nenhuma chave, nenhum proxy
+# a configurar. As duas imagens são Debian, então o binário roda.
+#
+# ## Por que copiar a pasta inteira, e não só o executável
+#
+# `pg_dump` não é autossuficiente: ele carrega `libpq.so.5`, `libssl`,
+# `libcrypto` e mais algumas. Copiar só o binário dá
+# `error while loading shared libraries`.
+#
+# Copiar `/usr/lib/x86_64-linux-gnu` inteiro resolveria — e sobrescreveria
+# bibliotecas do sistema com as da imagem do Postgres. Então as libs vão para
+# uma pasta própria, e o `ldconfig` as encontra por lá.
+#
+# ## Como conferir que funcionou
+#
+#     docker run --rm nexus:pg16 pg_dump --version
+#
+# Precisa dizer **16**. Se disser 15, o `postgres:16` do cache é outro.
+# =====================================================================
+
+# --- Estágio 1: a imagem oficial, só como fonte dos binários -----------
+FROM postgres:16 AS origem
+
+# --- Estágio 2: a aplicação -------------------------------------------
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# O `pg_dump` precisa achar as bibliotecas copiadas. Vem antes do PATH
+# porque a busca por `ldconfig` também é consultada.
+ENV LD_LIBRARY_PATH=/opt/pg-libs
+
+WORKDIR /app
+
+# --- Cliente PostgreSQL 16, copiado da imagem oficial ------------------
+#
+# `/usr/lib/postgresql/16/bin` traz `pg_dump`, `pg_restore`, `psql`,
+# `createdb` e `dropdb` — os cinco que o serviço de backup usa.
+COPY --from=origem /usr/lib/postgresql/16/bin/ /opt/pg16/bin/
+COPY --from=origem /usr/lib/postgresql/16/lib/ /opt/pg16/lib/
+
+# As bibliotecas compartilhadas de que eles dependem.
+COPY --from=origem /usr/lib/x86_64-linux-gnu/ /opt/pg-libs/
+
+# Registra as duas pastas para o carregador de bibliotecas.
+RUN echo "/opt/pg-libs" > /etc/ld.so.conf.d/pg16.conf \
+    && echo "/opt/pg16/lib" >> /etc/ld.so.conf.d/pg16.conf \
+    && ldconfig \
+    && ln -sf /opt/pg16/bin/pg_dump /usr/local/bin/pg_dump \
+    && ln -sf /opt/pg16/bin/pg_restore /usr/local/bin/pg_restore \
+    && ln -sf /opt/pg16/bin/psql /usr/local/bin/psql \
+    && ln -sf /opt/pg16/bin/createdb /usr/local/bin/createdb \
+    && ln -sf /opt/pg16/bin/dropdb /usr/local/bin/dropdb \
+    && pg_dump --version
+
+# --- Dependências Python ----------------------------------------------
+COPY requirements.txt requirements-snmp.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# --- SNMP: dependência do monitor de impressoras ----------------------
+#
+# Em camada própria: se falhar, o log diz exatamente onde. E o cache do
+# BuildKit a preserva entre builds que não mexam nas dependências.
+ARG SNMP=1
+RUN if [ "$SNMP" = "1" ]; then \
+        pip install --no-cache-dir -r requirements-snmp.txt; \
+    else \
+        echo "SNMP desativado no build (SNMP=0): o monitor usara contador manual."; \
+    fi
+
+# --- Código -----------------------------------------------------------
+COPY app ./app
+COPY frontend ./frontend
+COPY alembic ./alembic
+COPY alembic.ini .
+
+EXPOSE 8000
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

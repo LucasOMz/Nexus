@@ -20,25 +20,40 @@ WORKDIR /app
 # **Backup que falha em silêncio é pior que backup que não existe:** dá a
 # impressão de estar protegido.
 #
-# ## Por que a versão 16 vem do repositório oficial
+# ## Por que só o repositório Debian
 #
-# O Debian desta imagem traz o cliente 15. **`pg_dump` recusa dumpar um
-# servidor mais novo que ele** — então um cliente 15 contra o PostgreSQL 16
-# do compose falharia na hora de usar. As versões precisam acompanhar.
+# A primeira versão buscava o cliente 16 em `apt.postgresql.org` — um
+# **repositório de terceiro**, com `curl` e chave GPG próprios.
 #
-# `--no-install-recommends` evita arrastar o servidor inteiro junto.
+# Em rede corporativa isso derruba o build inteiro: proxy que não responde,
+# inspeção TLS que quebra a chave, ou firewall que bloqueia o host. E como
+# esta camada vem ANTES do `pip install`, a falha aqui **impede a imagem de
+# existir** — inclusive as correções que não têm nada a ver com backup.
+#
+# Agora usa o repositório da própria Debian, que a rede já precisa permitir
+# para o `apt` funcionar.
+#
+# ## ⚠️ O que se perde, e é importante
+#
+# A Debian (bookworm) entrega o **cliente 15**, e o seu banco é **16**.
+#
+# **`pg_dump` recusa dumpar um servidor mais novo que ele:**
+#
+#     pg_dump: error: server version: 16.x; pg_dump version: 15.x
+#     pg_dump: error: aborting because of server version mismatch
+#
+# Ou seja: **o deploy sobe, e o backup continua não funcionando** — agora por
+# incompatibilidade de versão, e não por ausência do binário.
+#
+# O script `scripts/verificar_backup.py` detecta isso: ele cria E restaura um
+# backup, então acusa a incompatibilidade antes de alguém confiar nela.
+#
+# Quando a rede permitir, a solução definitiva não é voltar ao repositório
+# externo: é **copiar o binário da imagem oficial** `postgres:16`, que o
+# Portainer já baixa por causa do serviço `db`. Ver `Dockerfile.pg16` no
+# repositório.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        ca-certificates curl gnupg lsb-release \
-    && install -d /usr/share/postgresql-common/pgdg \
-    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
-        -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
-    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
-http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
-        > /etc/apt/sources.list.d/pgdg.list \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends postgresql-client-16 \
-    && apt-get purge -y --auto-remove curl gnupg lsb-release \
+    && apt-get install -y --no-install-recommends postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Camada de dependências (cacheável).

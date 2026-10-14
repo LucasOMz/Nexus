@@ -121,28 +121,35 @@ def verificar() -> list[str]:
     # `postgresql-client-16`, que traz `pg_dump`, `pg_restore` e `psql` de
     # uma vez. Procurar pelo nome do pacote, e não pelo binário, é o que
     # corresponde à realidade da instalação.
-    tem_cliente_pg = bool(re.search(r"postgresql-client-\d+", dockerfile))
+    versao_cliente = _versao_do_cliente_pg(dockerfile)
+    tem_cliente_pg = versao_cliente is not None
     no_codigo = binarios_no_codigo()
     for binario, para_que in BINARIOS_OBRIGATORIOS.items():
         if binario in no_codigo and not tem_cliente_pg:
             problemas.append(
                 f"`{binario}` é usado por {sorted(no_codigo[binario])} para "
                 f"{para_que}, e a imagem não instala o cliente do PostgreSQL "
-                f"(`postgresql-client-N`). Sem ele, a função falha no container."
+                f"(`postgresql-client`, `postgresql-client-N`, ou cópia da "
+                f"imagem `postgres:N`). Sem ele, a função falha no container."
             )
 
     # --- 3. Versão do cliente x servidor ---------------------------------
     #
     # `pg_dump` recusa dumpar servidor mais novo que ele.
+    #
+    # Este é o aviso que mais importa quando a rede corporativa obriga a usar
+    # o cliente da Debian: o deploy sobe, e o backup **continua** sem
+    # funcionar — agora por incompatibilidade de versão, e não por ausência
+    # do binário. Silencioso, portanto.
     versao_servidor = _versao_do_postgres_no_compose()
-    if versao_servidor and tem_cliente_pg:
-        m = re.search(r"postgresql-client-(\d+)", dockerfile)
-        if m and int(m.group(1)) < versao_servidor:
-            problemas.append(
-                f"o compose usa PostgreSQL {versao_servidor}, mas a imagem "
-                f"instala o cliente {m.group(1)}. `pg_dump` recusa dumpar um "
-                f"servidor mais novo que ele — o backup falharia na hora de usar."
-            )
+    if versao_servidor and versao_cliente and versao_cliente < versao_servidor:
+        problemas.append(
+            f"o compose usa PostgreSQL {versao_servidor}, mas a imagem traz o "
+            f"cliente {versao_cliente}. `pg_dump` recusa dumpar servidor mais "
+            f"novo que ele — **o backup não vai funcionar**. O deploy sobe, e a "
+            f"falha só aparece na hora de restaurar. Considere `Dockerfile.pg16`, "
+            f"que copia o cliente 16 da imagem oficial do Postgres."
+        )
 
     # --- 4. Arquivos copiados existem ------------------------------------
     for origem in re.findall(r"^COPY\s+(\S+)", dockerfile, re.M):
@@ -153,6 +160,39 @@ def verificar() -> list[str]:
             problemas.append(f"o Dockerfile copia `{origem}`, que não existe")
 
     return problemas
+
+
+def _versao_do_cliente_pg(texto: str) -> int | None:
+    """A versão do cliente PostgreSQL que o Dockerfile traz.
+
+    Três formas, e cada uma diz uma versão diferente:
+
+    1. `postgresql-client-16` — versão explícita no nome do pacote;
+    2. `COPY --from=... postgres:16` — cópia da imagem oficial;
+    3. `postgresql-client` — o **padrão da Debian**, que nesta base é 15.
+
+    O caso 3 é o que engana: parece que resolveu, e o backup continua sem
+    funcionar contra um servidor 16. Por isso ele devolve o número — para o
+    guarda poder comparar com a versão do servidor.
+    """
+    # 1. Pacote com versão explícita.
+    m = re.search(r"postgresql-client-(\d+)", texto)
+    if m:
+        return int(m.group(1))
+
+    # 2. Cópia de uma imagem oficial `postgres:N`.
+    m = re.search(r"from=[\w./:-]*postgres:(\d+)", texto, re.I)
+    if m:
+        return int(m.group(1))
+
+    # 3. Pacote sem versão: o que a Debian da base entrega.
+    #
+    # `python:3.12-slim` é bookworm, e bookworm traz o cliente 15. Isto é um
+    # valor **esperado**, não lido da imagem — se a base mudar, muda junto.
+    if re.search(r"apt-get install[^\n]*\bpostgresql-client\b(?!-)", texto):
+        return 15
+
+    return None
 
 
 def _versao_do_postgres_no_compose() -> int | None:
@@ -181,7 +221,7 @@ def relatorio() -> None:
     print("=== BINÁRIOS EXTERNOS citados pelo código ===")
     no_codigo = binarios_no_codigo()
     _, dockerfile = instalados_no_dockerfile()
-    tem_pg = bool(re.search(r"postgresql-client-\d+", dockerfile))
+    tem_pg = _versao_do_cliente_pg(dockerfile) is not None
     for binario in sorted(no_codigo):
         if binario in BINARIOS_OBRIGATORIOS:
             estado = "OK " if tem_pg else "FALTA"
@@ -193,9 +233,9 @@ def relatorio() -> None:
     print()
     print("=== POSTGRESQL ===")
     v = _versao_do_postgres_no_compose()
-    m = re.search(r"postgresql-client-(\d+)", dockerfile)
-    print(f"  servidor (compose): {v or '?'}   cliente (imagem): "
-          f"{m.group(1) if m else '?'}")
+    cli = _versao_do_cliente_pg(dockerfile)
+    nota = "  <- INCOMPATIVEL: o backup nao vai funcionar" if (v and cli and cli < v) else ""
+    print(f"  servidor (compose): {v or '?'}   cliente (imagem): {cli or '?'}{nota}")
 
 
 def main() -> int:
