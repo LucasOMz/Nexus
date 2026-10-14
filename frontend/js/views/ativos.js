@@ -89,10 +89,10 @@ function commonFields(ativo, lookups, fotos) {
     .join("");
   return `
     <div class="form-grid">
-      <div class="field"><label>Patrimônio *</label><input name="patrimonio" required value="${esc(a.patrimonio)}"></div>
+      <div class="field"><label>Nº de Série *</label><input name="numero_serie" required value="${esc(a.numero_serie)}"></div>
+      <div class="field"><label>Patrimônio</label><input name="patrimonio" value="${esc(a.patrimonio)}"></div>
       <div class="field"><label>Modelo</label><input name="modelo" value="${esc(a.modelo)}"></div>
       <div class="field"><label>Marca</label><input name="marca" value="${esc(a.marca)}"></div>
-      <div class="field"><label>Nº de Série</label><input name="numero_serie" value="${esc(a.numero_serie)}"></div>
       <div class="field"><label>Categoria</label><select name="categoria_id">${optionsOf(lookups.categorias)}</select></div>
       <div class="field"><label>Localização</label><select name="localizacao_id">${optionsOf(lookups.localizacoes)}</select></div>
       <div class="field"><label>Departamento</label><select name="departamento_id">${optionsOf(lookups.departamentos)}</select></div>
@@ -136,8 +136,18 @@ function collectForm(form) {
 
 function buildPayload(data) {
   const payload = {
-    patrimonio: data.patrimonio, modelo: data.modelo || null, marca: data.marca || null,
-    numero_serie: data.numero_serie || null, categoria_id: data.categoria_id,
+    // `numero_serie` é o IDENTIFICADOR e o único campo obrigatório do ativo.
+    //
+    // Vai **sem `|| null`**: o `null` que a versão anterior mandava quando o
+    // campo estava vazio fazia a API recusar com "Input should be a valid
+    // string" — erro que não diz ao usuário qual campo faltou.
+    //
+    // `patrimonio` faz o contrário: vazio vira `null`. Gravar `""` deixaria
+    // dois ativos "iguais" pela string vazia em qualquer comparação futura.
+    numero_serie: data.numero_serie,
+    patrimonio: data.patrimonio || null,
+    modelo: data.modelo || null, marca: data.marca || null,
+    categoria_id: data.categoria_id,
     localizacao_id: data.localizacao_id, departamento_id: data.departamento_id,
     status: data.status, data_garantia: data.data_garantia || null,
     valor: data.valor, observacoes: data.observacoes || null, foto_id: data.foto_id,
@@ -184,7 +194,21 @@ async function openForm(ativo, lookups, opcoes = {}) {
     actions: [
       { label: "Cancelar", variant: "text" },
       { label: "Salvar", variant: "filled", onClick: async (close) => {
-        const payload = buildPayload(collectForm(form));
+        const dados = collectForm(form);
+
+        // A validação é feita AQUI, e não pelo `required` do HTML.
+        //
+        // O diálogo não é um `<form>` que se envia — é um botão com `onClick`.
+        // O navegador só aplica `required` num envio de formulário de verdade,
+        // então o atributo no input era decorativo: com o campo vazio, o
+        // pedido ia com `numero_serie: ""` e voltava um 422 dizendo "Input
+        // should be a valid string" — mensagem que não aponta o campo.
+        if (!dados.numero_serie || !String(dados.numero_serie).trim()) {
+          toast("Informe o número de série — é ele que identifica o ativo");
+          return false;
+        }
+
+        const payload = buildPayload(dados);
         if (qrPayload) payload.qr_payload = qrPayload;
         try {
           const salvo = isEdit ? await api.put(`/ativos/${ativo.id}`, payload) : await api.post("/ativos", payload);
