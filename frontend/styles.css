@@ -2363,3 +2363,115 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   .mon-esquerda { justify-content: flex-start; }
   .mon-direita { flex-direction: row; }
 }
+
+/* =====================================================================
+   Importação de ativos por CSV
+   ===================================================================== */
+
+/* --- etapa 1: a tabela de colunas ------------------------------------- */
+.imp-colunas {
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--md-sys-color-outline-variant, rgba(128, 128, 128, 0.28));
+  border-radius: 10px;
+}
+
+.imp-tabela { display: flex; flex-direction: column; }
+
+.imp-linha {
+  display: grid;
+  /* Nome | obrigatória | descrição. A primeira coluna é fixa porque os
+     nomes das colunas têm tamanho parecido; a última cresce. */
+  grid-template-columns: 150px 78px minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  padding: 7px 12px;
+  font-size: 12.5px;
+}
+
+.imp-linha:nth-child(even) {
+  background: var(--md-sys-color-surface-container-low, rgba(128, 128, 128, 0.05));
+}
+
+.imp-cabecalho {
+  font-weight: 700;
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--md-sys-color-on-surface-variant, #666);
+  position: sticky;
+  top: 0;
+  background: var(--md-sys-color-surface, #fff);
+  z-index: 1;
+}
+
+.imp-linha code { font-size: 12px; overflow-wrap: anywhere; }
+
+/* --- etapa 1: a área de soltar o arquivo ------------------------------ */
+.imp-soltar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 26px 16px;
+  text-align: center;
+  border: 2px dashed var(--md-sys-color-outline-variant, rgba(128, 128, 128, 0.4));
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.imp-soltar:hover,
+.imp-soltar.sobre {
+  border-color: var(--md-sys-color-primary, #3b6ea5);
+  background: var(--md-sys-color-surface-container-low, rgba(128, 128, 128, 0.06));
+}
+
+/* --- etapa 2: as linhas da prévia ------------------------------------- */
+.imp-previas {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.imp-previa {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 12px;
+  border: 1px solid var(--md-sys-color-outline-variant, rgba(128, 128, 128, 0.26));
+  border-radius: 10px;
+}
+
+.imp-erro { border-color: var(--md-sys-color-error, #ba1a1a); }
+
+.imp-previa-linha1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+.imp-previa-corpo { display: flex; gap: 10px; align-items: flex-start; }
+
+.imp-foto {
+  width: 46px;
+  height: 46px;
+  object-fit: cover;
+  border-radius: 8px;
+  flex: none;
+  background: var(--md-sys-color-surface-container-high, rgba(128, 128, 128, 0.12));
+}
+
+.imp-sem-foto {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--md-sys-color-on-surface-variant, #888);
+  opacity: 0.5;
+}
+
+.text-aviso { color: var(--cor-aviso); font-size: 12px; }

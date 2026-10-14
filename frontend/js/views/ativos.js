@@ -10,6 +10,7 @@ import { el, icon, toast, dialog, confirmSheet, emptyState, skeleton, fmtDate, f
 import { loadLookups, optionsOf } from "../lookups.js";
 import { erroDeResposta } from "../erros.js";
 import { renderLabelSVG, renderAvisos } from "../label.js";
+import { importarAtivos } from "./importar_ativos.js";
 
 // Itens por página. 25 é o padrão; 50 ajuda quando a lista é longa.
 const TAMANHOS_PAGINA = [25, 50];
@@ -878,6 +879,22 @@ export async function renderAtivos(root) {
       }),
     ),
     seletorTamanho,
+    // --- Importação por CSV: só administrador ---------------------------
+    //
+    // Fica junto dos filtros, e não no FAB: o FAB é "criar um", e importar
+    // cria em lote — são coisas diferentes, e misturá-las no mesmo botão
+    // esconderia o risco de cada uma.
+    //
+    // A checagem aqui é de conveniência: quem manda no assunto é o backend
+    // (`require_admin`). Esconder o botão não protege nada — só evita que
+    // quem não pode clique e receba 403.
+    state.isAdmin
+      ? el("button", {
+          class: "btn tonal small", id: "ativos-importar",
+          onclick: () => importarAtivos(refresh),
+          html: icon("download", 15) + " Importar CSV",
+        })
+      : null,
     // Filtro de natureza, numa linha própria: junto dos status ele
     // confundiria — são eixos diferentes (o que o ativo é vs. como chegou).
     el("div", { class: "row", style: "gap:6px;margin-top:8px" },

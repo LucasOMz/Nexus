@@ -44,6 +44,7 @@ from app.routers import (
     etiquetas,
     financeiro,
     graficos,
+    importacao_ativos,
     lgpd,
     manutencoes,
     mfa,
@@ -249,6 +250,10 @@ if INSTALADO:
     app.include_router(cadastros.router, prefix=API)
     app.include_router(dashboard.router, prefix=API)
     app.include_router(produtos.router, prefix=API, dependencies=[Depends(require_module("produtos"))])
+    # Importação ANTES do router de ativos: `/ativos/importar/...` precisa
+    # casar antes de `/ativos/{ativo_id}`, senão o FastAPI tenta ler
+    # "importar" como número e devolve 422 em vez de chegar na rota certa.
+    app.include_router(importacao_ativos.router, prefix=API)
     app.include_router(ativos.router, prefix=API)  # gate no próprio router
     app.include_router(movimentacoes.router, prefix=API, dependencies=[Depends(require_module("movimentacoes"))])
     app.include_router(manutencoes.router, prefix=API, dependencies=[Depends(require_module("manutencoes"))])
