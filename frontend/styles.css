@@ -2200,3 +2200,166 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 /* O custo por equipamento é o número que a comparação usa — recebe o peso
    visual, sem competir com o mensal. */
 .tabela-numeros .destaque { font-weight: 700; color: var(--md-sys-color-primary); }
+
+/* =====================================================================
+   Monitor de impressoras — cartões com foto, suprimentos e detalhes
+
+   O cartão é uma grade de três colunas:
+
+       ┌────────┬──────────────────────────────┬──────────┐
+       │        │  Toner preto   ▓▓▓▓▓░░  68%  │          │
+       │  foto  │  Ciano         ▓▓░░░░░  31%  │ Detalhes │
+       │        │  Coletor       ▓▓▓▓▓▓▓  94%  │          │
+       └────────┴──────────────────────────────┴──────────┘
+
+   A coluna do meio é a que cresce; as laterais têm largura fixa. Sem
+   `min-width: 0` na do meio, um nome de suprimento longo empurraria a foto
+   e o botão para fora do cartão — o defeito clássico de `flex` com texto.
+   ===================================================================== */
+
+.grade-impressoras {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mon-cartao {
+  display: grid;
+  /* foto | conteúdo (flexível) | ações */
+  grid-template-columns: 96px minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid var(--md-sys-color-outline-variant, rgba(128, 128, 128, 0.32));
+  border-radius: 14px;
+  background: var(--md-sys-color-surface-container-low, rgba(128, 128, 128, 0.05));
+}
+
+/* --- esquerda: a foto ------------------------------------------------- */
+.mon-esquerda { display: flex; align-items: center; justify-content: center; }
+
+.mon-foto {
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: 10px;
+  background: var(--md-sys-color-surface-container-high, rgba(128, 128, 128, 0.12));
+  display: block;
+}
+
+.mon-foto-vazia {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--md-sys-color-on-surface-variant, #888);
+  opacity: 0.6;
+}
+
+/* --- centro: identificação e suprimentos ------------------------------ */
+.mon-centro { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+
+.mon-titulo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 15px;
+}
+
+.mon-sub { font-size: 12.5px; }
+
+.mon-suprimentos { display: flex; flex-direction: column; gap: 6px; }
+
+.mon-carregando { font-size: 12.5px; font-style: italic; }
+
+.mon-sup { display: flex; flex-direction: column; gap: 3px; }
+
+.mon-sup-topo {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12.5px;
+}
+
+.mon-sup-nome {
+  /* Um nome longo encurta com reticências em vez de empurrar a porcentagem
+     para fora — `min-width: 0` é o que permite o `ellipsis` funcionar dentro
+     de um flex. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--md-sys-color-on-surface-variant, #666);
+}
+
+.mon-sup-pct { flex: none; font-variant-numeric: tabular-nums; font-weight: 600; }
+.mon-sup-pct.ok { color: var(--cor-ok); }
+.mon-sup-pct.aviso { color: var(--cor-aviso); }
+.mon-sup-pct.erro { color: var(--md-sys-color-error); }
+.mon-sup-pct.info { color: var(--md-sys-color-on-surface-variant, #888); }
+
+/* A barra é mais fina no cartão do que na tela de detalhes: aqui ela
+   acompanha uma linha de texto, não é o elemento principal. */
+.mon-sup-barra { height: 6px; }
+
+.progresso-barra.ok { background: var(--cor-ok); }
+.progresso-barra.aviso { background: var(--cor-aviso); }
+.progresso-barra.erro { background: var(--md-sys-color-error); }
+.progresso-barra.info { background: var(--md-sys-color-outline, #999); }
+
+/* --- direita: ações --------------------------------------------------- */
+.mon-direita {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+  flex: none;
+}
+
+/* --- detalhes: as seções por categoria -------------------------------- */
+.mon-secao { margin-bottom: 16px; }
+
+.mon-secao-titulo {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--md-sys-color-on-surface-variant, #666);
+}
+
+.mon-secao-corpo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--md-sys-color-outline-variant, rgba(128, 128, 128, 0.28));
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.mon-linha {
+  display: grid;
+  grid-template-columns: minmax(120px, 34%) minmax(0, 1fr);
+  gap: 12px;
+  padding: 7px 12px;
+  font-size: 13px;
+}
+
+/* Zebra: em tabela de rótulo e valor, a linha alternada é o que permite ao
+   olho seguir até a coluna da direita sem se perder. */
+.mon-linha:nth-child(odd) {
+  background: var(--md-sys-color-surface-container-low, rgba(128, 128, 128, 0.05));
+}
+
+.mon-rotulo { color: var(--md-sys-color-on-surface-variant, #666); }
+.mon-valor { min-width: 0; overflow-wrap: anywhere; }
+
+/* --- telas estreitas -------------------------------------------------- */
+@media (max-width: 620px) {
+  /* Empilha: a foto em cima, o resto embaixo. Manter três colunas num
+     celular espremeria o nome do suprimento até não dar para ler. */
+  .mon-cartao { grid-template-columns: 1fr; }
+  .mon-esquerda { justify-content: flex-start; }
+  .mon-direita { flex-direction: row; }
+}

@@ -84,6 +84,17 @@ def _linha(db: Session, ativo: Ativo, ficha: AtivoImpressora | None) -> dict:
         "endereco": _endereco(ficha, ativo),
         "com_snmp": bool(_endereco(ficha, ativo)),
         "contador_cadastro": ficha.contador_paginas if ficha else None,
+        # A foto vem JUNTO com a lista, não numa segunda chamada por
+        # impressora.
+        #
+        # O cartão do monitor mostra a imagem ao lado esquerdo. Buscá-la
+        # depois faria a tela piscar: cada cartão apareceria sem foto e
+        # ganharia a sua uma a uma, na ordem em que as requisições voltassem.
+        "foto_id": ativo.foto_id,
+        "tipo_impressao": (
+            getattr(ficha.tipo_impressao, "value", ficha.tipo_impressao)
+            if ficha and ficha.tipo_impressao else None
+        ),
         "ultima_leitura": ultima.contador if ultima else None,
         "ultima_leitura_em": ultima.data_leitura if ultima else None,
         "consumo_desde_a_anterior": (
