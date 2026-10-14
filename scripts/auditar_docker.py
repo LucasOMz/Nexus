@@ -159,6 +159,39 @@ def verificar() -> list[str]:
         if not alvo.exists() and origem not in (".", "./"):
             problemas.append(f"o Dockerfile copia `{origem}`, que não existe")
 
+    # --- 5. O caminho da arquitetura existe na imagem de origem? ---------
+    #
+    # O build falhava com:
+    #
+    #     failed to calculate checksum of ref ...: "/usr/lib/x86_64-linux-gnu":
+    #     not found
+    #
+    # **A mensagem engana**: fala de "checksum" e "cache key", o que faz
+    # parecer problema de cache do BuildKit. É o caminho não existir na
+    # imagem de origem.
+    #
+    # Este guarda NÃO troca a arquitetura — o projeto é x86. Ele só avisa
+    # quando o caminho copiado não corresponde ao que o Dockerfile declara
+    # como plataforma, ou quando alguém escreve um caminho de outra
+    # arquitetura por engano.
+    #
+    # Num servidor x86_64, `/usr/lib/x86_64-linux-gnu` **existe** na imagem
+    # `postgres:16` da Debian. Se o build diz que não, a causa não é o
+    # caminho — é a imagem que o Docker baixou (plataforma errada, espelho
+    # do registry, ou `--platform` no daemon).
+    for linha in dockerfile.split("\n"):
+        if linha.lstrip().startswith("#"):
+            continue
+        m = re.search(r"/usr/lib/(aarch64|armv7l|i386)[\w-]*", linha)
+        if m:
+            problemas.append(
+                f"o Dockerfile usa o caminho de OUTRA arquitetura "
+                f"(`{m.group(0)}`), e o projeto é x86_64. Copie de "
+                f"`/usr/lib/x86_64-linux-gnu`."
+            )
+            break
+            break
+
     return problemas
 
 

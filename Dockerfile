@@ -99,13 +99,41 @@ RUN echo "/opt/pg-libs" > /etc/ld.so.conf.d/pg16.conf \
     && ln -sf /opt/pg16/bin/dropdb /usr/local/bin/dropdb \
     && pg_dump --version
 
-# --- Camada de dependências Python (cacheável) ------------------------
+# --- Dependências Python, dos pacotes que estão NO PROJETO -------------
 #
-# Os dois arquivos vão juntos de propósito: `COPY` separado invalidaria o
-# cache da instalação a cada mudança no outro arquivo, e a camada mais cara
-# do build seria refeita à toa.
+# ## Por que os pacotes vêm junto, e não do PyPI
+#
+# Numa rede corporativa o build não alcança o PyPI, e falhava com
+# `runc did not terminate successfully` — a moldura genérica de "o processo
+# foi morto", que não diz nada.
+#
+# Em vez de negociar exceção de firewall, os pacotes ficam **no
+# repositório**: `wheels/` tem os 47 arquivos `.whl` para Linux x86_64 e
+# Python 3.12, somando ~31 MB.
+#
+# ## O `--no-index` é a parte que importa
+#
+# Ele diz ao pip para **não consultar o PyPI** — só a pasta local. Sem isso,
+# o pip ainda tentaria a rede para conferir versões, e o build continuaria
+# dependendo dela.
+#
+# Com `--no-index --find-links`, o build funciona **sem rede nenhuma**.
+#
+# ## Como atualizar os pacotes
+#
+# Ao mudar o `requirements.txt`:
+#
+#     python -m pip download --dest wheels \
+#         --python-version 312 --only-binary=:all: \
+#         --platform manylinux2014_x86_64 --platform manylinux_2_17_x86_64 \
+#         --platform manylinux_2_28_x86_64 --platform linux_x86_64 \
+#         -r requirements.txt -r requirements-snmp.txt
+#
+# Depois `git add wheels` — os arquivos vão versionados.
 COPY requirements.txt requirements-snmp.txt ./
-RUN pip install --no-cache-dir --progress-bar off -r requirements.txt
+COPY wheels ./wheels
+RUN pip install --no-cache-dir --no-index --find-links=./wheels \
+        --progress-bar off -r requirements.txt
 
 # --- SNMP: dependência do monitor de impressoras ----------------------
 #
@@ -130,7 +158,8 @@ RUN pip install --no-cache-dir --progress-bar off -r requirements.txt
 # imagem menor — ou não usa impressora — constrói com `--build-arg SNMP=0`.
 ARG SNMP=1
 RUN if [ "$SNMP" = "1" ]; then \
-        pip install --no-cache-dir --progress-bar off -r requirements-snmp.txt; \
+        pip install --no-cache-dir --no-index --find-links=./wheels \
+            --progress-bar off -r requirements-snmp.txt; \
     else \
         echo "SNMP desativado no build (SNMP=0): o monitor usara contador manual."; \
     fi
