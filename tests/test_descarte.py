@@ -24,11 +24,10 @@ AGORA = datetime(2026, 10, 8, 12, 0, tzinfo=timezone.utc)
 
 def _base(**extra):
     d = {
-        "patrimonio": "TP9800001176",
+        "patrimonio": "TP9800001176", "numero_serie": "NS-TP9800001176",
         "descricao": "Notebook Dell Latitude 3420",
         "marca": "Dell",
         "modelo": "Latitude 3420",
-        "numero_serie": "ABC123",
         "categoria": "informatica",
         "quantidade": 1,
         "responsavel": "Lucas Mendes",

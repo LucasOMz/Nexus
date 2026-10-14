@@ -12,7 +12,7 @@ from app.services.qr_service import build_payload
 def _criar_ativo(client, auth_headers, patrimonio="QR-0001"):
     return client.post(
         "/api/v1/ativos",
-        json={"dominio": "ti", "patrimonio": patrimonio},
+        json={"dominio": "ti", "patrimonio": patrimonio, "numero_serie": f"NS-{patrimonio}"},
         headers=auth_headers,
     ).json()["id"]
 

@@ -17,7 +17,7 @@ def _gerar(client, auth_headers, quantidade=1):
 def _ativo(client, auth_headers, patrimonio="AUD-0001"):
     r = client.post(
         "/api/v1/ativos",
-        json={"dominio": "ti", "patrimonio": patrimonio, "modelo": "X1", "tipo_item": "ativo"},
+        json={"dominio": "ti", "patrimonio": patrimonio, "numero_serie": f"NS-{patrimonio}", "modelo": "X1", "tipo_item": "ativo"},
         headers=auth_headers,
     )
     assert r.status_code == 201, r.text

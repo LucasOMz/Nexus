@@ -26,7 +26,7 @@ def _liberar_rate_limit():
 def _ativo(client, auth_headers, patrimonio, modelo="Latitude 5420"):
     return client.post(
         "/api/v1/ativos",
-        json={"dominio": "ti", "patrimonio": patrimonio, "modelo": modelo, "tipo_item": "ativo"},
+        json={"dominio": "ti", "patrimonio": patrimonio, "numero_serie": f"NS-{patrimonio}", "modelo": modelo, "tipo_item": "ativo"},
         headers=auth_headers,
     ).json()["id"]
 

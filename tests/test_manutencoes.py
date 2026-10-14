@@ -3,7 +3,7 @@ from __future__ import annotations
 
 
 def _criar_ativo(client, auth_headers, patrimonio="TI-M"):
-    return client.post("/api/v1/ativos", json={"dominio": "ti", "patrimonio": patrimonio}, headers=auth_headers).json()["id"]
+    return client.post("/api/v1/ativos", json={"dominio": "ti", "patrimonio": patrimonio, "numero_serie": f"NS-{patrimonio}"}, headers=auth_headers).json()["id"]
 
 
 def test_abrir_manutencao_muda_status(client, auth_headers):

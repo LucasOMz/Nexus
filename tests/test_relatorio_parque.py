@@ -34,7 +34,7 @@ def _planta(db):
 
 def _ativo(db, planta_id, patrimonio, dominio="ti", **campos):
     a = Ativo(
-        dominio=dominio, tipo_item="ativo", patrimonio=patrimonio,
+        dominio=dominio, tipo_item="ativo", patrimonio=patrimonio, numero_serie=f"NS-{patrimonio}",
         planta_id=planta_id, status="estoque", **campos,
     )
     db.add(a)
@@ -74,7 +74,7 @@ class TestComposicao:
         """Quem não conhece o campo continua comprado — é o padrão do banco."""
         db = _db(client)
         planta = _planta(db)
-        db.add(Ativo(dominio="ti", tipo_item="ativo", patrimonio="ANTIGO",
+        db.add(Ativo(dominio="ti", tipo_item="ativo", patrimonio="ANTIGO", numero_serie="NS-ANTIGO",
                      planta_id=planta.id, status="estoque"))
         db.commit()
 

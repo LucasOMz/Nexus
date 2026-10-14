@@ -143,7 +143,7 @@ class TestCalcular:
         planta = db.query(Planta).first()
         for i in range(quantas):
             a = Ativo(dominio=dominio, tipo_item="ativo",
-                      patrimonio=f"INST-{nome[:6]}-{i}",
+                      patrimonio=f"INST-{nome[:6]}-{i}", numero_serie=f"NS-INST-{nome[:6]}-{i}",
                       planta_id=planta.id if planta else None, status="estoque")
             db.add(a)
             db.flush()

@@ -219,16 +219,29 @@ def create_ativo(
     user: Usuario = Depends(require_write),
     planta_id: int | None = Depends(planta_ativa),
 ):
-    if db.query(Ativo).filter(Ativo.patrimonio == body.patrimonio, Ativo.deleted_at.is_(None)).first():
-        raise HTTPException(409, "Patrimônio já cadastrado")
+    # O identificador é o NÚMERO DE SÉRIE. O patrimônio continua aceito, mas
+    # deixou de ser obrigatório e de definir unicidade: dois ativos sem
+    # patrimônio são válidos, e o que não pode repetir é o serial.
+    if db.query(Ativo).filter(
+        Ativo.numero_serie == body.numero_serie, Ativo.deleted_at.is_(None)
+    ).first():
+        raise HTTPException(409, f"Número de série {body.numero_serie} já cadastrado")
+
+    # Patrimônio repetido só é erro quando os dois têm valor: vazio não conta.
+    if body.patrimonio and db.query(Ativo).filter(
+        Ativo.patrimonio == body.patrimonio, Ativo.deleted_at.is_(None)
+    ).first():
+        raise HTTPException(409, f"Patrimônio {body.patrimonio} já cadastrado")
 
     # A checagem acima só olha os VIVOS — e está certa. Mas a constraint
     # UNIQUE do banco vale para todas as linhas, inclusive as excluídas: o
     # soft delete não libera o valor.
     #
-    # Sem isto, excluir um ativo e recadastrar o mesmo patrimônio falha com
-    # 409 vindo do banco, **contradizendo a tela** — que não mostra nada ali.
-    unicidade.liberar(db, Ativo, "patrimonio", body.patrimonio, limite=80)
+    # Sem isto, excluir um ativo e recadastrar o mesmo serial falha com 409
+    # vindo do banco, **contradizendo a tela** — que não mostra nada ali.
+    unicidade.liberar(db, Ativo, "numero_serie", body.numero_serie, limite=160)
+    if body.patrimonio:
+        unicidade.liberar(db, Ativo, "patrimonio", body.patrimonio, limite=80)
 
     data = body.model_dump(exclude={"ti", "impressora"})
     # Por segurança só aceitamos payload de ETIQUETA EM BRANCO vindo do cliente.

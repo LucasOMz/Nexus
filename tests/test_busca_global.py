@@ -38,7 +38,7 @@ def _ti(db, planta_id, patrimonio, hostname, **campos):
         planta_id=planta_id, status="estoque",
         modelo=campos.get("modelo", "Latitude 3420"),
         marca=campos.get("marca", "Dell"),
-        numero_serie=campos.get("numero_serie"),
+        numero_serie=(campos.get("numero_serie") or f"NS-{patrimonio}"),
     )
     db.add(a)
     db.commit()
@@ -50,7 +50,7 @@ def _ti(db, planta_id, patrimonio, hostname, **campos):
 
 def _impressora(db, planta_id, patrimonio, hostname):
     a = Ativo(
-        dominio="impressora", tipo_item="ativo", patrimonio=patrimonio,
+        dominio="impressora", tipo_item="ativo", patrimonio=patrimonio, numero_serie=f"NS-{patrimonio}",
         planta_id=planta_id, status="estoque",
     )
     db.add(a)
@@ -122,7 +122,7 @@ class TestBuscaPeloHostname:
         """Mesmo raciocínio do hostname — o IP identifica a máquina na rede."""
         db = _db(client)
         p = _planta(db)
-        a = Ativo(dominio="ti", tipo_item="ativo", patrimonio="IP-1",
+        a = Ativo(dominio="ti", tipo_item="ativo", patrimonio="IP-1", numero_serie="NS-IP-1",
                   planta_id=p.id, status="estoque")
         db.add(a)
         db.commit()
@@ -154,7 +154,7 @@ class TestRegrasDaBuscaGlobal:
         """Sem ficha técnica não há hostname — e a busca não pode cair."""
         db = _db(client)
         p = _planta(db)
-        db.add(Ativo(dominio="ti", tipo_item="ativo", patrimonio="SOZINHO",
+        db.add(Ativo(dominio="ti", tipo_item="ativo", patrimonio="SOZINHO", numero_serie="NS-SOZINHO",
                      planta_id=p.id, status="estoque"))
         db.commit()
 

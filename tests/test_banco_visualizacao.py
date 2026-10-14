@@ -44,7 +44,7 @@ class TestVisualizacao:
         assert _info(client, auth_headers)["servidor_versao"]
 
     def test_mostra_as_contagens(self, client, auth_headers):
-        client.post("/api/v1/ativos", json={"dominio": "ti", "patrimonio": "DBA-001"},
+        client.post("/api/v1/ativos", json={"dominio": "ti", "patrimonio": "DBA-001", "numero_serie": "NS-DBA-001"},
                     headers=auth_headers)
         contagens = {c["tabela"]: c["linhas"] for c in _info(client, auth_headers)["contagens"]}
         assert contagens.get("ativos", 0) >= 1

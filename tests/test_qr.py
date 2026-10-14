@@ -3,7 +3,7 @@ from __future__ import annotations
 
 
 def test_generate_and_validate(client, auth_headers):
-    ativo_id = client.post("/api/v1/ativos", json={"dominio": "ti", "patrimonio": "TI-QR"}, headers=auth_headers).json()["id"]
+    ativo_id = client.post("/api/v1/ativos", json={"dominio": "ti", "patrimonio": "TI-QR", "numero_serie": "NS-TI-QR"}, headers=auth_headers).json()["id"]
     gen = client.post(f"/api/v1/qrcode/generate/{ativo_id}", headers=auth_headers)
     assert gen.status_code == 200
     payload = gen.json()["qr_payload"]
@@ -22,7 +22,7 @@ def test_validate_invalid(client, auth_headers):
 
 
 def test_validate_tampered_hmac(client, auth_headers):
-    ativo_id = client.post("/api/v1/ativos", json={"dominio": "ti", "patrimonio": "TI-QR2"}, headers=auth_headers).json()["id"]
+    ativo_id = client.post("/api/v1/ativos", json={"dominio": "ti", "patrimonio": "TI-QR2", "numero_serie": "NS-TI-QR2"}, headers=auth_headers).json()["id"]
     payload = client.post(f"/api/v1/qrcode/generate/{ativo_id}", headers=auth_headers).json()["qr_payload"]
     # Altera o id mantendo a assinatura original → HMAC deve falhar.
     tampered = payload.replace(f":{ativo_id}:", ":9999:", 1)

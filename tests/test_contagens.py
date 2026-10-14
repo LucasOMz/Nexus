@@ -30,7 +30,7 @@ def admin(client):
 
 
 def _ativo(client, h, patrimonio, **extra):
-    corpo = {"dominio": "ti", "patrimonio": patrimonio, "tipo_item": "ativo", **extra}
+    corpo = {"dominio": "ti", "patrimonio": patrimonio, "numero_serie": f"NS-{patrimonio}", "tipo_item": "ativo", **extra}
     r = client.post("/api/v1/ativos", json=corpo, headers=h)
     assert r.status_code == 201, r.text
     return r.json()

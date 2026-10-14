@@ -27,7 +27,7 @@ def checklist(client):
 
 def _ativo(client, h, patrimonio="EMP-1"):
     r = client.post("/api/v1/ativos", json={
-        "dominio": "ti", "patrimonio": patrimonio, "tipo_item": "ativo",
+        "dominio": "ti", "patrimonio": patrimonio, "numero_serie": f"NS-{patrimonio}", "tipo_item": "ativo",
     }, headers=h)
     assert r.status_code == 201, r.text
     return r.json()

@@ -23,7 +23,7 @@ def _tem_fuso(valor: str) -> bool:
 def test_created_at_do_ativo_tem_fuso(client, auth_headers):
     r = client.post(
         "/api/v1/ativos",
-        json={"dominio": "ti", "patrimonio": "TZ-0001", "tipo_item": "ativo"},
+        json={"dominio": "ti", "patrimonio": "TZ-0001", "numero_serie": "NS-TZ-0001", "tipo_item": "ativo"},
         headers=auth_headers,
     )
     assert r.status_code == 201, r.text
@@ -35,7 +35,7 @@ def test_created_at_do_ativo_tem_fuso(client, auth_headers):
 def test_manutencao_tem_fuso(client, auth_headers):
     ativo = client.post(
         "/api/v1/ativos",
-        json={"dominio": "ti", "patrimonio": "TZ-0002", "tipo_item": "ativo"},
+        json={"dominio": "ti", "patrimonio": "TZ-0002", "numero_serie": "NS-TZ-0002", "tipo_item": "ativo"},
         headers=auth_headers,
     ).json()
     m = client.post(
@@ -75,7 +75,7 @@ def test_data_pura_nao_ganha_fuso(client, auth_headers):
     r = client.post(
         "/api/v1/ativos",
         json={
-            "dominio": "ti", "patrimonio": "TZ-0003", "tipo_item": "ativo",
+            "dominio": "ti", "patrimonio": "TZ-0003", "numero_serie": "NS-TZ-0003", "tipo_item": "ativo",
             "data_garantia": "2027-03-15", "data_aquisicao": "2025-01-10",
         },
         headers=auth_headers,
@@ -90,7 +90,7 @@ def test_o_fuso_enviado_e_utc(client, auth_headers):
     """O valor marcado precisa ser UTC — é assim que o banco grava."""
     r = client.post(
         "/api/v1/ativos",
-        json={"dominio": "ti", "patrimonio": "TZ-0004", "tipo_item": "ativo"},
+        json={"dominio": "ti", "patrimonio": "TZ-0004", "numero_serie": "NS-TZ-0004", "tipo_item": "ativo"},
         headers=auth_headers,
     ).json()
     assert r["created_at"].endswith("+00:00")

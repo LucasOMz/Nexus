@@ -16,7 +16,7 @@ AGORA = datetime(2026, 10, 8, 12, 0, tzinfo=timezone.utc)
 def _inventario(**extra):
     base = {
         "ativo_id": 1,
-        "patrimonio": "TP-1",
+        "patrimonio": "TP-1", "numero_serie": "NS-TP-1",
         "hostname": "DTAT0001",
         "ip": "10.0.0.10",
         "mac_address": "00:1A:2B:3C:4D:5E",

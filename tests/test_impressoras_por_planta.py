@@ -195,7 +195,7 @@ class TestSeletorDeImpressao:
         # Ativo da planta A, impressora da planta B.
         ativo = client.post(
             "/api/v1/ativos",
-            json={"dominio": "ti", "patrimonio": "CPS-IMP", "tipo_item": "ativo"},
+            json={"dominio": "ti", "patrimonio": "CPS-IMP", "numero_serie": "NS-CPS-IMP", "tipo_item": "ativo"},
             headers=ha,
         ).json()
 

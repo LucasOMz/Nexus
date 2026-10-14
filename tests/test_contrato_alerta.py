@@ -114,7 +114,7 @@ class TestUmAvisoPorContrato:
         planta = _planta(db)
         c = _contrato(db, 10)
         for i in range(50):
-            db.add(Ativo(dominio="ti", tipo_item="ativo", patrimonio=f"T-{i}",
+            db.add(Ativo(dominio="ti", tipo_item="ativo", patrimonio=f"T-{i}", numero_serie=f"NS-T-{i}",
                          planta_id=planta.id, status="estoque",
                          contrato_id=c.id, forma_aquisicao=FormaAquisicao.LOCADO))
         db.commit()
@@ -127,7 +127,7 @@ class TestUmAvisoPorContrato:
         planta = _planta(db)
         c = _contrato(db, 10)
         for i in range(3):
-            db.add(Ativo(dominio="ti", tipo_item="ativo", patrimonio=f"Q-{i}",
+            db.add(Ativo(dominio="ti", tipo_item="ativo", patrimonio=f"Q-{i}", numero_serie=f"NS-Q-{i}",
                          planta_id=planta.id, status="estoque",
                          contrato_id=c.id, forma_aquisicao=FormaAquisicao.LOCADO))
         db.commit()

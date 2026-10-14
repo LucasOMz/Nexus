@@ -58,8 +58,15 @@ class AtivoImpressoraOut(AtivoImpressoraBase):
 class AtivoBase(SemVazios):
     model_config = ConfigDict(extra="forbid")
 
-    patrimonio: str = Field(min_length=1, max_length=80)
-    numero_serie: str | None = Field(default=None, max_length=160)
+    # --- IDENTIFICADOR PRINCIPAL -----------------------------------------
+    #
+    # `numero_serie` obrigatório: é ele que identifica o ativo.
+    # `patrimonio` opcional: numeração interna, que nem toda empresa usa.
+    #
+    # Modelo e schema PRECISAM concordar. Divergir aqui foi o que quebrou a
+    # edição de ativo antes — o formulário mandava, o schema recusava.
+    numero_serie: str = Field(min_length=1, max_length=160)
+    patrimonio: str | None = Field(default=None, max_length=80)
     modelo: str | None = Field(default=None, max_length=160)
     marca: str | None = Field(default=None, max_length=120)
     categoria_id: int | None = None

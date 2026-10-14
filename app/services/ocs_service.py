@@ -140,6 +140,41 @@ def testar_conexao(cfg) -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 # Mapeamento
 # ---------------------------------------------------------------------------
+def _serial_provisorio(maquina: dict) -> str:
+    """Um número de série para quando o fabricante não informa nenhum.
+
+    ## Por que existe
+
+    O número de série **é o identificador do ativo** — o banco exige, e dois
+    ativos não podem repetir. Algumas máquinas, porém, reportam `SSN` vazio,
+    ou o texto de fábrica `"To be filled by O.E.M."` que a placa-mãe traz
+    quando o montador não gravou nada.
+
+    Sem isto, essas máquinas **nunca entrariam** no inventário: o cadastro
+    seria recusado pelo banco, e a coleta inteira falharia por causa delas.
+
+    ## Por que derivar do DEVICEID
+
+    É o identificador que o próprio OCS usa — estável entre coletas, e único
+    por máquina. O hostname seria menos confiável: nome de máquina muda com
+    frequência, e duas podem compartilhar.
+
+    ## O prefixo `OCS-`
+
+    Deixa explícito que aquele serial **não veio do fabricante**. Quem olhar
+    o cadastro sabe que é provisório, e pode trocar quando o real aparecer —
+    em vez de achar que aquele código estranho é o serial de verdade.
+    """
+    bruto = _primeiro(maquina, "DEVICEID", "deviceid", "ID", "id", "NAME", "name")
+    limpo = _texto(bruto, 100)
+    if not limpo:
+        return "OCS-SEM-IDENTIFICADOR"
+    # Só o que cabe num serial; o resto vira ruído visual na etiqueta.
+    seguro = "".join(c for c in str(limpo) if c.isalnum() or c in "-_")
+    return f"OCS-{seguro[:100]}" or "OCS-SEM-IDENTIFICADOR"
+
+
+
 def mapear(maquina: dict, det: dict) -> dict[str, Any]:
     """Traduz a resposta do OCS para os campos usados pelo sistema."""
     bio = det.get("bios")
@@ -155,7 +190,27 @@ def mapear(maquina: dict, det: dict) -> dict[str, Any]:
     return {
         # --- Identificação ---
         "hostname": _texto(_primeiro(maquina, "NAME", "name", "DEVICEID"), 120),
-        "numero_serie": _texto(_primeiro(bio, "SSN", "ssn", "SERIALNUMBER", "serialnumber"), 120),
+        # O número de série é o IDENTIFICADOR do ativo — o banco exige, e dois
+        # ativos não podem repetir.
+        #
+        # ## O que fazer quando o OCS não informa
+        #
+        # Algumas máquinas reportam `SSN` vazio, ou o texto de fábrica
+        # `"To be filled by O.E.M."`. Antes isso virava um ativo sem serial.
+        # Agora não pode: sem serial o cadastro é recusado pelo banco, e a
+        # máquina **nunca entraria** no inventário.
+        #
+        # A escolha é derivar do `DEVICEID` do OCS — estável entre coletas, e
+        # único por máquina. O hostname seria menos confiável: nome de máquina
+        # muda, e duas podem compartilhar.
+        #
+        # O prefixo `OCS-` deixa explícito que aquele serial **não veio do
+        # fabricante**: quem olhar o cadastro sabe que é provisório, e pode
+        # trocar quando o real aparecer.
+        "numero_serie": (
+            _texto(_primeiro(bio, "SSN", "ssn", "SERIALNUMBER", "serialnumber"), 120)
+            or _serial_provisorio(maquina)
+        ),
         "marca": _texto(_primeiro(bio, "SMANUFACTURER", "manufacturer", "MANUFACTURER"), 80),
         "modelo": _texto(_primeiro(bio, "SMODEL", "model", "MODEL", "SMODELNAME"), 120),
         # --- Técnico ---

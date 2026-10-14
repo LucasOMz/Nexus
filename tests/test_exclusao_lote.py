@@ -30,7 +30,7 @@ def _criar_ativos(client, auth_headers, quantidade, prefixo="LOTE"):
     for i in range(quantidade):
         r = client.post(
             "/api/v1/ativos",
-            json={"dominio": "ti", "patrimonio": f"{prefixo}-{i:04d}", "modelo": "X1"},
+            json={"dominio": "ti", "patrimonio": f"{prefixo}-{i:04d}", "numero_serie": f"NS-{prefixo}-{i:04d}", "modelo": "X1"},
             headers=auth_headers,
         )
         assert r.status_code == 201, r.text

@@ -46,7 +46,7 @@ def _instalado_em(db, planta, nome, quantas):
 
     for i in range(quantas):
         a = Ativo(dominio="ti", tipo_item="ativo",
-                  patrimonio=f"{planta.sigla}-{nome[:4]}-{i}",
+                  patrimonio=f"{planta.sigla}-{nome[:4]}-{i}", numero_serie=f"NS-{planta.sigla}-{nome[:4]}-{i}",
                   planta_id=planta.id, status="estoque")
         db.add(a)
         db.flush()

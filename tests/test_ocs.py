@@ -267,8 +267,7 @@ class TestSincronizacao:
         _configurar(client, auth_headers, regras_planta=[{"prefixo": "PC-BNT-", "planta_id": pid}])
 
         ativo = client.post("/api/v1/ativos", json={
-            "dominio": "ti", "tipo_item": "ativo", "patrimonio": "PATRIMONIO-0421",
-            "numero_serie": "ABC123", "modelo": "Antigo",
+            "dominio": "ti", "tipo_item": "ativo", "patrimonio": "PATRIMONIO-0421", "numero_serie": "ABC123", "modelo": "Antigo",
         }, headers={**auth_headers, "X-Planta-Id": str(pid)}).json()
 
         client.post("/api/v1/ocs/sincronizar", headers=auth_headers)
@@ -284,7 +283,7 @@ class TestSincronizacao:
         _configurar(client, auth_headers)
 
         client.post("/api/v1/ativos", json={
-            "dominio": "ti", "tipo_item": "ativo", "patrimonio": "PC-BNT-001",
+            "dominio": "ti", "tipo_item": "ativo", "patrimonio": "PC-BNT-001", "numero_serie": "NS-PC-BNT-001",
         }, headers=auth_headers)
 
         r = client.post("/api/v1/ocs/sincronizar", headers=auth_headers).json()

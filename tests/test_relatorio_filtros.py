@@ -40,7 +40,7 @@ def _planta(db, sigla):
 
 
 def _ativo(db, planta_id, patrimonio, dominio="ti", **campos):
-    a = Ativo(dominio=dominio, tipo_item="ativo", patrimonio=patrimonio,
+    a = Ativo(dominio=dominio, tipo_item="ativo", patrimonio=patrimonio, numero_serie=f"NS-{patrimonio}",
               planta_id=planta_id, status="estoque", **campos)
     db.add(a)
     db.commit()

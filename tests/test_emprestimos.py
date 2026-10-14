@@ -25,7 +25,7 @@ def _liberar_rate_limit():
 def _ativo(client, auth_headers, patrimonio="EMP-001"):
     return client.post(
         "/api/v1/ativos",
-        json={"dominio": "ti", "patrimonio": patrimonio, "modelo": "Latitude", "tipo_item": "ativo"},
+        json={"dominio": "ti", "patrimonio": patrimonio, "numero_serie": f"NS-{patrimonio}", "modelo": "Latitude", "tipo_item": "ativo"},
         headers=auth_headers,
     ).json()["id"]
 
@@ -259,7 +259,7 @@ class TestCalendarioPorPlanta:
         h = {**auth_headers, "X-Planta-Id": str(planta_id)}
         ativo = client.post(
             "/api/v1/ativos",
-            json={"dominio": "ti", "patrimonio": patrimonio, "tipo_item": "ativo"},
+            json={"dominio": "ti", "patrimonio": patrimonio, "numero_serie": f"NS-{patrimonio}", "tipo_item": "ativo"},
             headers=h,
         ).json()
         r = client.post(

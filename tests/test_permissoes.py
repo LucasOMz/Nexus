@@ -52,7 +52,7 @@ def test_usuario_bloqueado_em_modulo_sem_permissao(client, auth_headers):
 def test_usuario_sem_escrita_nao_cria_ativo(client, auth_headers):
     _criar_usuario(client, auth_headers)
     h = _token_do_usuario(client)
-    res = client.post("/api/v1/ativos", json={"dominio": "ti", "patrimonio": "X-1"}, headers=h)
+    res = client.post("/api/v1/ativos", json={"dominio": "ti", "patrimonio": "X-1", "numero_serie": "NS-X-1"}, headers=h)
     assert res.status_code == 403
 
 

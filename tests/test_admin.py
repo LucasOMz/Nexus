@@ -48,7 +48,7 @@ def test_apenas_admin_gerencia_dispositivos(client, auth_headers):
 
 def test_upload_e_vinculo_de_foto(client, auth_headers):
     ativo_id = client.post(
-        "/api/v1/ativos", json={"dominio": "ti", "patrimonio": "TI-FOTO"}, headers=auth_headers
+        "/api/v1/ativos", json={"dominio": "ti", "patrimonio": "TI-FOTO", "numero_serie": "NS-TI-FOTO"}, headers=auth_headers
     ).json()["id"]
 
     res = client.post(

@@ -32,8 +32,7 @@ import pytest
 # O que o formulário do frontend envia ao salvar um ativo — incluindo os
 # campos que o usuário nem toca, mas que o sistema preenche.
 CORPO_DO_FORMULARIO = {
-    "patrimonio": "TESTE-001",
-    "numero_serie": "SN-123",
+    "patrimonio": "TESTE-001", "numero_serie": "NS-TESTE-001",
     "modelo": "Latitude 3420",
     "marca": "Dell",
     "status": "estoque",
@@ -92,7 +91,7 @@ class TestEdicaoPelaAPI:
             pytest.skip("sem ativos no banco de teste")
 
         alvo = itens[0]
-        corpo = {**CORPO_DO_FORMULARIO, "patrimonio": alvo["patrimonio"]}
+        corpo = {**CORPO_DO_FORMULARIO, "numero_serie": f"NS-{alvo['patrimonio']}", "patrimonio": alvo["patrimonio"]}
 
         r = client.put(f"/api/v1/ativos/{alvo['id']}", json=corpo, headers=auth_headers)
         assert r.status_code == 200, (
@@ -111,7 +110,7 @@ class TestEdicaoPelaAPI:
             pytest.skip("sem ativos no banco de teste")
 
         alvo = itens[0]
-        corpo = {**CORPO_DO_FORMULARIO, "patrimonio": alvo["patrimonio"],
+        corpo = {**CORPO_DO_FORMULARIO, "numero_serie": f"NS-{alvo['patrimonio']}", "patrimonio": alvo["patrimonio"],
                  "forma_aquisicao": "locado"}
 
         r = client.put(f"/api/v1/ativos/{alvo['id']}", json=corpo, headers=auth_headers)

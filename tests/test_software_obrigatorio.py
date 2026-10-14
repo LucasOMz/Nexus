@@ -49,7 +49,7 @@ def _instalado(db, nome, quantas):
     planta = db.query(Planta).first()
     for i in range(quantas):
         a = Ativo(dominio="ti", tipo_item="ativo",
-                  patrimonio=f"OBR-{nome[:4]}-{i}",
+                  patrimonio=f"OBR-{nome[:4]}-{i}", numero_serie=f"NS-OBR-{nome[:4]}-{i}",
                   planta_id=planta.id if planta else None, status="estoque")
         db.add(a)
         db.flush()

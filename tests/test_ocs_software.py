@@ -72,7 +72,7 @@ def _maquina(db, ocs_id, patrimonio):
     from app.models.ti import AtivoTI
 
     planta = db.query(Planta).first()
-    a = Ativo(dominio="ti", tipo_item="ativo", patrimonio=patrimonio,
+    a = Ativo(dominio="ti", tipo_item="ativo", patrimonio=patrimonio, numero_serie=f"NS-{patrimonio}",
               planta_id=planta.id if planta else None, status="estoque")
     db.add(a)
     db.flush()

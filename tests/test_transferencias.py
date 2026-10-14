@@ -47,7 +47,7 @@ def _ativo(client, headers, planta_id, patrimonio):
     h = {**headers, "X-Planta-Id": str(planta_id)}
     return client.post(
         "/api/v1/ativos",
-        json={"dominio": "ti", "patrimonio": patrimonio, "modelo": "Latitude", "tipo_item": "ativo"},
+        json={"dominio": "ti", "patrimonio": patrimonio, "numero_serie": f"NS-{patrimonio}", "modelo": "Latitude", "tipo_item": "ativo"},
         headers=h,
     ).json()
 

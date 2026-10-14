@@ -83,7 +83,7 @@ class TestRelatorioDeCustos:
         planta = _planta(db)
         c = _contrato(db, "RATEIO")
         for i in range(50):
-            db.add(Ativo(dominio="ti", tipo_item="ativo", patrimonio=f"F-{i}",
+            db.add(Ativo(dominio="ti", tipo_item="ativo", patrimonio=f"F-{i}", numero_serie=f"NS-F-{i}",
                          planta_id=planta.id, status="estoque",
                          contrato_id=c.id, forma_aquisicao=FormaAquisicao.LOCADO))
         db.commit()

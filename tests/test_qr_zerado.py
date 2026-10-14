@@ -19,10 +19,9 @@ def gerar(client, auth_headers, quantidade=3, dominio="ti"):
 
 def corpo_ativo(patrimonio: str, qr_payload: str | None = None) -> dict:
     corpo = {
-        "patrimonio": patrimonio,
+        "patrimonio": patrimonio, "numero_serie": f"NS-{patrimonio}",
         "modelo": "Latitude 5440",
-        "marca": "Dell",
-        "numero_serie": None,
+        "marca": "Dell",
         "status": "estoque",
         "dominio": "ti",
         "tipo_item": "ativo",

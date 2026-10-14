@@ -40,7 +40,7 @@ class TestFormaAquisicao:
         no dia do deploy.
         """
         db = _db(client)
-        a = Ativo(dominio="ti", tipo_item="ativo", patrimonio="PADRAO",
+        a = Ativo(dominio="ti", tipo_item="ativo", patrimonio="PADRAO", numero_serie="NS-PADRAO",
                   planta_id=_planta(db).id, status="estoque")
         db.add(a)
         db.commit()
@@ -122,7 +122,7 @@ class TestRateio:
         db.commit()
         db.refresh(c)
         for i in range(quantos):
-            db.add(Ativo(dominio="ti", tipo_item="ativo", patrimonio=f"R-{i}",
+            db.add(Ativo(dominio="ti", tipo_item="ativo", patrimonio=f"R-{i}", numero_serie=f"NS-R-{i}",
                          planta_id=planta.id, status="estoque",
                          contrato_id=c.id, forma_aquisicao=FormaAquisicao.LOCADO))
         db.commit()
@@ -195,7 +195,7 @@ class TestVinculo:
         db.commit()
         db.refresh(c)
 
-        a = Ativo(dominio="ti", tipo_item="ativo", patrimonio="V-ATIVO",
+        a = Ativo(dominio="ti", tipo_item="ativo", patrimonio="V-ATIVO", numero_serie="NS-V-ATIVO",
                   planta_id=planta.id, status="estoque",
                   contrato_id=c.id, forma_aquisicao=FormaAquisicao.LOCADO)
         db.add(a)
@@ -224,7 +224,7 @@ class TestVinculo:
         db.refresh(c)
         cid = c.id
 
-        a = Ativo(dominio="ti", tipo_item="ativo", patrimonio="X",
+        a = Ativo(dominio="ti", tipo_item="ativo", patrimonio="X", numero_serie="NS-X",
                   planta_id=planta.id, status="estoque", contrato_id=cid)
         db.add(a)
         db.commit()
@@ -240,7 +240,7 @@ class TestValorResidual:
     def test_guarda_o_preco_da_compra_futura(self, client):
         """Serve para planejar o buyout antes de ele acontecer."""
         db = _db(client)
-        a = Ativo(dominio="ti", tipo_item="ativo", patrimonio="BUYOUT",
+        a = Ativo(dominio="ti", tipo_item="ativo", patrimonio="BUYOUT", numero_serie="NS-BUYOUT",
                   planta_id=_planta(db).id, status="estoque",
                   forma_aquisicao=FormaAquisicao.LOCADO,
                   valor_residual=Decimal("1200.00"))

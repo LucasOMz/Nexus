@@ -9,7 +9,7 @@ class TestBuscaPorHostname:
 
     def _ativo_com_hostname(self, client, auth_headers, patrimonio, hostname):
         a = client.post("/api/v1/ativos", json={
-            "dominio": "ti", "patrimonio": patrimonio, "tipo_item": "ativo",
+            "dominio": "ti", "patrimonio": patrimonio, "numero_serie": f"NS-{patrimonio}", "tipo_item": "ativo",
             "modelo": "Latitude",
         }, headers=auth_headers).json()
         # A ficha técnica é criada junto do ativo; atualizamos o hostname nela.
@@ -31,7 +31,7 @@ class TestBuscaPorHostname:
 
     def test_busca_por_patrimonio_continua(self, client, auth_headers):
         client.post("/api/v1/ativos", json={
-            "dominio": "ti", "patrimonio": "PATR-777", "tipo_item": "ativo",
+            "dominio": "ti", "patrimonio": "PATR-777", "numero_serie": "NS-PATR-777", "tipo_item": "ativo",
         }, headers=auth_headers)
 
         r = client.get("/api/v1/ativos", params={"search": "PATR-777"}, headers=auth_headers).json()
@@ -48,7 +48,7 @@ class TestBuscaPorHostname:
 
     def test_leitura_ainda_resolve_pelo_patrimonio(self, client, auth_headers):
         client.post("/api/v1/ativos", json={
-            "dominio": "ti", "patrimonio": "SEMPATR-1", "tipo_item": "ativo",
+            "dominio": "ti", "patrimonio": "SEMPATR-1", "numero_serie": "NS-SEMPATR-1", "tipo_item": "ativo",
         }, headers=auth_headers)
 
         r = client.post("/api/v1/scanner/buscar", json={"codigo": "SEMPATR-1"},
@@ -146,7 +146,7 @@ class TestFinalidadeDaSaida:
 
     def _equipamento(self, client, h, patrimonio):
         return client.post("/api/v1/ativos", json={
-            "dominio": "ti", "patrimonio": patrimonio, "tipo_item": "ativo",
+            "dominio": "ti", "patrimonio": patrimonio, "numero_serie": f"NS-{patrimonio}", "tipo_item": "ativo",
         }, headers=h).json()
 
     def _saida(self, client, h, produto_id, **extra):
@@ -233,7 +233,7 @@ class TestResumoDoAtivoNaBusca:
 
     def _com_hostname(self, client, h, patrimonio, hostname):
         a = client.post("/api/v1/ativos", json={
-            "dominio": "ti", "patrimonio": patrimonio, "tipo_item": "ativo",
+            "dominio": "ti", "patrimonio": patrimonio, "numero_serie": f"NS-{patrimonio}", "tipo_item": "ativo",
         }, headers=h).json()
         client.put(f"/api/v1/ativos/{a['id']}", json={"ti": {"hostname": hostname}}, headers=h)
         return a
@@ -282,7 +282,7 @@ class TestHostnameNoHistorico:
             "sku": "HOST-HIST-1", "nome": "Tonner X", "dominio": "ti", "estoque_minimo": 1,
         }, headers=auth_headers).json()
         a = client.post("/api/v1/ativos", json={
-            "dominio": "ti", "patrimonio": "TP9800001176", "tipo_item": "ativo",
+            "dominio": "ti", "patrimonio": "TP9800001176", "numero_serie": "NS-TP9800001176", "tipo_item": "ativo",
         }, headers=auth_headers).json()
         client.put(f"/api/v1/ativos/{a['id']}",
                    json={"ti": {"hostname": "TP980HOST01"}}, headers=auth_headers)
@@ -303,7 +303,7 @@ class TestHostnameNoHistorico:
             "sku": "HOST-HIST-2", "nome": "Tonner Y", "dominio": "ti", "estoque_minimo": 1,
         }, headers=auth_headers).json()
         a = client.post("/api/v1/ativos", json={
-            "dominio": "ti", "patrimonio": "SEM-FICHA-1", "tipo_item": "ativo",
+            "dominio": "ti", "patrimonio": "SEM-FICHA-1", "numero_serie": "NS-SEM-FICHA-1", "tipo_item": "ativo",
         }, headers=auth_headers).json()
 
         client.post("/api/v1/movimentacoes", json={

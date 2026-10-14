@@ -345,8 +345,17 @@ class Ativo(BaseModel, Base):
 
     dominio: Mapped[Dominio] = mapped_column(sa_enum(Dominio), nullable=False, index=True)
     tipo_item: Mapped[TipoItem] = mapped_column(sa_enum(TipoItem), default=TipoItem.ATIVO, nullable=False)
-    patrimonio: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
-    numero_serie: Mapped[str | None] = mapped_column(String(160))
+    # --- IDENTIFICADOR PRINCIPAL -----------------------------------------
+    #
+    # `numero_serie` identifica o ativo: vem do fabricante e é único no mundo.
+    # `patrimonio` é numeração INTERNA — nem toda empresa usa, e dois setores
+    # podem gerar o mesmo número.
+    #
+    # A troca foi feita porque isto é inventário de **TI**, e não
+    # controladoria: o que identifica o equipamento é o número de série, não
+    # a etiqueta que a empresa colou nele.
+    numero_serie: Mapped[str] = mapped_column(String(160), unique=True, index=True)
+    patrimonio: Mapped[str | None] = mapped_column(String(80), index=True)
     modelo: Mapped[str | None] = mapped_column(String(160))
     marca: Mapped[str | None] = mapped_column(String(120))
     status: Mapped[StatusAtivo] = mapped_column(sa_enum(StatusAtivo), default=StatusAtivo.ESTOQUE, nullable=False, index=True)

@@ -96,7 +96,7 @@ class TestCadastroDePlantas:
         h = _token(client, "cps@teste.com")
         assert client.post(
             "/api/v1/ativos",
-            json={"dominio": "ti", "patrimonio": "CPS-0001", "tipo_item": "ativo"},
+            json={"dominio": "ti", "patrimonio": "CPS-0001", "numero_serie": "NS-CPS-0001", "tipo_item": "ativo"},
             headers=h,
         ).status_code == 201
         assert u["planta_id"] == p["id"]
@@ -126,8 +126,8 @@ class TestIsolamentoEntrePlantas:
         _criar_usuario(client, auth_headers, "a@teste.com", a["id"])
         _criar_usuario(client, auth_headers, "b@teste.com", b["id"])
         ha, hb = _token(client, "a@teste.com"), _token(client, "b@teste.com")
-        client.post("/api/v1/ativos", json={"dominio": "ti", "patrimonio": "SO-A", "tipo_item": "ativo"}, headers=ha)
-        client.post("/api/v1/ativos", json={"dominio": "ti", "patrimonio": "SO-B", "tipo_item": "ativo"}, headers=hb)
+        client.post("/api/v1/ativos", json={"dominio": "ti", "patrimonio": "SO-A", "numero_serie": "NS-SO-A", "tipo_item": "ativo"}, headers=ha)
+        client.post("/api/v1/ativos", json={"dominio": "ti", "patrimonio": "SO-B", "numero_serie": "NS-SO-B", "tipo_item": "ativo"}, headers=hb)
         return a, b, ha, hb
 
     def test_cada_usuario_ve_apenas_a_sua_planta(self, client, auth_headers):

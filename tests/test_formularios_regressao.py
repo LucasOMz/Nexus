@@ -19,10 +19,9 @@ import pytest
 # Corpo exatamente como o frontend (ativos.js) monta, no cadastro E na edição.
 def corpo_ativo(patrimonio: str = "REG-0001", dominio: str = "ti") -> dict:
     return {
-        "patrimonio": patrimonio,
+        "patrimonio": patrimonio, "numero_serie": f"NS-{patrimonio}",
         "modelo": "Latitude 5440",
         "marca": "Dell",
-        "numero_serie": "SN-REG-1",
         "categoria_id": None,
         "localizacao_id": None,
         "departamento_id": None,

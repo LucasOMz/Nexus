@@ -40,7 +40,7 @@ def _corpo(numero="2024/117", **campos):
 
 def _locado(db, planta_id, contrato_id, patrimonio):
     a = Ativo(
-        dominio="ti", tipo_item="ativo", patrimonio=patrimonio,
+        dominio="ti", tipo_item="ativo", patrimonio=patrimonio, numero_serie=f"NS-{patrimonio}",
         planta_id=planta_id, status="estoque",
         contrato_id=contrato_id, forma_aquisicao=FormaAquisicao.LOCADO,
     )
@@ -126,7 +126,7 @@ class TestVinculoDeAtivos:
 
         ids = []
         for i in range(quantos):
-            a = Ativo(dominio="ti", tipo_item="ativo", patrimonio=f"V-{i}",
+            a = Ativo(dominio="ti", tipo_item="ativo", patrimonio=f"V-{i}", numero_serie=f"NS-V-{i}",
                       planta_id=planta.id, status="estoque")
             db.add(a)
             db.commit()
@@ -158,7 +158,7 @@ class TestVinculoDeAtivos:
         planta = _planta(db)
         cid = client.post("/api/v1/contratos", json=_corpo(), headers=auth_headers).json()["id"]
 
-        a = Ativo(dominio="ti", tipo_item="ativo", patrimonio="ERA-COMPRADO",
+        a = Ativo(dominio="ti", tipo_item="ativo", patrimonio="ERA-COMPRADO", numero_serie="NS-ERA-COMPRADO",
                   planta_id=planta.id, status="estoque",
                   valor=Decimal("5000.00"), data_aquisicao=date(2023, 1, 1))
         db.add(a)

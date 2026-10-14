@@ -30,7 +30,7 @@ def _planta(db, sigla="TAT"):
 
 def _ativo_ti(db, planta_id, patrimonio, hostname, modelo="Latitude 3420", marca="Dell"):
     a = Ativo(
-        dominio="ti", tipo_item="ativo", patrimonio=patrimonio,
+        dominio="ti", tipo_item="ativo", patrimonio=patrimonio, numero_serie=f"NS-{patrimonio}",
         modelo=modelo, marca=marca, planta_id=planta_id, status="estoque",
     )
     db.add(a)
@@ -78,7 +78,7 @@ class TestBuscaPorHostname:
         db = next(app.dependency_overrides[get_db]())
         planta = _planta(db)
         a = Ativo(
-            dominio="ti", tipo_item="ativo", patrimonio="SEM-FICHA",
+            dominio="ti", tipo_item="ativo", patrimonio="SEM-FICHA", numero_serie="NS-SEM-FICHA",
             planta_id=planta.id, status="estoque",
         )
         db.add(a)
@@ -102,7 +102,7 @@ class TestBuscaPorHostname:
         db = next(app.dependency_overrides[get_db]())
         planta = _planta(db, "IMP")
         a = Ativo(
-            dominio="impressora", tipo_item="ativo", patrimonio="IMP-001",
+            dominio="impressora", tipo_item="ativo", patrimonio="IMP-001", numero_serie="NS-IMP-001",
             planta_id=planta.id, status="estoque",
         )
         db.add(a)

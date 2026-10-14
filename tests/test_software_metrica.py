@@ -69,7 +69,7 @@ def _instalado_em(db, ativo, nome):
 def _maquina(db, planta, patrimonio):
     from app.models.core import Ativo
 
-    a = Ativo(dominio="ti", tipo_item="ativo", patrimonio=patrimonio,
+    a = Ativo(dominio="ti", tipo_item="ativo", patrimonio=patrimonio, numero_serie=f"NS-{patrimonio}",
               planta_id=planta.id, status="estoque")
     db.add(a)
     db.commit()

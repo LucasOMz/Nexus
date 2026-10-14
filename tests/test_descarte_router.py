@@ -23,7 +23,7 @@ def _db(client):
     return next(app.dependency_overrides[get_db]())
 
 
-def _ativo(client, patrimonio="DESC-1", categoria=None):
+def _ativo(client, patrimonio="DESC-1", categoria=None, numero_serie=None):
     db = _db(client)
     planta = Planta(nome="Planta T", sigla="T")
     db.add(planta)
@@ -39,6 +39,7 @@ def _ativo(client, patrimonio="DESC-1", categoria=None):
         categoria_id = cat.id
 
     a = Ativo(dominio="ti", tipo_item="ativo", patrimonio=patrimonio,
+              numero_serie=numero_serie or f"NS-{patrimonio}",
               planta_id=planta.id, status="estoque", categoria_id=categoria_id)
     db.add(a)
     db.commit()
@@ -150,7 +151,7 @@ class TestEmissao:
         # O certificado ANINHA os dados: `equipamento` traz o bem, e
         # `destinacao` traz para onde foi. Achatado, um documento com dois
         # blocos ficaria ambíguo (`nome` de quem?).
-        aid = _ativo(client, patrimonio="PAT-999")
+        aid = _ativo(client, patrimonio="PAT-999", numero_serie="NS-PAT-999")
         r = client.post("/api/v1/descarte", json=_venda(aid), headers=auth_headers)
         assert r.json()["certificado"]["equipamento"]["patrimonio"] == "PAT-999"
 
@@ -201,7 +202,7 @@ class TestConferencia:
     def test_documento_de_fora_nao_confere(self, client, auth_headers):
         """Um documento inventado não pode passar por emitido pelo sistema."""
         r = client.post("/api/v1/descarte/conferir", json={
-            "numero": "FAKE-1", "motivo": "venda", "patrimonio": "X",
+            "numero": "FAKE-1", "motivo": "venda", "patrimonio": "X", "numero_serie": "NS-X",
         }, headers=auth_headers)
         assert r.json()["integro"] is False
 

@@ -41,7 +41,7 @@ class TestRecadastroAposExclusao:
         return client.post("/api/v1/ativos", json={
             "dominio": "ti",
             "tipo_item": "ativo",
-            "patrimonio": patrimonio,
+            "patrimonio": patrimonio, "numero_serie": f"NS-{patrimonio}",
             "modelo": "Latitude 3420",
             "marca": "Dell",
             "status": "estoque",
@@ -116,7 +116,7 @@ class TestRecadastroAposExclusao:
         from app.services import unicidade
 
         longo = "P" * 80
-        antigo = Ativo(dominio="ti", tipo_item="ativo", patrimonio=longo,
+        antigo = Ativo(dominio="ti", tipo_item="ativo", patrimonio=longo, numero_serie=f"NS-{longo}",
                        status="estoque", deleted_at=datetime.now(timezone.utc))
         db_session.add(antigo)
         db_session.commit()
