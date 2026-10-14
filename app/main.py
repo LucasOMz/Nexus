@@ -92,16 +92,50 @@ logging.basicConfig(
     format='{"time":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","msg":"%(message)s"}',
 )
 
+log = logging.getLogger("app")
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     # Em modo setup NÃO se toca no banco: o assistente trabalha com uma
     # conexão própria e temporária, e a troca vale no próximo início.
     if INSTALADO and settings.auto_create_tables:
         init_db()
-    # Sincronização automática com o OCS (o intervalo é configurado na tela).
-    # Desligado por padrão nos testes para não abrir sessões de banco paralelas.
+
+    # --- Sincronização automática com o OCS ---------------------------
+    #
+    # ## Por que a falha aqui NÃO pode derrubar a aplicação
+    #
+    # Isto é um **agendador de fundo**, e a aplicação serve pedidos sem ele
+    # perfeitamente — o que se perde é a sincronização automática, que ainda
+    # pode ser disparada à mão na tela de Administração.
+    #
+    # A versão anterior deixava a exceção subir. Em container com limite de
+    # threads (`pids_limit`, ou `ulimit -u` baixo), o resultado era:
+    #
+    #     RuntimeError: can't start new thread
+    #     ERROR: Application startup failed. Exiting.
+    #
+    # ...e o container entrava em **laço de reinício**: o Portainer mostrava
+    # "restarting", a aplicação nunca subia, e a tela ficava fora do ar.
+    #
+    # **Recurso que não conseguiu subir não pode virar indisponibilidade
+    # total.** Quem perde a função perde uma função; quem perde o boot perde
+    # o sistema.
+    #
+    # Desligado por padrão nos testes, para não abrir sessões paralelas.
     if INSTALADO and settings.scheduler_ativo:
-        ocs_agendador.iniciar()
+        try:
+            ocs_agendador.iniciar()
+        except Exception as exc:  # noqa: BLE001
+            # `log.exception` grava o rastro completo — é o que permite
+            # descobrir se foi limite de threads, de memória ou outra coisa.
+            log.exception(
+                "OCS: o agendador automático não pôde ser iniciado (%s). "
+                "A aplicação segue normalmente; a sincronização continua "
+                "disponível na tela de Administração → OCS.",
+                type(exc).__name__,
+            )
+
     yield
     ocs_agendador.parar()
 
