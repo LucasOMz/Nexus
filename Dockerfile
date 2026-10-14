@@ -33,12 +33,55 @@
 # arquivos dela. É mais rápido que instalar o cliente por pacote, e não
 # depende de repositório de sistema operacional.
 #
-# Precisa ser a versão **Debian**, e não `-alpine`: o binário copiado roda no
-# estágio 2, que é Debian, e um binário musl (Alpine) não carrega em glibc.
-FROM postgres:16 AS origem
+# ## Por que `-bullseye`, e não a padrão
+#
+# A tag `postgres:16` é **bookworm** (Debian 12, glibc 2.36). O estágio 2 é
+# **bullseye** (Debian 11, glibc 2.31) — e o `pg_dump` copiado **não roda**
+# com uma glibc mais nova do que a do sistema que o executa:
+#
+#     pg_dump: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.36' not found
+#
+# Copiar as bibliotecas junto (o que fazemos abaixo) **não resolve** isso:
+# `libc.so.6` é o próprio núcleo do sistema, e misturar versões dele quebra
+# tudo. A saída é a imagem de origem ter a **mesma base** do destino.
+#
+# ## Por que Debian, e não `-alpine`
+#
+# Um binário musl (Alpine) não carrega em glibc. As duas pontas são Debian.
+FROM postgres:16-bullseye AS origem
 
 # --- Estágio 2: a aplicação -------------------------------------------
-FROM python:3.12-slim
+#
+# ## Por que `bullseye`, e não `bookworm`
+#
+# O servidor de destino roda **CentOS 7**, com kernel 3.10 e **Docker
+# 19.03.12** — de julho de 2020.
+#
+# O `python:3.12-slim` é bookworm, com **glibc 2.36**. A partir do glibc
+# 2.34, criar thread usa a chamada **`clone3`** — que o kernel 3.10 não tem.
+#
+# O certo seria o Docker responder "não conheço essa chamada" (`ENOSYS`) e o
+# Python cair na antiga. O seccomp profile do 19.03.12 responde **`EPERM`**
+# ("proibido"), e o Python conclui:
+#
+#     RuntimeError: can't start new thread
+#
+# Era a causa de TODOS os erros desta implantação — inclusive dos
+# `runc did not terminate successfully`, que eram o `pip` (Python, e abre
+# threads) sendo morto no mesmo ponto.
+#
+# A correção do Docker veio na **20.10.10**. Como o servidor tem containers
+# rodando e uma atualização de 1.13 para 24.x no CentOS 7 mexeria no storage
+# driver, a saída é **não tocar no host**:
+#
+#     bullseye = glibc 2.31 → não usa `clone3` → funciona no kernel 3.10
+#
+# ## O que muda junto
+#
+# Python **3.11** em vez de 3.12. Os wheels em `wheels/` já foram baixados
+# para `cp311` — trocar a base sem trocá-los daria
+# `No matching distribution found` para todo pacote com extensão compilada.
+FROM python:3.11-slim-bullseye
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
