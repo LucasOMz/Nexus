@@ -118,6 +118,26 @@ def criar_backup(motivo: str = "manual") -> dict[str, Any]:
 
     if _eh_sqlite():
         origem = caminho_sqlite() or ""
+
+        # --- Banco sem arquivo não tem o que copiar ---------------------
+        #
+        # `sqlite3.connect("")` não falha: ele abre um banco **temporário
+        # vazio**. O `.backup()` copia esse vazio e grava um arquivo com
+        # sucesso — um backup de ZERO byte que parece legítimo.
+        #
+        # O efeito não é cosmético. A exclusão em lote exige backup antes de
+        # apagar; com o backup "dando certo", ela apagaria sem ter cópia
+        # nenhuma. Foi o que o CI apontou num teste que passava no Windows e
+        # falhava no Linux — mesma causa, comportamento diferente.
+        #
+        # Aqui a regra é explícita: sem arquivo, sem backup. Quem chama
+        # recebe o erro e decide — e a exclusão em lote recusa.
+        if not origem or not Path(origem).exists():
+            raise RuntimeError(
+                "O banco atual não tem arquivo para copiar "
+                "(SQLite em memória). Backup automático indisponível."
+            )
+
         destino = pasta / f"{base}.db"
         # API de backup do SQLite: cópia consistente mesmo com o banco em uso.
         con_origem = sqlite3.connect(origem)

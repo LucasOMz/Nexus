@@ -32,6 +32,28 @@ def _sem_janelas(monkeypatch):
     monkeypatch.setattr(print_service, "_eh_windows", lambda: False)
 
 
+def _com_janelas(monkeypatch):
+    """Faz o código acreditar que está no Windows.
+
+    ## Por que existe
+
+    Os testes abaixo exercitam o ramo **Windows** do envio — gravar os bytes
+    crus no caminho UNC, que o spooler entrega à impressora.
+
+    Eles passavam porque sempre rodavam num Windows. **No CI (Linux) e em
+    Docker — que é Linux mesmo no Windows, via WSL — o ramo é outro**, e
+    todos falhavam com "endereço inválido para fila compartilhada no Linux".
+
+    **A correção não é pular os testes**: é eles declararem qual plataforma
+    estão simulando. Assim exercitam o mesmo código em qualquer máquina, e
+    continuam válidos se alguém instalar o sistema nativamente no Windows.
+
+    A plataforma de produção é Linux (Docker). O ramo Windows fica coberto
+    por simulação, e não por acidente de ambiente.
+    """
+    monkeypatch.setattr(print_service, "_eh_windows", lambda: True)
+
+
 class DispositivoFalso:
     """Dispositivo de impressão apontando para um caminho do sistema de arquivos."""
 
@@ -48,7 +70,8 @@ class DispositivoFalso:
     template_id = None
 
 
-def test_grava_os_bytes_crus(tmp_path):
+def test_grava_os_bytes_crus(tmp_path, monkeypatch):
+    _com_janelas(monkeypatch)
     destino = tmp_path / "etiqueta.zpl"
     etiqueta = b"^XA^FO50,50^FDATIVO 123^FS^XZ\n"
 
@@ -58,8 +81,9 @@ def test_grava_os_bytes_crus(tmp_path):
     assert destino.read_bytes() == etiqueta
 
 
-def test_copies_repetem_o_fluxo(tmp_path):
+def test_copies_repetem_o_fluxo(tmp_path, monkeypatch):
     """Impressão crua: repetir o fluxo é o que gera mais de uma etiqueta."""
+    _com_janelas(monkeypatch)
     destino = tmp_path / "etiqueta.zpl"
     etiqueta = b"^XA^FO50,50^FDTESTE^FS^XZ\n"
 
@@ -70,8 +94,9 @@ def test_copies_repetem_o_fluxo(tmp_path):
     assert "3 cópias" in resp["message"]
 
 
-def test_pdf_e_recusado_com_explicacao(tmp_path):
+def test_pdf_e_recusado_com_explicacao(tmp_path, monkeypatch):
     """Uma fila crua não entende PDF — a mensagem precisa dizer isso."""
+    _com_janelas(monkeypatch)
     resp = _via_compartilhamento(str(tmp_path / "x.pdf"), "pdf", b"%PDF-1.7", 1, "job3")
 
     assert resp["status"] == "error"
@@ -86,8 +111,9 @@ def test_destino_vazio_e_recusado():
     assert "não configurado" in resp["detail"]
 
 
-def test_falha_traz_dica_de_conferencia(tmp_path):
+def test_falha_traz_dica_de_conferencia(tmp_path, monkeypatch):
     """Caminho inválido no Windows deve orientar o que verificar."""
+    _com_janelas(monkeypatch)
     inexistente = str(tmp_path / "pasta_que_nao_existe" / "fila")
 
     resp = _via_compartilhamento(inexistente, "zpl", b"^XA^XZ", 1, "job6")
@@ -96,8 +122,9 @@ def test_falha_traz_dica_de_conferencia(tmp_path):
     assert "Falha ao enviar" in resp["detail"]
 
 
-def test_send_print_job_usa_o_compartilhamento(tmp_path):
+def test_send_print_job_usa_o_compartilhamento(tmp_path, monkeypatch):
     """Caminho completo: send_print_job -> dispositivo tipo compartilhamento."""
+    _com_janelas(monkeypatch)
     destino = tmp_path / "saida.zpl"
     dispositivo = DispositivoFalso()
     dispositivo.compartilhamento = str(destino)
@@ -280,11 +307,17 @@ class TestFilaCompartilhadaNoLinux:
         assert "print" in chamada
 
     def test_mesma_configuracao_serve_nos_dois_sistemas(self, monkeypatch, tmp_path):
-        """O MESMO cadastro (\\\\DTAT7777\\SATO) funciona no Windows e no Linux."""
+        """O MESMO cadastro (\\\\DTAT7777\\SATO) funciona no Windows e no Linux.
+
+        As duas metades simulam a plataforma de propósito. Antes, a metade
+        "Windows" usava o sistema real — e por isso só passava em Windows,
+        falhando no CI e em qualquer instalação por Docker.
+        """
         # Windows: grava no caminho UNC.
+        _com_janelas(monkeypatch)
         destino = tmp_path / "unc.zpl"
         resp_win = _via_compartilhamento(str(destino), "zpl", b"^XA^XZ", 1, "w")
-        assert resp_win["status"] == "ok"
+        assert resp_win["status"] == "ok", resp_win
         assert destino.read_bytes() == b"^XA^XZ"
 
         # Linux: usa o smbclient para o mesmo endereço lógico.
