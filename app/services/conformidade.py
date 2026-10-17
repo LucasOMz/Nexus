@@ -352,7 +352,6 @@ def calcular(db: Session, softwares: list[Software],
             # interpretável: 11 pessoas e 11 máquinas são a mesma cifra e
             # significam coisas diferentes.
             "metrica": "usuario" if por_pessoa else "dispositivo",
-            "metrica": "usuario" if por_pessoa else "dispositivo",
             "custo_mensal": custo,
         })
 

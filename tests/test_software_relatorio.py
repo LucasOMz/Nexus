@@ -166,15 +166,22 @@ class TestT11CSV:
 
 class TestT10Fabricante:
     def test_agrupa_por_fabricante(self, client, auth_headers, db_session):
-        a = _software(db_session, "Office", "Microsoft", "office*")
-        b = _software(db_session, "Acrobat", "Adobe", "acrobat*")
+        # As chamadas ficam: elas gravam no banco. Só a atribuição sai — os
+        # objetos não são usados, e a verificação é feita pelo endpoint.
+        _software(db_session, "Office", "Microsoft", "office*")
+        _software(db_session, "Acrobat", "Adobe", "acrobat*")
         _instalado(db_session, "Microsoft Office 2021", 3)
         _instalado(db_session, "Adobe Acrobat Pro", 2)
 
         r = client.get("/api/v1/conformidade/fabricantes", headers=auth_headers)
         assert r.status_code == 200, r.text
         fabricantes = {x["fabricante"] for x in r.json()}
-        assert "Microsoft" in fabricantes or "Adobe" in fabricantes
+        # `and`, e não `or`: o teste cria os DOIS fabricantes e espera os
+        # dois de volta. Com `or`, bastava um aparecer para passar — e o
+        # teste deixaria de provar o agrupamento, que é o que ele promete.
+        assert "Microsoft" in fabricantes and "Adobe" in fabricantes, (
+            f"fabricantes devolvidos: {sorted(fabricantes)}"
+        )
 
     def test_o_maior_gasto_vem_primeiro(self, client, auth_headers, db_session):
         """É ele que interessa para negociar."""

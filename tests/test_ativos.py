@@ -6,7 +6,6 @@ def test_create_ativo_ti(client, auth_headers):
     payload = {
         "dominio": "ti",
         "patrimonio": "TI-0001", "numero_serie": "NS-TI-0001",
-        "numero_serie": "NS-TI-0001",
         "modelo": "Latitude 5440",
         "ti": {"hostname": "pc-001", "ram_gb": 16, "mac_address": "AA:BB:CC:DD:EE:FF"},
     }
