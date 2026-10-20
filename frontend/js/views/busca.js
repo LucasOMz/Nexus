@@ -1,21 +1,54 @@
 /**
- * Busca global (Ctrl+K).
+ * Busca global (Ctrl+K) — acha dados **e** telas.
  *
- * Um atalho que acha ativo, produto, usuário e planta sem passar pelo menu.
- * O ganho está em não precisar saber ONDE a coisa mora: quem procura o
- * patrimônio "TI-0042" não deveria escolher entre seis telas antes.
+ * ## Duas buscas, uma janela
+ *
+ * ```
+ * "contratos"  →  Ir para: Contratos            ← navega, sem ir ao servidor
+ * "TI-0042"    →  Ativos: Notebook · TI-0042    ← consulta a API
+ * ```
+ *
+ * A primeira é **local**: as telas do sistema já estão no cliente, e procurar
+ * por elas no servidor gastaria uma requisição por tecla para responder algo
+ * que o navegador já sabe. Também funciona **offline** e **antes** do login do
+ * usuário na API — que é quando alguém mais precisa se orientar.
+ *
+ * ## Por que "Ir para" vem primeiro
+ *
+ * Quem digita "contratos" quer **abrir a tela**, não ver os contratos
+ * cadastrados. Inverter a ordem faria o Enter abrir um contrato quando a
+ * intenção era abrir a lista.
+ *
+ * ## Com o campo vazio, a janela lista as telas
+ *
+ * Vira um menu de atalhos: Ctrl+K e Enter. É o que um `command palette` faz, e
+ * custa nada — a lista já está em memória.
  *
  * @module views/busca
  */
 import { api } from "../api.js";
 import { state } from "../state.js";
-import { el, icon, mostrarErro } from "../ui.js";
+import { el, icon } from "../ui.js";
 
 // Espera o usuário parar de digitar antes de consultar. Sem isto, "notebook"
 // dispararia 8 requisições — uma por tecla.
 const ESPERA_MS = 220;
 
+// Duas letras é o mínimo para a busca na API. As telas, por serem locais,
+// procuram com uma letra — mas manter o mesmo mínimo deixa o comportamento
+// previsível.
+const MINIMO = 2;
+
 let aberto = null;
+
+/**
+ * As telas do sistema, para o "Ir para".
+ *
+ * Preenchido por `ligarAtalhoDeBusca(MODULOS)`. Vem do `app.js` em vez de uma
+ * lista própria: duplicar aqui faria a busca oferecer telas que não existem
+ * mais no dia em que alguém renomeasse ou removesse uma.
+ */
+let TELAS = {};
 
 /** O atalho está disponível? Usado pelo handler global de teclado. */
 export function buscaAberta() {
@@ -27,6 +60,67 @@ export function fecharBusca() {
   aberto.overlay.remove();
   document.removeEventListener("keydown", aberto.teclas, true);
   aberto = null;
+}
+
+/**
+ * Baixa a caixa e tira os acentos, para comparar.
+ *
+ * "manutencoes" precisa achar "Manutenções" — num sistema em português, exigir
+ * o acento certo seria exigir que a pessoa adivinhe a grafia do rótulo.
+ */
+function normalizar(texto) {
+  return String(texto || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+/**
+ * As telas que casam com o termo.
+ *
+ * Vazio devolve **todas** as permitidas — é o menu de atalhos. Com termo,
+ * filtra por rótulo, id do módulo, ou o que o rótulo significa.
+ *
+ * Respeita `state.podeModulo`: oferecer uma tela que o usuário não pode abrir
+ * seria um atalho para o 403.
+ */
+function telasQueCasam(termo) {
+  const alvo = normalizar(termo);
+  const saida = [];
+
+  for (const [id, meta] of Object.entries(TELAS)) {
+    if (!meta?.rotulo) continue;
+    try {
+      if (!state.podeModulo(id)) continue;
+    } catch {
+      // Sem estado de permissão (ex.: durante o boot) não bloqueia.
+    }
+
+    if (!alvo) {
+      saida.push({ id, rotulo: meta.rotulo, rota: id });
+      continue;
+    }
+
+    // Casa pelo rótulo, pelo id, ou por palavras soltas do rótulo —
+    // "monitor" acha "Monitor de impressoras", e "impressoras" também.
+    const rotulo = normalizar(meta.rotulo);
+    const bate = rotulo.includes(alvo)
+      || normalizar(id).includes(alvo)
+      || rotulo.split(/\s+/).some((p) => p.startsWith(alvo));
+
+    if (bate) saida.push({ id, rotulo: meta.rotulo, rota: id });
+  }
+
+  // Quem começa com o termo vem antes: "con" → Contratos antes de
+  // "Certificado de descarte".
+  saida.sort((a, b) => {
+    const pa = normalizar(a.rotulo).startsWith(alvo) ? 0 : 1;
+    const pb = normalizar(b.rotulo).startsWith(alvo) ? 0 : 1;
+    return pa - pb || a.rotulo.localeCompare(b.rotulo, "pt-BR");
+  });
+
+  return saida;
 }
 
 /**
@@ -42,7 +136,7 @@ export function abrirBusca() {
   const campo = el("input", {
     class: "busca-campo",
     type: "search",
-    placeholder: "Buscar ativo, produto, usuário ou planta…",
+    placeholder: "Buscar ou ir para uma tela… (ex.: contratos)",
     autocomplete: "off",
     spellcheck: "false",
   });
@@ -72,19 +166,43 @@ export function abrirBusca() {
   // sobrescreveria a lista certa.
   let geracao = 0;
 
-  function pintar(dados) {
+  /**
+   * Desenha as telas e os dados.
+   *
+   * `dados` pode ser `null` — e mesmo assim as telas aparecem. É o que faz a
+   * busca servir sem rede e antes da resposta da API.
+   */
+  function pintar(dados, termo) {
     lista.innerHTML = "";
     itens = [];
     destacado = 0;
 
-    if (!dados) { rodape.textContent = "Digite ao menos 2 letras."; return; }
-    if (!dados.grupos?.length) {
-      lista.append(el("p", { class: "busca-vazio muted" }, "Nada encontrado."));
+    const telas = telasQueCasam(termo);
+    const grupos = [];
+
+    if (telas.length) {
+      grupos.push({
+        nome: termo ? "Ir para" : "Telas",
+        itens: telas.slice(0, termo ? 8 : 30).map((t) => ({
+          titulo: t.rotulo,
+          detalhe: "tela",
+          rota: t.rota,
+        })),
+      });
+    }
+
+    for (const g of dados?.grupos || []) grupos.push(g);
+
+    if (!grupos.length) {
+      const msg = !termo
+        ? "Digite para buscar, ou escolha uma tela."
+        : "Nada encontrado.";
+      lista.append(el("p", { class: "busca-vazio muted" }, msg));
       rodape.textContent = "";
       return;
     }
 
-    for (const g of dados.grupos) {
+    for (const g of grupos) {
       lista.append(el("p", { class: "busca-grupo" }, g.nome));
       for (const it of g.itens) {
         const i = itens.length;
@@ -102,7 +220,13 @@ export function abrirBusca() {
       }
     }
     marcar();
-    rodape.textContent = `${dados.total} resultado(s) · ↑↓ para navegar · Enter para abrir`;
+
+    const nTelas = telas.length;
+    const nDados = dados?.total ?? 0;
+    const partes = [];
+    if (nTelas) partes.push(`${nTelas} tela(s)`);
+    if (nDados) partes.push(`${nDados} resultado(s)`);
+    rodape.textContent = `${partes.join(" · ") || "—"} · ↑↓ navegar · Enter abrir`;
   }
 
   function marcar() {
@@ -113,22 +237,31 @@ export function abrirBusca() {
   function ir(rota) {
     fecharBusca();
     // O roteador escuta `hashchange`: trocar o hash navega sem recarregar.
-    location.hash = rota.replace(/^#/, "");
+    location.hash = String(rota).replace(/^#/, "");
   }
 
   async function consultar() {
     const termo = campo.value.trim();
-    if (termo.length < 2) { pintar(null); return; }
+
+    // Campo vazio: só as telas, sem tocar na rede.
+    if (!termo) { pintar(null, ""); return; }
+
+    // Com uma letra, as telas já respondem — a API ainda não.
+    if (termo.length < MINIMO) { pintar(null, termo); return; }
 
     const meu = ++geracao;
     try {
       const dados = await api.get(`/busca?q=${encodeURIComponent(termo)}`);
       if (meu !== geracao) return;   // chegou atrasada: descarta
-      pintar(dados);
+      pintar(dados, termo);
     } catch (e) {
       if (meu !== geracao) return;
-      lista.innerHTML = "";
-      lista.append(el("p", { class: "busca-vazio text-error" }, e.message));
+      // A API falhou, mas as telas são locais: continua útil.
+      pintar(null, termo);
+      if (!telasQueCasam(termo).length) {
+        lista.innerHTML = "";
+        lista.append(el("p", { class: "busca-vazio text-error" }, e.message));
+      }
     }
   }
 
@@ -159,17 +292,23 @@ export function abrirBusca() {
 
   // Foco imediato: quem apertou Ctrl+K quer digitar, não clicar.
   campo.focus();
-  pintar(null);
+  pintar(null, "");
 }
 
 /**
  * Liga o atalho global.
  *
+ * `modulos` é o `MODULOS` do `app.js` — recebido por parâmetro, e não
+ * importado, para não criar dependência circular (o `app.js` importa este
+ * arquivo para ligar o atalho).
+ *
  * Ctrl+K (e Cmd+K no Mac). O `preventDefault` é essencial: sem ele, o
  * Ctrl+K do navegador — que foca a barra de endereços no Firefox — vence, e
  * a busca nunca abre.
  */
-export function ligarAtalhoDeBusca() {
+export function ligarAtalhoDeBusca(modulos = null) {
+  if (modulos) TELAS = modulos;
+
   document.addEventListener("keydown", (e) => {
     const cmd = e.ctrlKey || e.metaKey;
     if (cmd && e.key.toLowerCase() === "k") {

@@ -703,7 +703,10 @@ function boot() {
   state.applyFundo();
   state.applyDominio();
   // Ctrl+K fica ligado uma vez, e não a cada tela: o atalho é global.
-  ligarAtalhoDeBusca();
+  //
+  // Os módulos vão por parâmetro: a busca os usa para oferecer "Ir para …",
+  // e importá-los aqui de dentro do `busca.js` criaria dependência circular.
+  ligarAtalhoDeBusca(MODULOS);
 
   // Registro do service worker é feito em registrarServiceWorker() no final.
 
