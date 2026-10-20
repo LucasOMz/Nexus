@@ -229,19 +229,58 @@ async function carregarChecklist(momento) {
   return (r || []).filter((i) => (momento === "entrega" ? i.na_entrega : i.na_devolucao));
 }
 
+/** Baixa a caixa e tira acentos, para comparar nomes. */
+function normalizarTexto(texto) {
+  return String(texto || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
 async function abrirReserva(root) {
-  const busca = el("input", { placeholder: "Patrimônio ou hostname" });
+  // --- equipamento ------------------------------------------------------
+  //
+  // A busca do servidor já cobre patrimônio, número de série, modelo, marca,
+  // hostname, IP e MAC. O texto do campo é que estava desatualizado: dizia
+  // só "Patrimônio ou hostname", e quem tem o número de série na mão não
+  // sabia que podia digitar aquilo.
+  const busca = el("input", { placeholder: "Patrimônio, nº de série, hostname ou IP" });
   const resultados = el("div", { class: "busca-ativos" });
   const escolhido = el("div", { class: "ativo-escolhido oculto" });
-  const nome = el("input", { placeholder: "Nome de quem vai levar" });
+
+  // --- pessoa -----------------------------------------------------------
+  //
+  // Antes era texto livre puro. Texto livre não erra, mas também não liga o
+  // empréstimo a um usuário do sistema — então o histórico de quem levou o
+  // quê não existia, e a cobrança de atraso não tinha a quem se dirigir.
+  //
+  // Agora procura na lista de usuários (nome ou e-mail) e, se não achar,
+  // aceita o nome digitado como antes. Os dois casos continuam válidos:
+  // nem todo mundo que leva um equipamento tem conta no sistema.
+  const buscaPessoa = el("input", { placeholder: "Nome ou e-mail — ou digite um nome livre" });
+  const listaPessoas = el("div", { class: "busca-ativos" });
+  const pessoaEscolhida = el("div", { class: "ativo-escolhido oculto" });
+
   const fim = el("input", { type: "date" });
+
   let ativo = null;
+  let pessoa = null;        // usuário do sistema, quando escolhido
   let seq = 0;
   let timer = null;
 
-  busca.addEventListener("input", () => {
+  // Carrega os usuários uma vez. São poucos: cabe filtrar no cliente, e
+  // assim a busca responde a cada tecla sem ir ao servidor.
+  let usuarios = [];
+  api.get("/usuarios").then((r) => { usuarios = r || []; }).catch(() => {});
+
+  function limparAtivo() {
     ativo = null;
     escolhido.classList.add("oculto");
+  }
+
+  busca.addEventListener("input", () => {
+    limparAtivo();
     clearTimeout(timer);
     const termo = busca.value.trim();
     if (termo.length < 2) { resultados.innerHTML = ""; resultados.classList.remove("aberto"); return; }
@@ -267,9 +306,14 @@ async function abrirReserva(root) {
               resultados.classList.remove("aberto");
               escolhido.classList.remove("oculto");
               escolhido.innerHTML = "";
-              escolhido.append(el("span", { class: "chip" }, a.patrimonio));
+              escolhido.append(
+                el("span", { class: "chip" }, a.patrimonio || a.numero_serie || `#${a.id}`),
+                el("span", { class: "muted", style: "font-size:12.5px;margin-left:8px" },
+                  [a.numero_serie, host, [a.marca, a.modelo].filter(Boolean).join(" ")]
+                    .filter(Boolean).join(" · ")),
+              );
             },
-          }, el("b", {}, a.patrimonio || "(sem patrimônio)"),
+          }, el("b", {}, a.patrimonio || a.numero_serie || "(sem identificação)"),
              host ? el("span", { class: "busca-host" }, host) : null,
              el("span", { class: "busca-modelo" }, [a.marca, a.modelo].filter(Boolean).join(" "))));
         }
@@ -277,23 +321,74 @@ async function abrirReserva(root) {
     }, 250);
   });
 
+  buscaPessoa.addEventListener("input", () => {
+    pessoa = null;
+    pessoaEscolhida.classList.add("oculto");
+    const termo = buscaPessoa.value.trim();
+    const alvo = normalizarTexto(termo);
+    if (alvo.length < 2) { listaPessoas.innerHTML = ""; listaPessoas.classList.remove("aberto"); return; }
+
+    const achados = usuarios
+      .filter((u) => normalizarTexto(u.nome).includes(alvo)
+                  || normalizarTexto(u.email).includes(alvo))
+      .slice(0, 8);
+
+    listaPessoas.innerHTML = "";
+    listaPessoas.classList.add("aberto");
+    if (!achados.length) {
+      // Não é erro: pode ser alguém de fora do sistema. O nome digitado vale.
+      listaPessoas.append(el("div", { class: "busca-vazia" },
+        "Nenhum usuário com esse nome. O texto digitado será usado como está."));
+      return;
+    }
+    for (const u of achados) {
+      listaPessoas.append(el("button", {
+        type: "button", class: "busca-item",
+        onclick: () => {
+          pessoa = u;
+          listaPessoas.innerHTML = "";
+          listaPessoas.classList.remove("aberto");
+          pessoaEscolhida.classList.remove("oculto");
+          pessoaEscolhida.innerHTML = "";
+          pessoaEscolhida.append(
+            el("span", { class: "chip" }, u.nome),
+            el("span", { class: "muted", style: "font-size:12.5px;margin-left:8px" },
+              u.email || ""),
+          );
+        },
+      }, el("b", {}, u.nome), el("span", { class: "busca-modelo" }, u.email || "")));
+    }
+  });
+
   dialog({
     title: "Novo empréstimo",
+    wide: true,
     body: el("div", {},
-      el("div", { class: "field" }, el("label", {}, "Equipamento"), busca, escolhido, resultados),
-      el("div", { class: "field" }, el("label", {}, "Para quem"), nome),
+      el("div", { class: "field" },
+        el("label", {}, "Equipamento"), busca, escolhido, resultados),
+      el("div", { class: "field" },
+        el("label", {}, "Para quem"), buscaPessoa, pessoaEscolhida, listaPessoas),
       el("div", { class: "field" }, el("label", {}, "Devolução prevista"), fim),
-      el("p", { class: "dica" }, "A retirada é registrada depois, com o termo e a conferência."),
+      el("p", { class: "dica" },
+        "A retirada é registrada depois, com o termo e a conferência. "
+        + "Escolher um usuário da lista liga o empréstimo ao histórico dele."),
     ),
     actions: [
       { label: "Cancelar", variant: "text" },
       { label: "Reservar", variant: "filled", onClick: async (close) => {
         if (!ativo) { mostrarErro(new Error("Escolha o equipamento na lista.")); return; }
-        if (!nome.value.trim()) { mostrarErro(new Error("Informe para quem é o empréstimo.")); return; }
+        const nomeLivre = buscaPessoa.value.trim();
+        if (!pessoa && !nomeLivre) {
+          mostrarErro(new Error("Informe para quem é o empréstimo."));
+          return;
+        }
         try {
           await api.post("/emprestimos", {
             ativo_id: ativo.id,
-            retirado_por_nome: nome.value.trim(),
+            // Usuário do sistema E nome: o nome fica no registro mesmo que a
+            // conta seja removida depois, e o id liga ao histórico.
+            usuario_id: pessoa?.id ?? null,
+            retirado_por_nome: pessoa ? pessoa.nome : nomeLivre,
             devolucao_prevista: fim.value ? `${fim.value}T12:00:00Z` : null,
           });
           close();
