@@ -97,7 +97,19 @@ function commonFields(ativo, lookups, fotos) {
       <div class="field"><label>Localização</label><select name="localizacao_id">${optionsOf(lookups.localizacoes)}</select></div>
       <div class="field"><label>Departamento</label><select name="departamento_id">${optionsOf(lookups.departamentos)}</select></div>
       <div class="field"><label>Status</label>
-        <select name="status">${["estoque","reservado","em_uso","manutencao","descartado","emprestado"].map((s) => `<option ${a.status === s ? "selected" : ""}>${s}</option>`).join("")}</select></div>
+        <!--
+          Sem "emprestado" na lista, de propósito.
+
+          Empréstimo não é um status que se digita: é um registro com
+          responsável, data prevista e checklist de retirada. Escolhê-lo aqui
+          mudava só o campo status do ativo — sem criar empréstimo — e o
+          equipamento ficava "emprestado" para ninguém, fora da agenda, sem
+          termo e sem prazo.
+
+          O caminho correto é a tela de Empréstimos (ou a troca rápida de
+          status, que já redireciona para lá).
+        -->
+        <select name="status">${["estoque","reservado","em_uso","manutencao","descartado"].map((s) => `<option ${a.status === s ? "selected" : ""}>${s}</option>`).join("")}</select></div>
       <div class="field"><label>Aquisição</label>
         <select name="forma_aquisicao">
           <option value="comprado" ${(a.forma_aquisicao || "comprado") === "comprado" ? "selected" : ""}>Comprado</option>

@@ -62,7 +62,7 @@ def emprestimos(
         .options(selectinload(Ativo.planta), selectinload(Ativo.emprestado_para), selectinload(Ativo.localizacao))
         .filter(
             Ativo.deleted_at.is_(None),
-            Ativo.status == StatusAtivo.EMPRESTADO,
+            Ativo.status.in_([StatusAtivo.EMPRESTADO, StatusAtivo.RESERVADO]),
             Ativo.devolucao_prevista.isnot(None),
             # Intersecção: começou antes do fim E termina depois do início.
             Ativo.emprestado_em <= ultimo,
@@ -115,7 +115,7 @@ def resumo(
     hoje = date.today()
     base = db.query(Ativo).filter(
         Ativo.deleted_at.is_(None),
-        Ativo.status == StatusAtivo.EMPRESTADO,
+        Ativo.status.in_([StatusAtivo.EMPRESTADO, StatusAtivo.RESERVADO]),
         Ativo.devolucao_prevista.isnot(None),
     )
     base = aplicar_filtro(base, Ativo, planta_id)
@@ -132,7 +132,7 @@ def resumo(
         aplicar_filtro(
             db.query(Ativo.numero_chamado).filter(
                 Ativo.deleted_at.is_(None),
-                Ativo.status == StatusAtivo.EMPRESTADO,
+                Ativo.status.in_([StatusAtivo.EMPRESTADO, StatusAtivo.RESERVADO]),
                 Ativo.numero_chamado.isnot(None),
             ),
             Ativo,
@@ -165,7 +165,7 @@ def busca_por_chamado(
         .options(selectinload(Ativo.planta))
         .filter(
             Ativo.deleted_at.is_(None),
-            Ativo.status == StatusAtivo.EMPRESTADO,
+            Ativo.status.in_([StatusAtivo.EMPRESTADO, StatusAtivo.RESERVADO]),
             or_(
                 Ativo.numero_chamado.ilike(f"%{chamado}%"),
                 Ativo.patrimonio.ilike(f"%{chamado}%"),

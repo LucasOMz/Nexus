@@ -244,6 +244,17 @@ def create_ativo(
         unicidade.liberar(db, Ativo, "patrimonio", body.patrimonio, limite=80)
 
     data = body.model_dump(exclude={"ti", "impressora"})
+
+    # Um ativo NÃO nasce emprestado — ver a explicação em `update_ativo`.
+    # Criar já com este status daria o mesmo problema: emprestado para
+    # ninguém, sem prazo, sem termo e fora da agenda.
+    if data.get("status") == StatusAtivo.EMPRESTADO:
+        raise HTTPException(
+            400,
+            "Use a tela de Empréstimos para registrar um empréstimo. "
+            "Cadastrar o ativo como emprestado deixaria o equipamento sem "
+            "responsável, sem prazo e fora da agenda.",
+        )
     # Por segurança só aceitamos payload de ETIQUETA EM BRANCO vindo do cliente.
     # Um payload TIATIVO arbitrário não é gravado (a leitura resolve pelo ID de
     # dentro do QR, mas gravar lixo atrapalharia a reimpressão da etiqueta).
@@ -291,6 +302,29 @@ def update_ativo(
         )
 
     data = body.model_dump(exclude_unset=True, exclude={"ti", "impressora", "dominio", "tipo_item"})
+
+    # --- "Emprestado" não se define aqui --------------------------------
+    #
+    # Empréstimo não é um status que se digita: é um registro com
+    # responsável, prazo, checklist de retirada e termo. Quem escolhia
+    # "emprestado" nesta tela mudava só o campo `status` — **sem criar
+    # empréstimo nenhum**.
+    #
+    # O resultado era o ativo "emprestado" para ninguém: fora da agenda (que
+    # lê `devolucao_prevista`), sem prazo, sem termo, e sem aparecer na tela
+    # de Empréstimos. A devolução também não existia, porque não havia o que
+    # devolver.
+    #
+    # A recusa é no servidor, e não só escondendo a opção na tela: esconder
+    # não protege nada — quem chamar a API direto continuaria podendo.
+    if data.get("status") == StatusAtivo.EMPRESTADO:
+        raise HTTPException(
+            400,
+            "Use a tela de Empréstimos para registrar um empréstimo. "
+            "Marcar o status aqui deixaria o ativo emprestado sem "
+            "responsável, sem prazo e fora da agenda.",
+        )
+
     for k, v in data.items():
         setattr(ativo, k, v)
     _apply_extension(ativo, ativo.dominio, body.ti, body.impressora)

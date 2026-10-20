@@ -8,7 +8,7 @@ devolve o que precisa ser feito — a tela não precisa saber a regra.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -296,6 +296,39 @@ def reservar(
     )
     db.add(emp)
     db.flush()
+
+    # --- A reserva também marca o ativo ---------------------------------
+    #
+    # ## Por que isto faltava, e o que custava
+    #
+    # A **agenda** (Calendário) não lê a tabela `emprestimos`: ela lê os
+    # campos do próprio `Ativo` (`status`, `emprestado_em`,
+    # `devolucao_prevista`). Era uma escolha acertada — uma consulta só, sem
+    # junção, e o ativo carrega o seu estado.
+    #
+    # Mas esta rota criava o `Emprestimo` e **não tocava no ativo**. O
+    # empréstimo existia, aparecia na tela de Empréstimos, e ficava
+    # **invisível na agenda** até alguém registrar a retirada (que é quem
+    # preenchia os campos). Quem reservava não via a reserva agendada.
+    #
+    # Pior: a única forma de o ativo aparecer na agenda antes disso era mudar
+    # o status **à mão na tela de Ativo** — que não cria empréstimo nenhum, e
+    # deixava o ativo "emprestado" sem ninguém responsável.
+    #
+    # ## `emprestado_em = hoje`
+    #
+    # A reserva **tira o equipamento de circulação**: ninguém mais pode
+    # levá-lo. A agenda precisa de uma data de início para desenhar a faixa
+    # de dias, e `None` quebraria a interseção da consulta. Na retirada, este
+    # campo é reescrito com a data real (`retirado_em`) — então ele nunca
+    # mente sobre quando o aparelho saiu de fato.
+    ativo.status = StatusAtivo.RESERVADO
+    ativo.emprestado_em = date.today()
+    ativo.devolucao_prevista = (
+        body.devolucao_prevista.date() if body.devolucao_prevista else None
+    )
+    ativo.emprestado_para_id = body.usuario_id
+
     audit(db, user, "reservar", "emprestimo", emp.id,
           ip=request.client.host if request.client else None,
           diff={"ativo": ativo.patrimonio})
