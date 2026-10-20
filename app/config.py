@@ -92,7 +92,7 @@ class Settings(BaseSettings):
     # valor do .env como JSON (por ser list[str]) e quebra com uma lista
     # separada por vírgula — ou seja, copiar o .env.example para .env
     # derrubava a aplicação. Com NoDecode o texto chega cru no validador abaixo.
-    cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:8000", "http://127.0.0.1:8000"]
+    cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:4545", "http://127.0.0.1:4545"]
 
     # --- App ---
     env: str = "development"

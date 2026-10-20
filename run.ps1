@@ -2,7 +2,7 @@
   run.ps1 — Sobe o sistema de Nexus (API + frontend PWA).
 
   Uso:
-    .\run.ps1                # porta 8000
+    .\run.ps1                # porta 4545
     .\run.ps1 -Port 9000     # outra porta
     .\run.ps1 -Setup         # apenas prepara o ambiente, sem subir
 
@@ -12,7 +12,7 @@
     3) cria o .venv e instala as dependências
 #>
 param(
-    [int]$Port = 8000,
+    [int]$Port = 4545,
     # 0.0.0.0 = aceita acesso da rede (igual ao run.sh e ao run-servidor.ps1).
     # Use -Local para restringir a este computador.
     [string]$Bind = "0.0.0.0",

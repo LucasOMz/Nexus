@@ -32,6 +32,10 @@ COPY frontend ./frontend
 COPY alembic ./alembic
 COPY alembic.ini .
 
-EXPOSE 8000
+# A porta interna e a da porta publicada PRECISAM ser a mesma do
+# `docker-compose.yml`. Quando divergiram (compose 5000, aqui 8000), o Docker
+# publicava uma porta em que nada escutava — a conexão era aceita e fechada na
+# hora, com `recv failure: conexão fechada pela outra ponta`.
+EXPOSE 4545
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "4545"]

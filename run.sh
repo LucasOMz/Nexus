@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-PORT="${PORT:-8000}"
+PORT="${PORT:-4545}"
 PY=".venv/bin/python"
 
 # As bibliotecas essenciais estão instaladas neste interpretador?
