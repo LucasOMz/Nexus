@@ -58,23 +58,95 @@ function verEmprestimo(item) {
   });
 }
 
-/** Lista os empréstimos de um dia específico. */
-function verDia(dia, emprestimos) {
-  if (!emprestimos.length) return;
+/**
+ * Os empréstimos agendados para um dia.
+ *
+ * ## Por que a célula do dia abre isto
+ *
+ * A grade mostra no máximo **4** itens por dia. Num dia com 12 devoluções, o
+ * resto ficava atrás do "+8 mais" — e quem olha a agenda não queria contar
+ * etiquetas, queria **ver o dia**.
+ *
+ * ## Duas seções, e não uma
+ *
+ * `devolvem` são os **prazos**: o que vence naquele dia. `emCurso` são os
+ * empréstimos que estão na rua atravessando a data. As duas coisas são
+ * "agendadas para o dia", e separá-las evita que 30 empréstimos longos
+ * escondam as 3 devoluções que realmente importam.
+ *
+ * Devolução primeiro — é o que tem prazo.
+ */
+function verDia(dia, devolvem, emCurso = []) {
+  const atrasadas = devolvem.filter((e) => e.atrasado).length;
+
+  const titulo = `${dia.getDate()} de ${MESES[dia.getMonth()]} de ${dia.getFullYear()}`;
+
+  /** Uma linha da lista: abre o empréstimo ao clicar. */
+  const linhaDe = (e) => {
+    const prazo = e.dias_restantes;
+    const tom = e.atrasado ? "danger"
+      : (prazo != null && prazo <= 3) ? "aviso"
+      : "";
+    const rotulo = e.atrasado
+      ? "Atrasado"
+      : prazo != null ? `${prazo}d` : "—";
+
+    const linha = el("div", { class: "list-row", style: "cursor:pointer" },
+      el("div", { class: "list-main" },
+        el("div", { class: "list-title" },
+          e.patrimonio || `Empréstimo #${e.id}`,
+          e.planta_sigla
+            ? el("span", { class: "muted", style: "font-size:12px;margin-left:6px" },
+                e.planta_sigla)
+            : null),
+        el("div", { class: "list-sub" },
+          [
+            e.modelo,
+            e.numero_chamado ? `chamado ${e.numero_chamado}` : null,
+            e.devolucao_prevista ? `devolver ${fmtDate(e.devolucao_prevista)}` : null,
+          ].filter(Boolean).join(" · ")),
+      ),
+      el("span", { class: `badge${tom ? ` ${tom}` : ""}` }, rotulo),
+    );
+    linha.addEventListener("click", () => verEmprestimo(e));
+    return linha;
+  };
+
+  const corpo = el("div", {});
+
+  // --- resumo do dia ---------------------------------------------------
+  //
+  // Números no topo porque a pergunta de quem abre a agenda é "quantos são e
+  // quantos estão atrasados" — não "quais". O detalhe vem abaixo.
+  if (devolvem.length) {
+    corpo.append(el("div", { class: "row wrap", style: "gap:8px;margin-bottom:12px" },
+      el("span", { class: "chip" }, `${devolvem.length} devolução(ões)`),
+      atrasadas
+        ? el("span", { class: "chip danger" }, `${atrasadas} em atraso`)
+        : el("span", { class: "chip ok" }, "nenhuma em atraso"),
+    ));
+
+    corpo.append(el("h3", { class: "secao-titulo" }, "Devoluções previstas"));
+    corpo.append(el("div", {}, ...devolvem.map(linhaDe)));
+  }
+
+  if (emCurso.length) {
+    corpo.append(el("h3", { class: "secao-titulo", style: "margin-top:16px" },
+      "Empréstimos em curso"));
+    corpo.append(el("p", { class: "muted", style: "font-size:12.5px;margin:0 0 8px" },
+      "Estão na rua nesta data. O prazo é a data mostrada em cada um."));
+    corpo.append(el("div", {}, ...emCurso.map(linhaDe)));
+  }
+
+  if (!devolvem.length && !emCurso.length) {
+    corpo.append(el("p", { class: "muted", style: "margin:0" },
+      "Nada agendado para este dia."));
+  }
+
   dialog({
-    title: `${dia.getDate()} de ${MESES[dia.getMonth()]}`,
-    body: el("div", {}, ...emprestimos.map((e) => {
-      const linha = el("div", { class: "list-row", style: "cursor:pointer" },
-        el("div", { class: "list-main" },
-          el("div", { class: "list-title" }, e.patrimonio),
-          el("div", { class: "list-sub" },
-            `Chamado ${e.numero_chamado || "—"} · ${e.modelo || "sem modelo"}`),
-        ),
-        el("span", { class: e.atrasado ? "badge danger" : "badge" }, e.atrasado ? "Atrasado" : `${e.dias_restantes}d`),
-      );
-      linha.addEventListener("click", () => verEmprestimo(e));
-      return linha;
-    })),
+    title: titulo,
+    wide: devolvem.length + emCurso.length > 6,
+    body: corpo,
     actions: [{ label: "Fechar", variant: "text" }],
   });
 }
@@ -135,7 +207,18 @@ function montarGrade() {
             : null,
         ),
       );
-      if (devolvem.length) celula.addEventListener("click", () => verDia(dia, devolvem));
+      // O dia inteiro abre a janela do dia — não só o "+N mais".
+      //
+      // Antes, isso só acontecia quando havia devolução, e sem nenhuma pista
+      // visual: quem via 4 etiquetas não sabia que a célula era clicável. A
+      // classe `clicavel` dá o cursor e o realce no CSS, e o `title` diz o
+      // que o clique faz.
+      const temAlgo = devolvem.length || emCurso.length;
+      if (temAlgo) {
+        celula.classList.add("clicavel");
+        celula.title = "Clique para ver o dia";
+        celula.addEventListener("click", () => verDia(dia, devolvem, emCurso));
+      }
       grade.append(celula);
       cursor.setDate(cursor.getDate() + 1);
     }

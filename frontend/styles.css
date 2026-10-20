@@ -2475,3 +2475,37 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 }
 
 .text-aviso { color: var(--cor-aviso); font-size: 12px; }
+
+/* =====================================================================
+   Agenda — dia clicável e a janela do dia
+   ===================================================================== */
+
+/* A célula do dia abre a janela com tudo o que está agendado. Antes, só o
+   "+N mais" era clicável, e quem via 4 etiquetas não sabia que a célula
+   também respondia ao clique.
+   Aqui o cursor e o realce são a pista — sem eles, a funcionalidade existe e
+   ninguém descobre. */
+.cal-dia.clicavel { cursor: pointer; }
+
+.cal-dia.clicavel:hover {
+  background: var(--md-sys-color-surface-container-high, rgba(128, 128, 128, 0.14));
+  outline: 1px solid var(--md-sys-color-outline-variant, rgba(128, 128, 128, 0.4));
+  outline-offset: -1px;
+}
+
+/* Foco por teclado: a célula é um `div` com clique, não um botão — então o
+   contorno de foco precisa ser explícito. */
+.cal-dia.clicavel:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary, #3b6ea5);
+  outline-offset: -2px;
+}
+
+/* --- títulos das seções dentro da janela do dia --- */
+.secao-titulo {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--md-sys-color-on-surface-variant, #666);
+}
