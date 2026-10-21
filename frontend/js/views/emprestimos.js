@@ -15,6 +15,9 @@ import { el, icon, toast, dialog, confirmSheet, emptyState, skeleton, fmtDate, m
 const PAGE_SIZE = 20;
 let page = 1;
 let filtro = "";
+// O termo fica no módulo, e não no input: a tela é reconstruída a cada troca
+// de filtro, e sem isto a busca se apagaria ao clicar num chip.
+let busca = "";
 
 const ROTULO = {
   reservado: "Reservado", retirado: "Em uso", devolvido: "Aguardando vistoria",
@@ -38,6 +41,34 @@ export async function renderEmprestimos(root) {
       "Reserva, retirada com termo e conferência, devolução e vistoria."),
   );
 
+  // --- busca no histórico ---------------------------------------------
+  //
+  // Responde as duas perguntas de quem audita: "o que a Ana já levou?" e
+  // "por quais mãos este notebook passou?". O servidor procura em patrimônio,
+  // número de série, nome e e-mail do usuário, nome digitado livremente e
+  // número do chamado — é o que alguém tem à mão quando procura.
+  const campoBusca = el("input", {
+    type: "search",
+    class: "search-input",
+    placeholder: "Buscar por equipamento, pessoa ou chamado…",
+    value: busca,
+    autocomplete: "off",
+  });
+
+  let timerBusca = null;
+  campoBusca.addEventListener("input", () => {
+    clearTimeout(timerBusca);
+    timerBusca = setTimeout(() => {
+      const novo = campoBusca.value.trim();
+      if (novo === busca) return;
+      busca = novo;
+      page = 1;
+      renderEmprestimos(root);
+    }, 320);
+  });
+
+  root.append(el("div", { class: "field", style: "margin-bottom:12px" }, campoBusca));
+
   const filtros = el("div", { class: "row wrap", style: "gap:8px;margin-bottom:16px" });
   for (const [v, r] of [["", "Todos"], ["reservado", "Reservados"], ["retirado", "Em uso"],
                         ["devolvido", "Aguardando vistoria"], ["vistoriado", "Concluídos"]]) {
@@ -55,6 +86,7 @@ export async function renderEmprestimos(root) {
   try {
     const q = { page, size: PAGE_SIZE };
     if (filtro) q.situacao = filtro;
+    if (busca) q.search = busca;
     dados = await api.get("/emprestimos", q);
   } catch (e) {
     lista.innerHTML = "";

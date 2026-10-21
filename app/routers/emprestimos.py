@@ -12,6 +12,7 @@ from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.deps import get_current_user, require_write
@@ -168,18 +169,71 @@ def _saida(db: Session, emp: Emprestimo) -> dict:
 def listar(
     situacao: SituacaoEmprestimo | None = Query(default=None),
     ativo_id: int | None = Query(default=None),
+    usuario_id: int | None = Query(default=None),
+    search: str | None = Query(default=None, description="Busca por equipamento, pessoa ou chamado"),
     page: int = Query(default=1, ge=1),
     size: int = Query(default=20, ge=1, le=200),
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
     planta_id: int | None = Depends(planta_ativa),
 ):
+    """O histórico de empréstimos, com filtros.
+
+    ## Os filtros existem para responder duas perguntas
+
+    *"O que a Ana já levou?"* e *"por quais mãos este notebook passou?"* —
+    são as duas perguntas de quem audita empréstimo, e nenhuma delas era
+    possível: a lista só filtrava por situação e por um `ativo_id` que a tela
+    nunca enviava.
+
+    ## Por que subconsulta, e não `join`
+
+    `paginate` conta as linhas do resultado. Um `join` com `Ativo` ou
+    `Usuario` multiplicaria a linha do empréstimo quando houvesse mais de uma
+    correspondência — e a contagem de páginas sairia errada. A subconsulta
+    filtra por `in_`, mantém uma linha por empréstimo, e a paginação continua
+    correta.
+
+    ## O que a busca cobre
+
+    Patrimônio e número de série do equipamento, nome e e-mail do usuário,
+    o nome digitado livremente na reserva, e o número do chamado. É o que
+    alguém tem à mão quando procura.
+    """
     q = db.query(Emprestimo).filter(Emprestimo.deleted_at.is_(None))
     q = aplicar_filtro(q, Emprestimo, planta_id)
+
     if situacao is not None:
         q = q.filter(Emprestimo.situacao == situacao)
     if ativo_id is not None:
         q = q.filter(Emprestimo.ativo_id == ativo_id)
+    if usuario_id is not None:
+        q = q.filter(Emprestimo.usuario_id == usuario_id)
+
+    if search and search.strip():
+        like = f"%{search.strip()}%"
+        ativos = (
+            db.query(Ativo.id)
+            .filter(or_(
+                Ativo.patrimonio.ilike(like),
+                Ativo.numero_serie.ilike(like),
+            ))
+            .subquery()
+        )
+        usuarios = (
+            db.query(Usuario.id)
+            .filter(or_(Usuario.nome.ilike(like), Usuario.email.ilike(like)))
+            .subquery()
+        )
+        q = q.filter(or_(
+            Emprestimo.ativo_id.in_(select(ativos.c.id)),
+            Emprestimo.usuario_id.in_(select(usuarios.c.id)),
+            # Nome digitado livremente na reserva — quem não tem conta no
+            # sistema também precisa ser encontrável no histórico.
+            Emprestimo.retirado_por_nome.ilike(like),
+            Emprestimo.numero_chamado.ilike(like),
+        ))
+
     q = q.options(
         selectinload(Emprestimo.itens),
         selectinload(Emprestimo.ativo),
