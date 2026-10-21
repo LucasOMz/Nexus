@@ -212,11 +212,15 @@ def listar(
 
     if search and search.strip():
         like = f"%{search.strip()}%"
+        # O número do chamado mora no ATIVO, não no empréstimo — é o chamado
+        # de manutenção do equipamento. Procurá-lo em `Emprestimo` levantava
+        # `AttributeError` e derrubava a busca inteira com 500.
         ativos = (
             db.query(Ativo.id)
             .filter(or_(
                 Ativo.patrimonio.ilike(like),
                 Ativo.numero_serie.ilike(like),
+                Ativo.numero_chamado.ilike(like),
             ))
             .subquery()
         )
@@ -231,7 +235,6 @@ def listar(
             # Nome digitado livremente na reserva — quem não tem conta no
             # sistema também precisa ser encontrável no histórico.
             Emprestimo.retirado_por_nome.ilike(like),
-            Emprestimo.numero_chamado.ilike(like),
         ))
 
     q = q.options(
