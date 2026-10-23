@@ -21,7 +21,7 @@ previa dizia estar livre.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -39,17 +39,55 @@ TAMANHO_MAX = 20 * 1024 * 1024
 
 
 @router.get("/colunas")
-def colunas(_: Usuario = Depends(require_admin)) -> dict:
-    """As colunas, o que cada uma significa e o que e obrigatorio.
+def colunas(
+    dominio: str | None = Query(default=None, description="ti ou impressora"),
+    _: Usuario = Depends(require_admin),
+) -> dict:
+    """As colunas, o que cada uma significa e o que é obrigatório.
 
     A tela mostra isto **antes** de a pessoa abrir o Excel. Explicar depois
-    do arquivo errado chegar nao ajuda quem ja montou a planilha.
+    do arquivo errado chegar não ajuda quem já montou a planilha.
+
+    ## Por que a lista depende do inventário
+
+    As fichas técnicas são diferentes: TI tem `hostname`, `cpu`, `ram_gb`;
+    impressora tem `tipo_impressao`, `colorida`, `contador_paginas`. Mostrar
+    as duas famílias juntas — como era — fazia quem importa **TI** ver
+    colunas de impressora e concluir que os dois inventários são o mesmo.
+
+    Não são: são tabelas de ficha separadas (`ativos_ti`,
+    `ativos_impressora`), e uma coluna da outra família é **ignorada** na
+    importação.
+
+    ## O que decide o domínio de cada coluna
+
+    O marcador que já existia na descrição — `[TI]` e `[Impressora]`. A coluna
+    sem marcador é comum aos dois (`patrimonio`, `modelo`, `valor`…).
+
+    Fosse hoje, a lista teria um campo estruturado em vez de um prefixo em
+    prosa. Enquanto o prefixo existir e este filtro o ler, o comportamento é
+    o mesmo — e o custo de mudar é baixo quando valer a pena.
     """
+    def do_dominio(desc: str) -> str | None:
+        if desc.startswith("[Impressora]"):
+            return "impressora"
+        if desc.startswith("[TI]"):
+            return "ti"
+        return None
+
+    linhas = []
+    for nome, obrig, desc in importar_ativos.COLUNAS:
+        alvo = do_dominio(desc)
+        if dominio and alvo and alvo != dominio:
+            continue
+        # O marcador é documentação para quem lê o código; na tela ele
+        # poluiria o texto da coluna.
+        limpa = desc.replace("[TI] ", "").replace("[Impressora] ", "")
+        linhas.append({"nome": nome, "obrigatoria": obrig, "descricao": limpa})
+
     return {
-        "colunas": [
-            {"nome": nome, "obrigatoria": obrig, "descricao": desc}
-            for nome, obrig, desc in importar_ativos.COLUNAS
-        ],
+        "dominio": dominio,
+        "colunas": linhas,
         "exemplo": importar_ativos.modelo_texto(),
     }
 

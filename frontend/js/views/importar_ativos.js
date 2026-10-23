@@ -25,6 +25,7 @@
  * @module views/importar_ativos
  */
 import { api } from "../api.js";
+import { state } from "../state.js";
 import { el, icon, toast, dialog, mostrarErro } from "../ui.js";
 import { fotoUrl } from "./ativos.js";
 
@@ -90,7 +91,10 @@ function etapaModelo(aoEscolher) {
   const lista = el("div", { class: "imp-colunas" },
     el("p", { class: "muted" }, "Carregando as colunas…"));
 
-  api.get("/ativos/importar/colunas").then((d) => {
+  // O inventário vai junto: as fichas técnicas de TI e de impressora são
+  // diferentes, e mostrar as duas famílias de colunas na mesma tela dava a
+  // impressão de que o inventário era um só.
+  api.get("/ativos/importar/colunas", { dominio: state.dominio }).then((d) => {
     lista.innerHTML = "";
     lista.append(
       el("p", { class: "muted", style: "margin:0 0 10px" },
