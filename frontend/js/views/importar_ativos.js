@@ -154,9 +154,15 @@ function etapaModelo(aoEscolher) {
 
 function baixarModelo() {
   // O download precisa do token, então não dá para usar um `<a href>` direto:
-  // a rota exige administrador. Busca como blob e entrega ao navegador.
-  api.blob("/ativos/importar/modelo").then((blob) => {
-    const url = URL.createObjectURL(blob);
+  // a rota exige administrador. Busca e entrega ao navegador.
+  //
+  // `api.blob` **já devolve a URL** do objeto criado — e não o `Blob`. Chamar
+  // `URL.createObjectURL` de novo em cima dela falha com
+  // "Overload resolution failed", porque uma string não é `Blob`.
+  //
+  // Os outros quatro lugares que usam `api.blob` já tratavam como URL
+  // (`const url = await api.blob(...)`). Era só aqui que não.
+  api.blob("/ativos/importar/modelo").then((url) => {
     const a = el("a", { href: url, download: "modelo-ativos.csv" });
     document.body.append(a);
     a.click();
