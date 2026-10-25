@@ -124,10 +124,12 @@ async function secaoServidor(alvo) {
     style: "margin:0 0 12px",
   }, cfg.pronto ? "Envio configurado e ligado." : `Não está pronto: ${cfg.motivo || "configure os campos."}`);
 
+  // Começa vazio de propósito: o e-mail do remetente costuma ser um endereço
+  // de serviço (notificacoes@...), e pré-preencher com ele faria o teste ir
+  // para uma caixa que ninguém abre. Quem testa digita o próprio endereço.
   const destinatarioTeste = el("input", {
     type: "email",
     placeholder: "seu@empresa.com",
-    value: state.email || "",
     style: "max-width:280px",
   });
 
