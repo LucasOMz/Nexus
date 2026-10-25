@@ -1,0 +1,14 @@
+# Saída da compilação — não versionar.
+#
+# `bin/` contém o executável e as três DLLs do WebView2. É reproduzível com
+# `.\build.ps1`, então não faz sentido guardar binário no repositório.
+bin/
+
+# Pasta de dados do WebView2 criada em tempo de execução: cache, cookies,
+# histórico e sessão. É dado de quem usa, não do projeto.
+bin/*.WebView2/
+*.WebView2/
+
+# Registro de falhas gerado pelo próprio aplicativo.
+bin/erro.txt
+erro.txt
