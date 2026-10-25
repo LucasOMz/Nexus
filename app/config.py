@@ -80,6 +80,13 @@ class Settings(BaseSettings):
     # banco em paralelo com os testes.
     scheduler_ativo: bool = True
 
+    # --- Notificacoes por e-mail -------------------------------------------
+    # Intervalo, em segundos, entre ciclos do agendador de e-mail. Avisos de
+    # inventario sao estado, nao evento em tempo real: cinco minutos evitam
+    # consultar o banco para descobrir que nada mudou. O piso de 60s e
+    # aplicado no proprio agendador.
+    smtp_intervalo: int = 300
+
     # --- Backup ---
     # Pasta onde os backups são gravados (aponte para o compartilhamento de rede
     # montado no host, ex.: /backups). Vazio = "<media_dir>/../backups".

@@ -51,6 +51,7 @@ from app.routers import (
     monitor_impressoras,
     movimentacoes,
     notificacoes,
+    notificacoes_admin,
     ocs,
     ocs_reconciliacao,
     plantas,
@@ -66,7 +67,7 @@ from app.routers import (
 from app.routers import (
     print as print_router,
 )
-from app.services import ocs_agendador
+from app.services import notificacoes_agendador, ocs_agendador
 from app.setup import estado as setup_estado
 
 # O sistema tem DOIS modos, decididos por um arquivo marcador (ver
@@ -136,8 +137,25 @@ async def lifespan(_app: FastAPI):
                 type(exc).__name__,
             )
 
+        # --- Notificações por e-mail -----------------------------------
+        #
+        # Mesma proteção do OCS, e pelo mesmo motivo: recurso acessório que
+        # não sobe não pode virar indisponibilidade total. Sem SMTP
+        # configurado, o ciclo simplesmente não envia nada — e é o estado
+        # normal numa instalação que ainda não ligou o e-mail.
+        try:
+            notificacoes_agendador.iniciar()
+        except Exception as exc:  # noqa: BLE001
+            log.exception(
+                "E-mail: o agendador de notificações não pôde ser iniciado (%s). "
+                "A aplicação segue normalmente; o envio continua disponível em "
+                "Administração → Notificações.",
+                type(exc).__name__,
+            )
+
     yield
     ocs_agendador.parar()
+    notificacoes_agendador.parar()
 
 
 app = FastAPI(
@@ -311,6 +329,7 @@ if INSTALADO:
     app.include_router(plantas.router, prefix=API)
     app.include_router(calendario.router, prefix=API)
     app.include_router(notificacoes.router, prefix=API)
+    app.include_router(notificacoes_admin.router, prefix=API)
     app.include_router(reportes.router, prefix=API)
     app.include_router(ocs.router, prefix=API)
     app.include_router(ocs_reconciliacao.router, prefix=API)

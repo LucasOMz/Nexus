@@ -647,3 +647,86 @@ FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 
 COMMIT;
+
+-- ===========================================================================
+-- Notificacoes por e-mail
+-- ===========================================================================
+--
+-- Quatro tabelas, tres papeis:
+--
+--   config_smtp               a conta de envio (uma para todo o sistema)
+--   templates_notificacao     o texto de cada aviso (opcional; sem linha, vale
+--                             o padrao do catalogo em notificacoes_email.py)
+--   preferencias_notificacao  o que cada tecnico quer receber, e quando
+--   emails_enviados           historico — e a memoria que evita repetir
+--
+-- `emails_enviados` nao e so auditoria: e a trava de repeticao. O despacho
+-- consulta (usuario_id, chave, referencia) antes de enviar; sem ela, o aviso
+-- de toner baixo sairia a cada ciclo, porque toner baixo e um ESTADO, nao um
+-- evento.
+-- ===========================================================================
+
+CREATE TABLE IF NOT EXISTS config_smtp (
+    id                SERIAL PRIMARY KEY,
+    ativo             BOOLEAN NOT NULL DEFAULT FALSE,
+    host              VARCHAR(200),
+    porta             INTEGER NOT NULL DEFAULT 587,
+    seguranca         VARCHAR(12) NOT NULL DEFAULT 'tls',
+    usuario           VARCHAR(200),
+    senha_cifrada     BYTEA,
+    senha_versao      INTEGER,
+    remetente_email   VARCHAR(200),
+    remetente_nome    VARCHAR(120) NOT NULL DEFAULT 'Nexus',
+    responder_para    VARCHAR(200),
+    assunto_prefixo   VARCHAR(40) NOT NULL DEFAULT '[Nexus]',
+    hora_inicio       INTEGER NOT NULL DEFAULT 7,
+    hora_fim          INTEGER NOT NULL DEFAULT 19,
+    atualizado_em     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    atualizado_por_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS templates_notificacao (
+    id                SERIAL PRIMARY KEY,
+    chave             VARCHAR(60) NOT NULL UNIQUE,
+    assunto           VARCHAR(300),
+    corpo             TEXT,
+    atualizado_em     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    atualizado_por_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS ix_templates_notificacao_chave ON templates_notificacao (chave);
+
+CREATE TABLE IF NOT EXISTS preferencias_notificacao (
+    id            SERIAL PRIMARY KEY,
+    usuario_id    INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    chave         VARCHAR(60) NOT NULL,
+    ativo         BOOLEAN NOT NULL DEFAULT TRUE,
+    frequencia    VARCHAR(12) NOT NULL DEFAULT 'diaria',
+    hora          INTEGER NOT NULL DEFAULT 8,
+    dias_semana   VARCHAR(20),
+    atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_preferencia_usuario_chave UNIQUE (usuario_id, chave)
+);
+
+CREATE INDEX IF NOT EXISTS ix_preferencias_notificacao_usuario_id ON preferencias_notificacao (usuario_id);
+CREATE INDEX IF NOT EXISTS ix_preferencias_notificacao_chave ON preferencias_notificacao (chave);
+
+CREATE TABLE IF NOT EXISTS emails_enviados (
+    id           SERIAL PRIMARY KEY,
+    usuario_id   INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
+    chave        VARCHAR(60) NOT NULL,
+    referencia   VARCHAR(80),
+    destinatario VARCHAR(200) NOT NULL,
+    assunto      VARCHAR(300) NOT NULL,
+    resumo       TEXT,
+    enviado_em   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ok           BOOLEAN NOT NULL DEFAULT TRUE,
+    erro         TEXT
+);
+
+CREATE INDEX IF NOT EXISTS ix_emails_enviados_usuario_id ON emails_enviados (usuario_id);
+CREATE INDEX IF NOT EXISTS ix_emails_enviados_chave ON emails_enviados (chave);
+CREATE INDEX IF NOT EXISTS ix_emails_enviados_referencia ON emails_enviados (referencia);
+CREATE INDEX IF NOT EXISTS ix_emails_enviados_enviado_em ON emails_enviados (enviado_em);
+
+COMMIT;

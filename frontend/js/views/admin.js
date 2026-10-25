@@ -17,6 +17,7 @@ import { renderLgpd } from "./admin_lgpd.js";
 import { renderChecklist } from "./admin_checklist.js";
 import { renderBanco } from "./admin_banco.js";
 import { renderAuditoria } from "./admin_auditoria.js";
+import { renderNotificacoes } from "./admin_notificacoes.js";
 import { renderPlantas } from "./admin_plantas.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -571,6 +572,7 @@ export async function renderAdmin(root) {
     ["auditoria", "Logs"],
     ["backups", "Backups"],
     ["auth", "Autenticação (AD)"],
+    ["notificacoes", "Notificações"],
     ["ocs", "OCS Inventory"],
     ["reconciliacao", "Reconciliação OCS"],
     ["lgpd", "Privacidade (LGPD)"],
@@ -600,6 +602,7 @@ export async function renderAdmin(root) {
     ocs: ["inventario automatico", "servidor", "token", "sincronizacao", "agente"],
     reconciliacao: ["divergencia", "fantasma", "perdido", "rede", "comparar"],
     banco: ["dba", "conexao", "postgresql", "servidor", "sqlite", "mysql"],
+    notificacoes: ["email", "smtp", "aviso", "alerta", "notificar", "toner", "devolucao"],
   };
 
   const GRUPOS = [
@@ -617,7 +620,11 @@ export async function renderAdmin(root) {
     // "Sistema" ficou com a configuração e a manutenção da própria ferramenta:
     // como se entra (AD), de onde vêm os dados (OCS), a cópia de segurança e a
     // conexão com o banco.
-    ["Sistema", ["auth", "ocs", "backups", "banco"]],
+    //
+    // "Notificações" entrou aqui: é a saída de informação do sistema — o
+    // oposto do OCS, que é a entrada. Quem procura "por que não chega e-mail"
+    // procura em Sistema, não em Patrimônio.
+    ["Sistema", ["auth", "notificacoes", "ocs", "backups", "banco"]],
   ];
 
   // Aba fora de qualquer grupo não pode sumir: cai em "Outros".
@@ -750,6 +757,7 @@ export async function renderAdmin(root) {
   else if (abaAtiva === "auditoria") await renderAuditoria(alvo);
   else if (abaAtiva === "backups") await renderBackups(alvo);
   else if (abaAtiva === "auth") await renderAuth(alvo);
+  else if (abaAtiva === "notificacoes") await renderNotificacoes(alvo);
   else if (abaAtiva === "ocs") await renderOCS(alvo);
   else if (abaAtiva === "reconciliacao") await renderReconciliacao(alvo);
   else if (abaAtiva === "lgpd") await renderLgpd(alvo);
