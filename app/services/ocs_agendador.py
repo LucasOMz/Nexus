@@ -8,7 +8,7 @@ intervalos, porque o parque de máquinas muda sem ninguém avisar.
 aplicação, que dorme e acorda conferindo se já passou o intervalo configurado.
 
 **Limitação honesta:** rodar dentro do processo significa **uma execução por
-processo**. O `run.sh` sobe um único processo uvicorn, então não há duplicação
+processo**. O container sobe um único processo uvicorn, então não há duplicação
 hoje. Se um dia o sistema subir com vários processos (`--workers`), cada um
 dispararia sua própria sincronização — nesse cenário, o certo é desligar esta
 opção e usar o agendador do sistema operacional (cron / Tarefa Agendada).

@@ -115,6 +115,30 @@ class Settings(BaseSettings):
             return [o.strip() for o in v.split(",") if o.strip()]
         return v
 
+    @field_validator("jwt_secret", "qr_hmac_secret", "chave_licencas", mode="after")
+    @classmethod
+    def _resolver_segredos(cls, v: str, info) -> str:
+        """Resolve segredos que não foram definidos no ambiente.
+
+        ## Por que no validador
+
+        Este é o **único** ponto que roda antes de qualquer uso do segredo,
+        seja para assinar um token, validar um QR ou cifrar uma licença.
+
+        ## O que ele faz
+
+        1. Valor definido no ambiente (que não seja o padrão do código) — usa
+        2. Arquivo no volume de segredos — usa
+        3. Nada — **gera** 256 bits e grava no volume
+
+        Assim a stack sobe sem nenhuma variável e **sem** cair no padrão
+        publicado no repositório (`troque-este-segredo-jwt`), que era o que o
+        `:?` do compose existia para impedir — ao custo de bloquear a criação.
+        """
+        from app.core import segredos_instalacao
+
+        return segredos_instalacao.obter(info.field_name, v)
+
     @property
     def cors_origin_list(self) -> list[str]:
         return self.cors_origins

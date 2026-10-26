@@ -1,4 +1,4 @@
-# Operação e implantação
+﻿# Operação e implantação
 
 Detalhe técnico do Nexus: instalação, Docker, impressão térmica, LDAP, backup,
 implantação no servidor e solução de problemas.
@@ -82,21 +82,34 @@ estoque-qr/
 
 ---
 
-## 3. Rodando do zero (desenvolvimento, sem Docker)
+## 3. Rodando do zero (diagnóstico, sem Docker)
 
 > Pré-requisitos: Python 3.11+.
 
-### 3.1 Opção rápida (scripts prontos)
+### 3.1 Opção rápida — **removida**
 
-| Sistema | Comando |
-|---|---|
-| Windows (duplo-clique) | `run.bat` |
-| Windows (PowerShell) | `.\run.ps1` |
-| Linux / macOS / Raspberry | `./run.sh` |
+Os scripts `run.bat`, `run.ps1`, `run.sh` e `run-servidor.ps1` **não existem
+mais**. Eles subiam a aplicação direto no sistema operacional, sem container.
 
-O script escolhe o ambiente automaticamente (`.venv` → `.vendor` → cria o
-`.venv` e instala as dependências), sobe o servidor e mostra a URL e o login.
-Para outra porta: `.\run.ps1 -Port 9000` ou `PORT=9000 ./run.sh`.
+**Por que saíram:**
+
+- Instalavam dependências que a imagem **não** instalava (foi assim que o
+  `pysnmp` do monitor de impressoras funcionava fora do container e falhava
+  dentro)
+- Duas formas de subir o sistema divergem na primeira semana, e a divergência
+  só aparece em produção
+- O caminho suportado é o **Docker** — seção 2 deste documento
+
+**Se precisar rodar sem container** (depuração de um problema específico do
+host), o equivalente manual é:
+
+```bash
+pip install -r requirements.txt
+uvicorn app.main:app --host 0.0.0.0 --port 4545
+```
+
+Sem promessa de paridade com o container: é ferramenta de diagnóstico, não
+caminho de instalação.
 
 Depois abra **http://127.0.0.1:8000** e entre com:
 
@@ -115,7 +128,7 @@ Na rede local    :  http://192.168.7.12:8000
 
 No celular ou em outra máquina, use o endereço **"Na rede local"**.
 
-Para restringir a este computador apenas (mais seguro): `.\run.ps1 -Local`.
+Para restringir a este computador apenas (mais seguro): `--host 127.0.0.1`.
 
 **Se outra máquina (ou o celular) não abrir**, verifique nesta ordem:
 
@@ -169,7 +182,7 @@ uvicorn app.main:app --reload
 > dependências externas.
 
 > **O `python -m venv` falhou / o venv ficou sem `pip`?** Acontece com o Python
-> da Microsoft Store (o `ensurepip` dele falha). Use o `run.ps1`, que instala o
+> da Microsoft Store (o `ensurepip` dele falha). Instale o Python do python.org, que instala o
 > `pip` via `get-pip.py` automaticamente, ou instale o Python em
 > https://www.python.org/downloads/.
 
@@ -344,21 +357,28 @@ WantedBy=multi-user.target
 
 ## 8. Resetar o sistema (começar do zero)
 
-Para apagar os dados e voltar ao estado inicial (com o admin padrão), use o
-script de reset:
+> Os scripts `reset.bat` e `reset.ps1` **foram removidos** junto com o caminho
+> de execução no host. Eles apagavam `estoque.db` e `media/` — arquivos que
+> só existem na instalação sem container.
 
-| Sistema | Comando |
-|---|---|
-| Windows (duplo-clique) | `reset.bat` |
-| Windows (PowerShell) | `.\reset.ps1` |
-| Sem confirmação | `.\reset.ps1 -Forcar` |
-| Resetar tudo, incl. dependências | `.\reset.ps1 -Dependencias` |
+**Em Docker, começar do zero é apagar os volumes:**
 
-**O que ele apaga:** `estoque.db` (ativos, usuários, movimentações, manutenções)
-e a pasta `media/` (fotos, termos em PDF e anexos).
+```bash
+docker compose down -v      # para os containers e remove os volumes
+docker compose up -d        # sobe com banco vazio e admin padrão
+```
 
-**O que ele NÃO apaga:** o código e as dependências (`.venv` / `.vendor`) —
-a menos que use `-Dependencias`.
+O `-v` é o que importa: sem ele o `down` apenas para os containers, e o
+volume do PostgreSQL continua com os dados.
+
+**O que isso apaga:** o banco (ativos, usuários, movimentações, manutenções,
+notificações) e o volume de `media/` (fotos, termos em PDF, anexos).
+
+**O que não apaga:** a imagem, o código e as variáveis de ambiente da stack.
+
+> **Para apagar só os dados, mantendo a configuração**, pare a stack e remova
+> apenas o volume do banco no Portainer — os segredos ficam nas variáveis de
+> ambiente, não no volume.
 
 O script avisa se o servidor ainda estiver rodando (o banco fica em uso) e
 tenta novamente algumas vezes, porque o Windows demora alguns segundos para
@@ -388,7 +408,7 @@ uma destas opções para garantir que ele carregue a versão mais recente:
 
 O schema ganhou tabelas e colunas novas (`imagens`, `dispositivos_impressao`,
 `ativos.foto_id`, `usuarios.permissoes`). Em desenvolvimento, o caminho mais
-simples é o reset acima (`.\reset.ps1`), que apaga o `estoque.db` e deixa o
+simples é `docker compose down -v`, que apaga o banco e o volume de mídia e deixa o
 sistema recriar.
 
 Em produção com PostgreSQL, use `alembic revision --autogenerate` /
@@ -534,102 +554,28 @@ Detalhes que valem saber:
 
 ---
 
-## 10. Levar para o servidor (o que copiar e o que NÃO copiar)
+## 10. Levar para o servidor — **apenas por container**
 
-**Não zipe a pasta inteira.** Três coisas dão problema:
+As seções que existiam aqui descreviam a instalação **Windows nativa**:
+`publicar.ps1` montava um `.zip`, o servidor instalava Python 3.11 e o
+`run-servidor.ps1` registrava a aplicação como serviço do Windows
+(`New-Service`, firewall, recuperação automática).
 
-| Item | Por quê |
-|---|---|
-| `.vendor` (145 MB) | guarda bibliotecas **compiladas** e só funciona na mesma versão de Python em que foi criada. Copiada para o servidor, dá `ModuleNotFoundError: pydantic_core`. **Não copie** — instale lá. |
-| `.venv` | contém **caminhos absolutos** da máquina de origem. Copiado, simplesmente não funciona. **Nunca copie.** |
-| `__pycache__`, caches, logs | só engordam o pacote |
+**Tudo isso foi removido**, junto com os scripts de execução e de reset.
 
-E **três coisas não podem ficar de fora**, senão há perda de dados:
+**Por que:** eram dois caminhos de instalação, com dependências diferentes.
+O `run.ps1` instalava o `pysnmp` do monitor de impressoras; a imagem Docker
+não instalava. O resultado é conhecido — funcionava na máquina de quem testou
+e falhava no servidor, sem nada no código a apontar.
 
-| Item | Por quê |
-|---|---|
-| **`.env`** | segredos `JWT_SECRET` e `QR_HMAC_SECRET`. Sem o segredo do QR, **as etiquetas já impressas param de ser lidas** |
-| **`estoque.db`** | os dados (ou use PostgreSQL) |
-| **`media/`** | fotos, termos e anexos |
+**O caminho de implantação é um só:** container, publicado pela stack do
+Portainer. Veja a **seção 12**.
 
-### O caminho mais seguro
-
-```powershell
-# Na máquina de origem
-.\publicar.ps1                       # pacote completo, para MIGRAR
-.\publicar.ps1 -SemDados             # instalação limpa (sem dados nem .env)
-```
-
-O script monta o `.zip` com o que importa e **recusa** o que não deve ir,
-mostrando no fim o que entrou (inclusive avisando se o `.env` estiver faltando).
-
-```powershell
-# No servidor
-# 1) Instale o Python 3.11+ (marque "Add python.exe to PATH")
-# 2) Descompacte, por exemplo, em C:\estoque
-cd C:\estoque
-.\run.ps1 -Setup        # cria o .venv com as dependências desta máquina
-.\run.ps1               # teste rápido: abra http://127.0.0.1:8000
-```
-
-Depois agende o `run-servidor.ps1` (seção 11) e libere a porta no firewall:
-
-```powershell
-New-NetFirewallRule -DisplayName "Nexus" -Direction Inbound `
-    -Protocol TCP -LocalPort 8000 -Action Allow
-```
-
-> **`.vendor` só é útil** quando o servidor tem **exatamente** a mesma versão de
-> Python da origem. Na dúvida, use `-Setup`.
-
-### Antes de expor na rede, confira o `.env`
-
-Rodando sem `.env`, o sistema usa os **segredos padrão do código** — que são
-públicos. Isso permite forjar login e etiqueta. Gere os seus:
-
-```powershell
-python -c "import secrets; print(secrets.token_urlsafe(48))"
-```
-
-Ao trocar o `QR_HMAC_SECRET`, coloque o valor antigo em
-`QR_HMAC_SECRETS_ANTERIORES` — assim as etiquetas já coladas continuam válidas.
+> `wheels/` (31 MB de pacotes Python, resquício de uma tentativa de build
+> offline) também foi removida: o `Dockerfile` voltou a instalar pelo
+> `requirements.txt`, e a pasta não era usada por nada.
 
 ---
-
-## 11. Rodar como serviço (Windows Server)
-
-O `run.bat` é para **uso manual** (tem `pause` no fim). Para o Agendador de
-Tarefas, use o `run-servidor.ps1`, que:
-
-- não tem `pause` (a tarefa travaria esperando tecla);
-- escuta em `0.0.0.0` (aceita acesso de outras máquinas);
-- grava log em `logs\servidor-AAAA-MM-DD.log`;
-- reinicia sozinho se o processo cair.
-
-```powershell
-$acao    = New-ScheduledTaskAction -Execute "powershell.exe" `
-           -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\estoque\run-servidor.ps1"' `
-           -WorkingDirectory "C:\estoque"
-$gatilho = New-ScheduledTaskTrigger -AtStartup
-$conf    = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
-           -DontStopIfGoingOnBatteries -RestartCount 999 `
-           -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Days 0)
-Register-ScheduledTask -TaskName "GestaoPatrimonial" -Action $acao -Trigger $gatilho `
-           -Settings $conf -User "SYSTEM" -RunLevel Highest
-```
-
-Pontos de atenção no Agendador:
-
-| Configuração | Por quê |
-|---|---|
-| **"Executar estando o usuário conectado ou não"** | senão a tarefa só roda com sessão aberta |
-| **"Parar a tarefa se ela for executada por mais de..."** → desmarcar | o padrão de 3 dias derruba o servidor sozinho |
-| **"Reiniciar a tarefa se ela falhar"** | recupera de queda do processo |
-| Trigger **"Ao iniciar o sistema"** | sobe junto com o servidor |
-
-Defina `JWT_SECRET` e `QR_HMAC_SECRET` (≥32 caracteres) em `.env` ou nas
-variáveis de ambiente da máquina. Perder o `QR_HMAC_SECRET` inutiliza as
-etiquetas já impressas.
 
 ## 12. Implantar no Portainer (Docker)
 

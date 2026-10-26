@@ -28,8 +28,10 @@ Esta distinção atravessa o documento inteiro e vale registrar:
 | **Nexus (API)** | **Docker** | **Linux**, sempre |
 | **Agente** | Estação de trabalho | **Windows**, sempre |
 
-**O `run.bat` é ferramenta de teste**, não de produção. Ele existe para subir a
-aplicação na máquina de quem desenvolve e conferir funcionalidade rápido.
+**O caminho de execução é o container**, inclusive para conferir
+funcionalidade. Não há script de execução no host: ter dois caminhos
+que instalam dependências diferentes foi o que fez o monitor de
+impressoras funcionar fora do container e falhar dentro.
 **Produção é o container** — e o container é Linux mesmo quando o host é
 Windows, porque Docker no Windows roda por WSL.
 

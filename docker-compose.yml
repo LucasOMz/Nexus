@@ -53,8 +53,26 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-estoque}:${POSTGRES_PASSWORD:-estoque}@db:5432/${POSTGRES_DB:-estoque}
-      JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET no stack}
-      QR_HMAC_SECRET: ${QR_HMAC_SECRET:?defina QR_HMAC_SECRET no stack}
+
+      # --- Segredos ------------------------------------------------------
+      #
+      # Estes eram obrigatórios (`:?`) e a stack **falhava ao ser criada** se
+      # não estivessem definidos. A intenção era certa — os padrões no código
+      # são `"troque-este-segredo-jwt"`, publicados no repositório — mas o
+      # custo era a primeira implantação não subir.
+      #
+      # Agora: se a variável não vier, o primeiro boot **gera 256 bits** e
+      # grava no volume `segredos`. Se vier, o valor do operador manda.
+      #
+      # Deixar vazio aqui é o caminho normal. Definir só é necessário para
+      # migrar de uma instalação antiga ou para rotacionar.
+      JWT_SECRET: ${JWT_SECRET:-}
+      QR_HMAC_SECRET: ${QR_HMAC_SECRET:-}
+      # Pasta onde os segredos gerados são guardados. Sem o volume abaixo, um
+      # segredo novo nasceria a cada recriação do container — e então todos os
+      # logins caem e todas as etiquetas QR impressas param de validar.
+      NEXUS_SEGREDOS_DIR: /app/segredos
+
       # Aceita segredos antigos de QR, para não invalidar etiquetas já coladas.
       QR_HMAC_SECRETS_ANTERIORES: ${QR_HMAC_SECRETS_ANTERIORES:-}
       QR_EXIGIR_ASSINATURA: ${QR_EXIGIR_ASSINATURA:-true}
@@ -85,7 +103,7 @@ services:
       # Guarde num cofre separado. Para girar sem perder o legado:
       #   NEXUS_CHAVE_LICENCAS_V1     = <a chave antiga>
       #   NEXUS_CHAVE_LICENCAS_VERSAO = 2
-      NEXUS_CHAVE_LICENCAS: ${NEXUS_CHAVE_LICENCAS:?defina a chave mestra das licenças}
+      NEXUS_CHAVE_LICENCAS: ${NEXUS_CHAVE_LICENCAS:-}
       NEXUS_CHAVE_LICENCAS_VERSAO: ${NEXUS_CHAVE_LICENCAS_VERSAO:-1}
     volumes:
       # Fotos, termos e anexos. NUNCA remova este volume.
@@ -94,6 +112,13 @@ services:
       # do compartilhamento já montado no host, ex.:
       #   - /mnt/backups/estoque:/app/backups
       - backups:/app/backups
+      # Segredos gerados no primeiro boot (JWT, QR, chave mestra).
+      #
+      # NUNCA remova este volume depois de haver etiquetas impressas e
+      # licenças cadastradas. Perdê-lo gera segredos novos, e com eles:
+      # todos os logins caem, todas as etiquetas QR param de validar, e as
+      # chaves de licença ficam IRRECUPERÁVEIS.
+      - segredos:/app/segredos
     ports:
       # Host : Container. Os dois lados precisam bater com o `--port` do
       # Dockerfile. Quando divergiram (aqui 5000, lá 8000), o Docker publicou
@@ -106,3 +131,7 @@ volumes:
   pgdata:
   media:
   backups:
+  # Segredos gerados no primeiro boot. Ver o comentário em `volumes:` do
+  # serviço da API — perder este volume invalida logins, etiquetas e
+  # licenças.
+  segredos:

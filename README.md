@@ -137,14 +137,21 @@ quem revelou e quando.
 
 ## Como começar
 
-**Instalação em um comando** (Windows):
+**Instalação com Docker** (o único caminho suportado):
 
-```
-run.bat
+```bash
+docker compose up -d
 ```
 
-O sistema sobe, cria a base e exibe o endereço de acesso. No primeiro acesso,
-use o usuário administrador e **troque a senha** — o sistema pede.
+O sistema sobe, cria a base e publica a API na porta definida em `API_PORT`
+(padrão **4545**). No primeiro acesso, use o usuário administrador e **troque
+a senha** — o sistema pede.
+
+> Os antigos `run.bat`, `run.ps1`, `run.sh` e `run-servidor.ps1` foram
+> **removidos**. Existiam para rodar a aplicação direto no Windows, e
+> divergiam do container — instalavam dependências que a imagem não tinha, e
+> o resultado era "funciona na máquina de quem desenvolve, falha no servidor".
+> Uma forma de rodar é mais fácil de manter que duas.
 
 **Primeiros passos depois de entrar:**
 

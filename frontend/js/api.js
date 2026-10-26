@@ -44,13 +44,49 @@ export const api = {
     if (body !== undefined) headers["Content-Type"] = "application/json";
     if (state.access) headers["Authorization"] = "Bearer " + state.access;
 
+    // Prazo para a resposta.
+    //
+    // ## Por que existe
+    //
+    // Uma requisição que nunca responde deixava a tela **carregando para
+    // sempre** — o esqueleto animado ficava na tela e não havia erro, nem
+    // pista. Acontece quando o servidor está sem conexão livre no pool, ou
+    // preso numa consulta lenta: o `fetch` fica pendurado e o `catch` do
+    // chamador nunca roda.
+    //
+    // Com prazo, o mesmo problema vira uma mensagem: "o servidor não
+    // respondeu em 30s". É diagnóstico, e não silêncio.
+    //
+    // 30s é folgado de propósito: relatório grande e exportação de PDF
+    // passam perto disso, e um prazo curto quebraria operação legítima.
+    const PRAZO_MS = 30000;
+    const controle = new AbortController();
+    const relogio = setTimeout(() => controle.abort(), PRAZO_MS);
+
     let res;
     try {
-      res = await fetch(url, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
-    } catch {
+      res = await fetch(url, {
+        method,
+        headers,
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+        signal: controle.signal,
+      });
+    } catch (e) {
+      // Abortado pelo prazo é diferente de rede caindo: o servidor pode ter
+      // recebido o pedido. Não enfileira para reenvio.
+      if (e && e.name === "AbortError") {
+        throw new ApiError(
+          0,
+          `O servidor não respondeu em ${PRAZO_MS / 1000}s. `
+          + "Pode estar processando algo pesado, ou sem conexão livre no banco. "
+          + "Tente de novo em instantes.",
+        );
+      }
       // Offline: fila a escrita para reenvio posterior.
       if (method !== "GET") await enqueue(method, path, body);
       throw new ApiError(0, "Sem conexão com o servidor");
+    } finally {
+      clearTimeout(relogio);
     }
 
     // 401 → tenta refresh uma vez e repete a requisição.

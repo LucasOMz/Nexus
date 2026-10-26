@@ -26,7 +26,6 @@ import logging
 import threading
 
 from app.config import settings
-from app.database import SessionLocal
 from app.services import notificacoes_email
 
 log = logging.getLogger("app.notificacoes")
@@ -49,8 +48,48 @@ def _intervalo() -> int:
 def _laco() -> None:
     log.info("E-mail: agendador iniciado (verificação a cada %ss)", _intervalo())
 
+    # --- Engine PRÓPRIA, e não a da aplicação -----------------------------
+    #
+    # ## O estrago que isto evita
+    #
+    # O engine da aplicação usa o pool padrão do SQLAlchemy: 5 conexões mais
+    # 10 de reserva. Este laço roda a cada cinco minutos, e a coleta pode
+    # levar segundos — há instalações com milhares de suprimentos abaixo do
+    # mínimo, e cada um gera consultas de destinatário e de "já enviei".
+    #
+    # Compartilhando o pool, uma rodada longa segura uma conexão enquanto as
+    # requisições da tela esperam. O sintoma **não é erro**: é a tela
+    # carregando para sempre, porque o `fetch` fica pendurado até o pool
+    # liberar. Foi o que se viu na aba de notificações.
+    #
+    # Com engine própria e `NullPool`, cada ciclo abre e fecha a sua conexão,
+    # e nunca compete com quem está atendendo o navegador.
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import NullPool
+
+    from app.config import settings
+
+    try:
+        engine_propria = create_engine(
+            settings.database_url,
+            poolclass=NullPool,
+            pool_pre_ping=True,
+            future=True,
+        )
+        sessao = sessionmaker(
+            bind=engine_propria,
+            autoflush=False,
+            autocommit=False,
+            expire_on_commit=False,
+            future=True,
+        )
+    except Exception:
+        log.exception("E-mail: não foi possível criar a conexão do agendador")
+        return
+
     while not _parar.wait(_intervalo()):
-        db = SessionLocal()
+        db = sessao()
         try:
             resultado = notificacoes_email.despachar(db)
             if resultado.enviados or resultado.falhas:
@@ -64,6 +103,8 @@ def _laco() -> None:
             log.exception("E-mail: falha no ciclo de envio")
         finally:
             db.close()
+
+    engine_propria.dispose()
 
 
 def iniciar() -> None:

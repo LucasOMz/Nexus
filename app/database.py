@@ -192,6 +192,20 @@ def init_db() -> None:
     if indices:
         logging.getLogger("app").info("Índices criados automaticamente: %s", ", ".join(indices))
 
+    # Valores novos em enum do PostgreSQL.
+    #
+    # `create_all` cria o TIPO, mas **não acrescenta valores** a um tipo que já
+    # existe. Como o enum é gerado do modelo Python, um valor novo no código
+    # (foi o caso de `tinta` em `tiposuprimento`) alcança instalação nova e não
+    # alcança a que já está rodando — e aí gravar ou ler aquele valor falha no
+    # PostgreSQL, com o banco certo e o código certo.
+    #
+    # Roda depois do create_all de propósito: em banco novo o tipo já nasce
+    # completo, e a verificação não encontra nada a fazer.
+    valores = _adicionar_valores_enum_faltantes(engine)
+    if valores:
+        logging.getLogger("app").info("Valores de enum adicionados: %s", ", ".join(valores))
+
     # Estatísticas do planejador. Medido com 50 mil ativos: sem ANALYZE o banco
     # escolhe planos ruins e os relatórios ficam ~3x mais lentos, mesmo com os
     # índices certos. Roda só quando algo mudou (índices novos ou banco novo).
@@ -248,3 +262,94 @@ def init_db() -> None:
                 )
             )
         db.commit()
+
+
+def _adicionar_valores_enum_faltantes(engine) -> list[str]:
+    """Acrescenta ao PostgreSQL valores de enum que só existem no código.
+
+    ## O problema que isto resolve
+
+    `create_all` **cria** um tipo enum, mas **nunca acrescenta valores** a um
+    tipo que já existe. Como o enum é declarado no modelo Python, um valor
+    novo no código alcança quem instala do zero e **não** alcança quem já está
+    rodando — o caso de toda atualização.
+
+    Foi o que aconteceu com `tinta` em `tiposuprimento`: 8.355 registros
+    usavam o valor, o enum Python passou a reconhecê-lo, e o PostgreSQL da
+    instalação existente continuava recusando gravar e ler.
+
+    ## Por que no boot, e não numa migração
+
+    Está no mesmo lugar das colunas e dos índices faltantes, pela mesma razão:
+    a alternativa é pedir ao operador um comando de banco a cada valor novo.
+    Num sistema com Alembic consolidado, isto pertenceria à migração — e o
+    comentário do `init_db` já registra essa recomendação.
+
+    ## Autocommit é obrigatório
+
+    `ALTER TYPE ... ADD VALUE` não pode rodar dentro de um bloco de transação
+    no PostgreSQL até a versão 12. Com a conexão em `AUTOCOMMIT`, funciona em
+    todas.
+    """
+    if engine.dialect.name != "postgresql":
+        # SQLite guarda enum como texto: não há tipo a alterar.
+        return []
+
+    try:
+        from sqlalchemy import Enum as SAEnum
+        from sqlalchemy import text
+
+        from app.models import Base
+    except Exception:  # pragma: no cover - import já feito por quem chamou
+        return []
+
+    # Tipos declarados no metadata, com os valores que o código espera.
+    esperados: dict[str, set[str]] = {}
+    for tabela in Base.metadata.tables.values():
+        for coluna in tabela.columns:
+            tipo = coluna.type
+            if not isinstance(tipo, SAEnum) or not tipo.name or not tipo.enums:
+                continue
+            esperados.setdefault(tipo.name, set()).update(tipo.enums)
+
+    if not esperados:
+        return []
+
+    feitos: list[str] = []
+    conn = engine.connect()
+    try:
+        conn = conn.execution_options(isolation_level="AUTOCOMMIT")
+
+        existentes: dict[str, set[str]] = {}
+        linhas = conn.execute(text(
+            "SELECT t.typname, e.enumlabel "
+            "FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid"
+        )).all()
+        for typname, label in linhas:
+            existentes.setdefault(typname, set()).add(label)
+
+        for nome, valores in esperados.items():
+            atuais = existentes.get(nome)
+            if atuais is None:
+                # O tipo não existe: o `create_all` já o criou completo, ou
+                # não há nada a fazer aqui.
+                continue
+            for valor in sorted(valores - atuais):
+                try:
+                    # O valor entra por literal: `ALTER TYPE` não aceita
+                    # parâmetro vinculado. Vem do metadata, não de entrada
+                    # do usuário — mas ainda assim é escapado.
+                    seguro = valor.replace("'", "''")
+                    conn.execute(text(f"ALTER TYPE {nome} ADD VALUE '{seguro}'"))
+                    feitos.append(f"{nome}.{valor}")
+                except Exception:
+                    # Já existe (corrida entre réplicas) ou sem permissão.
+                    # Não interrompe o boot: os outros valores continuam.
+                    continue
+    except Exception:
+        # Falha ao inspecionar não pode impedir a aplicação de subir.
+        return feitos
+    finally:
+        conn.close()
+
+    return feitos
