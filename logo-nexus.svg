@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1396" height="1276" viewBox="-50 -30 1396 1276" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">N com anel orbital verde</title>
+  <desc id="desc">Letra N verde com cantos arredondados e anel elíptico inclinado, em fundo transparente.</desc>
+  <defs>
+    <linearGradient id="letter" x1="350" y1="165" x2="790" y2="1080" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#53F52C"/>
+      <stop offset=".4" stop-color="#08BC48"/>
+      <stop offset="1" stop-color="#005B40"/>
+    </linearGradient>
+    <linearGradient id="rear" x1="200" y1="830" x2="1090" y2="290" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#21DD37"/>
+      <stop offset=".5" stop-color="#008343"/>
+      <stop offset="1" stop-color="#16C942"/>
+    </linearGradient>
+    <linearGradient id="front" x1="60" y1="840" x2="1220" y2="450" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8CFC42"/>
+      <stop offset=".35" stop-color="#21E83B"/>
+      <stop offset=".72" stop-color="#A8FC48"/>
+      <stop offset="1" stop-color="#C2FF55"/>
+    </linearGradient>
+  </defs>
+  <!-- A closed ellipse keeps both ends continuous; the lower arc crosses the N. -->
+  <ellipse cx="648" cy="607" rx="655" ry="206" transform="rotate(-24 648 607)" stroke="url(#rear)" stroke-width="44"/>
+  <path d="M 206,974 V 255 Q 206,166 295,166 H 367 Q 399,166 424,196 L 834,674 V 200 Q 834,166 869,166 H 1000 Q 1088,166 1088,254 V 968 Q 1088,1055 1000,1055 H 947 Q 908,1055 881,1024 L 460,534 V 1017 Q 460,1055 422,1055 H 294 Q 206,1055 206,974 Z" fill="url(#letter)"/>
+  <path d="M 49.6277,873.4125 A 655,206 -24 0 0 1246.3723,340.5875" stroke="url(#front)" stroke-width="44" stroke-linecap="round"/>
+</svg>

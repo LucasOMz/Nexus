@@ -52,6 +52,23 @@ DIAS_CONTRATO = 30
 
 FREQUENCIAS = ("imediata", "diaria", "semanal")
 
+# Teto de e-mails por ciclo.
+#
+# ## Por que existe
+#
+# Na primeira execução com o SMTP ligado, **todos** os avisos acumulados
+# disparam de uma vez. Na base atual há 8.827 suprimentos abaixo do mínimo —
+# seriam 8.827 e-mails numa única rodada.
+#
+# O limite não é cosmético: além de inundar a caixa de entrada, servidores
+# SMTP aplicam throttle e passam a **recusar** a conexão depois de algumas
+# dezenas por minuto. O resultado seria uma pilha de falhas, e o sistema
+# pareceria quebrado.
+#
+# O que passa do teto **não se perde**: fica sem registro em `emails_enviados`
+# e é enviado nos ciclos seguintes.
+MAXIMO_POR_CICLO = 50
+
 
 # ---------------------------------------------------------------------------
 # Catálogo
@@ -590,6 +607,16 @@ def despachar(db: Session, agora: datetime | None = None) -> Resultado:
         meta = CATALOGO.get(evento.chave)
         if meta is None:
             continue
+
+        # Teto por ciclo: a primeira execução com SMTP ligado dispara tudo o
+        # que estava acumulado. O que passa do limite não se perde — sem
+        # registro em `emails_enviados`, volta no próximo ciclo.
+        if resultado.enviados >= MAXIMO_POR_CICLO:
+            resultado.detalhes.append(
+                f"Teto de {MAXIMO_POR_CICLO} e-mails por ciclo atingido; "
+                "o restante segue nos próximos ciclos."
+            )
+            break
 
         for usuario in _usuarios_elegiveis(db, evento):
             pref = _preferencia(db, usuario.id, evento.chave)

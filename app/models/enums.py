@@ -67,8 +67,26 @@ class Conectividade(StrEnum):
 
 
 class TipoSuprimento(StrEnum):
+    """Tipo de suprimento de impressão.
+
+    ## `TINTA` faltava, e o banco já tinha 8.355 registros
+
+    A lista ia de toner a papel e tratava tinta como "outro". Só que
+    impressora de tinta existe, e o gerador de amostra — escrito depois —
+    gravou `tinta` direto. O resultado: qualquer consulta que lesse essas
+    linhas levantava
+
+        LookupError: 'tinta' is not among the defined enum values
+
+    e **derrubava a leitura inteira**, não só a linha ruim — porque o
+    SQLAlchemy converte o enum ao montar o resultado.
+
+    Um tipo que existe no parque e não no enum é o enum que está errado.
+    """
+
     TONER = "toner"
     CARTUCHO = "cartucho"
+    TINTA = "tinta"
     FITA = "fita"
     CILINDRO = "cilindro"
     PAPEL = "papel"

@@ -44,6 +44,12 @@ from app.models.enums import (
     TipoSuprimento,
 )
 from app.models.impressora import AtivoImpressora, LeituraContador, SuprimentoImpressora
+from app.models.notificacao import (
+    ConfiguracaoSMTP,
+    EmailEnviado,
+    PreferenciaNotificacao,
+    TemplateNotificacao,
+)
 from app.models.ocs import ConfiguracaoOCS, SincronizacaoOCS
 from app.models.software import (
     AtribuicaoLicenca,
@@ -64,6 +70,10 @@ __all__ = [
     "Categoria",
     "Conectividade",
     "ConfiguracaoSistema",
+    "ConfiguracaoSMTP",
+    "EmailEnviado",
+    "PreferenciaNotificacao",
+    "TemplateNotificacao",
     "ChecklistItem",
     "Emprestimo",
     "EmprestimoItem",
