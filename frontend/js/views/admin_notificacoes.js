@@ -65,7 +65,19 @@ export async function renderNotificacoes(root, opcoes = {}) {
 
   async function despachar() {
     alvo.innerHTML = "";
-    alvo.append(skeleton(3));
+
+    // ## O esqueleto precisa sair quando a seção chega
+    //
+    // As funções de seção **acrescentam** o conteúdo ao container — elas não
+    // substituem. Como o esqueleto era acrescentado antes e nunca removido,
+    // ele ficava **acima** do formulário já carregado: a tela mostrava o
+    // SMTP completo e, em cima, uma caixa animando para sempre.
+    //
+    // Removê-lo no `finally` cobre os dois caminhos: sucesso (o conteúdo
+    // entrou) e erro (o `catch` já limpou, e o `remove` não encontra nada).
+    const carregando = skeleton(3);
+    alvo.append(carregando);
+
     try {
       if (ativa === ABA_SERVIDOR) await secaoServidor(alvo);
       else if (ativa === ABA_MODELOS) await secaoModelos(alvo);
@@ -74,6 +86,8 @@ export async function renderNotificacoes(root, opcoes = {}) {
     } catch (e) {
       alvo.innerHTML = "";
       alvo.append(el("p", { class: "text-error" }, e.message));
+    } finally {
+      carregando.remove();
     }
   }
 
