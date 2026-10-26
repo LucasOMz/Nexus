@@ -58,12 +58,25 @@ class TestVisualizacao:
         assert "DATABASE_URL" in d["como_alterar"]
         assert "reiniciado" in d["como_alterar"]
 
-    def test_sqlite_mostra_o_arquivo(self, client, auth_headers):
+    def test_sqlite_e_reportado_como_nao_suportado(self, client, auth_headers):
+        """A tela não mostra mais caminho nem tamanho de arquivo SQLite.
+
+        Mostrar o caminho do `estoque.db` sugeria que a opção era válida. Com
+        SQLite fora de produção, o correto é **avisar** que ele não é
+        suportado — e o guard de configuração recusa subir com ele em
+        `ENV=production`.
+
+        O teste roda no banco de teste (SQLite em memória), então o caminho
+        não existiria de qualquer forma; o que se verifica é a **mensagem**.
+        """
         d = _info(client, auth_headers)
         if d["conexao"]["tipo"] != "SQLite":
             pytest.skip("só vale para SQLite")
-        assert d["sqlite"]["arquivo"]
-        assert "tamanho_legivel" in d["sqlite"]
+
+        assert d["sqlite"]["arquivo"] is None, (
+            "a tela ainda devolve um caminho de arquivo SQLite"
+        )
+        assert "não é suportado" in (d["sqlite"].get("aviso") or "").lower()
 
 
 class TestSenhaNuncaVaza:

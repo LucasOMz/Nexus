@@ -5,7 +5,7 @@ Le a imagem da raiz e escreve os tamanhos que o site usa:
   frontend/icons/favicon-64.png     atalho de alta densidade
   frontend/icons/icon-192.png       PWA (Android)
   frontend/icons/icon-512.png       PWA (tela de instalacao / iOS)
-  frontend/icons/logo-256.png       tela do assistente de instalacao
+  frontend/icons/logo-256.png       icone do PWA
 """
 from __future__ import annotations
 

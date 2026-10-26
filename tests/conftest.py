@@ -5,6 +5,12 @@ import os
 import tempfile
 
 # Configura o ambiente de teste ANTES de importar a aplicação.
+#
+# `ENV=development` é obrigatório aqui: a configuração recusa SQLite quando
+# `ENV=production` (o `.env` do projeto define production). A suíte roda em
+# SQLite na memória, e o teste é justamente um contexto de desenvolvimento —
+# sem esta linha, o guarda de produção derruba a coleta inteira.
+os.environ["ENV"] = "development"
 os.environ["DATABASE_URL"] = "sqlite://"
 os.environ["JWT_SECRET"] = "teste-jwt-secret-super-seguro-32-bytes-ou-mais"
 os.environ["QR_HMAC_SECRET"] = "teste-qr-hmac-super-seguro-32-bytes-ou-mais"
@@ -22,24 +28,6 @@ from sqlalchemy.pool import StaticPool
 from app.config import settings
 from app.core.security import create_access_token, hash_password
 from app.database import get_db
-
-# Os testes exercitam o SISTEMA, não o assistente de configuração.
-#
-# O modo é decidido quando `app.main` é importado, olhando o marcador
-# `.instalado` e — na falta dele — se o banco já tem estrutura. Numa máquina
-# recém-zerada (sem banco, sem marcador) o sistema subiria em modo setup e as
-# rotas da API nem existiriam, fazendo a suíte inteira falhar com
-# "Method Not Allowed".
-#
-# A correção é aqui, e não no app: em produção a decisão pelo marcador está
-# certa. Nos testes queremos sempre o sistema completo. Precisa vir ANTES de
-# `app.main` ser importado (o que acontece dentro da fixture `client`).
-from app.setup import estado as _estado_setup  # noqa: E402
-
-# Guardamos a implementação real: os testes do assistente precisam dela.
-# (`tests/test_setup_inicial.py` usa `INSTALADO_REAL`.)
-INSTALADO_REAL = _estado_setup.instalado  # noqa: E402
-_estado_setup.instalado = lambda: True  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import Base  # noqa: E402
 from app.models.core import Planta, Usuario  # noqa: E402

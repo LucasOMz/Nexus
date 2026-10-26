@@ -14,7 +14,6 @@ A senha **nunca** é devolvida, nem mascarada parcialmente: só se ela existe.
 """
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from fastapi import APIRouter, Depends
@@ -69,18 +68,23 @@ def _url_mascarada() -> dict[str, Any]:
 
 
 def _info_sqlite() -> dict[str, Any]:
-    from app.database import caminho_sqlite
+    """Removido: a tela não oferece mais SQLite.
 
-    caminho = caminho_sqlite()
-    existe = bool(caminho and os.path.exists(caminho))
-    tamanho = os.path.getsize(caminho) if existe else 0
+    Existia para mostrar o caminho, tamanho e existência do arquivo
+    `estoque.db`. Com SQLite fora de produção, a informação deixou de ter uso
+    — e mostrá-la sugeria que a opção era válida.
 
+    Mantido como stub porque `_situacao` ainda pode encontrar um banco antigo
+    em SQLite (instalação anterior): nesse caso ele **informa o estado**, e a
+    configuração recusa subir em produção.
+    """
     return {
-        "arquivo": caminho,
-        "absoluto": os.path.abspath(caminho) if caminho else None,
-        "existe": existe,
-        "tamanho_bytes": tamanho,
-        "tamanho_legivel": _legivel(tamanho),
+        "arquivo": None,
+        "absoluto": None,
+        "existe": False,
+        "tamanho_bytes": 0,
+        "tamanho_legivel": "0 B",
+        "aviso": "SQLite não é suportado. Migre para PostgreSQL.",
     }
 
 

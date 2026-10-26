@@ -52,7 +52,16 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-estoque}:${POSTGRES_PASSWORD:-estoque}@db:5432/${POSTGRES_DB:-estoque}
+      # --- Banco de dados ------------------------------------------------
+      #
+      # A linha antiga calculava a URL **sempre** a partir dos POSTGRES_*, então
+      # definir DATABASE_URL no stack não tinha efeito nenhum — quem tentava
+      # apontar para um PostgreSQL externo continuava no banco do compose, sem
+      # erro e sem pista.
+      #
+      # Agora: se DATABASE_URL vier definido, ele manda. Senão, monta a partir
+      # dos POSTGRES_* (o banco do compose).
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://${POSTGRES_USER:-estoque}:${POSTGRES_PASSWORD:-estoque}@db:5432/${POSTGRES_DB:-estoque}}
 
       # --- Segredos ------------------------------------------------------
       #
@@ -78,14 +87,6 @@ services:
       QR_EXIGIR_ASSINATURA: ${QR_EXIGIR_ASSINATURA:-true}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://seu-dominio.com}
       ENV: production
-      # Declara que a configuracao vem do ambiente (este compose), e NAO do
-      # assistente de primeiro acesso.
-      #
-      # Sem isto, o assistente abria mesmo com tudo configurado aqui: ele
-      # grava .env e .instalado em /app, que NAO e volume — os dois somem a
-      # cada recriacao — e as variaveis deste compose vencem o .env de
-      # qualquer forma. Resultado: coletava as escolhas e nenhuma valia.
-      NEXUS_CONFIG_POR_AMBIENTE: 1
       AUTO_CREATE_TABLES: "true"
       PRINT_AGENT_URL: ${PRINT_AGENT_URL:-http://raspberry:9100}
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@empresa.com}

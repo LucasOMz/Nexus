@@ -8,7 +8,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Annotated
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -142,6 +142,42 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return self.cors_origins
+
+    @property
+    def eh_sqlite(self) -> bool:
+        return self.database_url.startswith("sqlite")
+
+    @model_validator(mode="after")
+    def _recusar_sqlite_em_producao(self):
+        """SQLite não sobe em produção. Falha no boot, com o motivo.
+
+        ## Por que uma guarda, e não só remover o suporte
+
+        O SQLite continua existindo por baixo **para os testes** — a suíte
+        inteira roda em `sqlite://` na memória, e trocá-la por PostgreSQL
+        exigiria um banco de pé no CI, mais lento e mais frágil.
+
+        O que não pode existir é **SQLite em produção**, e por um motivo
+        concreto: dentro de um container o arquivo fica na camada efêmera.
+        Recriar o container **apaga** ativos, usuários, fotos e histórico —
+        sem erro, sem log, sem aviso. A pessoa descobre semanas depois.
+
+        ## Por que falhar no boot
+
+        A alternativa seria um aviso. Aviso em log de container ninguém lê.
+        Falhar na subida obriga a corrigir **antes** de perder dado.
+
+        `ENV=production` é o que separa os dois mundos. O compose já define.
+        """
+        if self.eh_sqlite and (self.env or "").lower() == "production":
+            raise ValueError(
+                "DATABASE_URL aponta para SQLite, mas ENV=production. "
+                "Em container, o arquivo do SQLite vive na camada efêmera: "
+                "recriar o container apaga todos os dados. "
+                "Use DATABASE_URL=postgresql+psycopg://usuario:senha@host:5432/banco "
+                "— ou, se a intenção for mesmo SQLite, defina ENV=development."
+            )
+        return self
 
     @property
     def segredos_qr(self) -> list[str]:

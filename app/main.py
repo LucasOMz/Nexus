@@ -68,21 +68,7 @@ from app.routers import (
     print as print_router,
 )
 from app.services import notificacoes_agendador, ocs_agendador
-from app.setup import estado as setup_estado
 
-# O sistema tem DOIS modos, decididos por um arquivo marcador (ver
-# app/setup/estado.py). Sem ele, só o assistente responde -- é o que permite
-# configurar o banco antes de o sistema depender de um.
-INSTALADO = setup_estado.instalado()
-
-
-
-
-def _montar_pagina_setup(instancia) -> None:
-    """Liga a página do assistente (import tardio: só existe em modo setup)."""
-    from app.setup.pagina import montar
-
-    montar(instancia, FRONTEND_DIR)
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
 # ---------------------------------------------------------------------------
@@ -99,7 +85,7 @@ log = logging.getLogger("app")
 async def lifespan(_app: FastAPI):
     # Em modo setup NÃO se toca no banco: o assistente trabalha com uma
     # conexão própria e temporária, e a troca vale no próximo início.
-    if INSTALADO and settings.auto_create_tables:
+    if settings.auto_create_tables:
         init_db()
 
     # --- Sincronização automática com o OCS ---------------------------
@@ -124,7 +110,7 @@ async def lifespan(_app: FastAPI):
     # o sistema.
     #
     # Desligado por padrão nos testes, para não abrir sessões paralelas.
-    if INSTALADO and settings.scheduler_ativo:
+    if settings.scheduler_ativo:
         try:
             ocs_agendador.iniciar()
         except Exception as exc:  # noqa: BLE001
@@ -293,66 +279,55 @@ def health() -> JSONResponse:
 
 
 # ---------------------------------------------------------------------------
-if INSTALADO:
 # Routers da API v1.
 # ---------------------------------------------------------------------------
-    API = "/api/v1"
+API = "/api/v1"
 # `require_module` protege o módulo inteiro; o frontend respeita as mesmas chaves.
-    app.include_router(auth.router, prefix=API)
-    app.include_router(cadastros.router, prefix=API)
-    app.include_router(dashboard.router, prefix=API)
-    app.include_router(produtos.router, prefix=API, dependencies=[Depends(require_module("produtos"))])
-    # Importação ANTES do router de ativos: `/ativos/importar/...` precisa
-    # casar antes de `/ativos/{ativo_id}`, senão o FastAPI tenta ler
-    # "importar" como número e devolve 422 em vez de chegar na rota certa.
-    app.include_router(importacao_ativos.router, prefix=API)
-    app.include_router(ativos.router, prefix=API)  # gate no próprio router
-    app.include_router(movimentacoes.router, prefix=API, dependencies=[Depends(require_module("movimentacoes"))])
-    app.include_router(manutencoes.router, prefix=API, dependencies=[Depends(require_module("manutencoes"))])
-    app.include_router(qrcode.router, prefix=API)
-    app.include_router(zerados.router, prefix=API)
-    app.include_router(print_router.router, prefix=API)
-    app.include_router(scanner.router, prefix=API)
-    app.include_router(contagens.router, prefix=API)
-    app.include_router(relatorios.router, prefix=API, dependencies=[Depends(require_module("relatorios"))])
-    app.include_router(graficos.router, prefix=API)
-    app.include_router(admin.router, prefix=API)
-    app.include_router(emprestimos.router, prefix=API)
-    app.include_router(etiquetas.router, prefix=API)
-    app.include_router(mfa.router, prefix=API)
-    app.include_router(monitor_impressoras.router, prefix=API)
-    app.include_router(checklist.router, prefix=API)
-    app.include_router(financeiro.router, prefix=API)
-    app.include_router(backups.router, prefix=API)
-    app.include_router(config_sistema.router, prefix=API)
-    app.include_router(auditoria.router, prefix=API)
-    app.include_router(plantas.router, prefix=API)
-    app.include_router(calendario.router, prefix=API)
-    app.include_router(notificacoes.router, prefix=API)
-    app.include_router(notificacoes_admin.router, prefix=API)
-    app.include_router(reportes.router, prefix=API)
-    app.include_router(ocs.router, prefix=API)
-    app.include_router(ocs_reconciliacao.router, prefix=API)
-    app.include_router(banco.router, prefix=API)
-    app.include_router(busca.router, prefix=API)
-    app.include_router(contratos.router, prefix=API)
-    app.include_router(lgpd.router, prefix=API)
-    app.include_router(descarte.router, prefix=API)
-    app.include_router(software.router, prefix=API)
-    app.include_router(transferencias.router, prefix=API)
+app.include_router(auth.router, prefix=API)
+app.include_router(cadastros.router, prefix=API)
+app.include_router(dashboard.router, prefix=API)
+app.include_router(produtos.router, prefix=API, dependencies=[Depends(require_module("produtos"))])
+# Importação ANTES do router de ativos: `/ativos/importar/...` precisa
+# casar antes de `/ativos/{ativo_id}`, senão o FastAPI tenta ler
+# "importar" como número e devolve 422 em vez de chegar na rota certa.
+app.include_router(importacao_ativos.router, prefix=API)
+app.include_router(ativos.router, prefix=API)  # gate no próprio router
+app.include_router(movimentacoes.router, prefix=API, dependencies=[Depends(require_module("movimentacoes"))])
+app.include_router(manutencoes.router, prefix=API, dependencies=[Depends(require_module("manutencoes"))])
+app.include_router(qrcode.router, prefix=API)
+app.include_router(zerados.router, prefix=API)
+app.include_router(print_router.router, prefix=API)
+app.include_router(scanner.router, prefix=API)
+app.include_router(contagens.router, prefix=API)
+app.include_router(relatorios.router, prefix=API, dependencies=[Depends(require_module("relatorios"))])
+app.include_router(graficos.router, prefix=API)
+app.include_router(admin.router, prefix=API)
+app.include_router(emprestimos.router, prefix=API)
+app.include_router(etiquetas.router, prefix=API)
+app.include_router(mfa.router, prefix=API)
+app.include_router(monitor_impressoras.router, prefix=API)
+app.include_router(checklist.router, prefix=API)
+app.include_router(financeiro.router, prefix=API)
+app.include_router(backups.router, prefix=API)
+app.include_router(config_sistema.router, prefix=API)
+app.include_router(auditoria.router, prefix=API)
+app.include_router(plantas.router, prefix=API)
+app.include_router(calendario.router, prefix=API)
+app.include_router(notificacoes.router, prefix=API)
+app.include_router(notificacoes_admin.router, prefix=API)
+app.include_router(reportes.router, prefix=API)
+app.include_router(ocs.router, prefix=API)
+app.include_router(ocs_reconciliacao.router, prefix=API)
+app.include_router(banco.router, prefix=API)
+app.include_router(busca.router, prefix=API)
+app.include_router(contratos.router, prefix=API)
+app.include_router(lgpd.router, prefix=API)
+app.include_router(descarte.router, prefix=API)
+app.include_router(software.router, prefix=API)
+app.include_router(transferencias.router, prefix=API)
 
 
 # ---------------------------------------------------------------------------
-
-
-else:
-    # --- Modo setup -----------------------------------------------------
-    # Só o assistente responde. Os módulos do sistema ficam de fora de
-    # propósito: nada deve poder ser usado antes de existir um banco.
-    from app.setup import rotas as setup_rotas
-
-    app.include_router(setup_rotas.router)
-    _montar_pagina_setup(app)
 
 
 # Frontend estático.

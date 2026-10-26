@@ -87,5 +87,5 @@ class TestAgendadorNaoDerrubaOBoot:
             asyncio.run(sobe())
 
         # Só conta se o agendador está ligado na configuração do teste.
-        if m.settings.scheduler_ativo and m.INSTALADO:
+        if m.settings.scheduler_ativo:
             assert chamadas == [1], "o agendador não foi chamado"
