@@ -85,7 +85,17 @@ services:
       # Aceita segredos antigos de QR, para não invalidar etiquetas já coladas.
       QR_HMAC_SECRETS_ANTERIORES: ${QR_HMAC_SECRETS_ANTERIORES:-}
       QR_EXIGIR_ASSINATURA: ${QR_EXIGIR_ASSINATURA:-true}
-      CORS_ORIGINS: ${CORS_ORIGINS:-https://seu-dominio.com}
+      # Origens permitidas (CORS). **Vazio é o normal.**
+      #
+      # O frontend é servido pela mesma aplicação que serve a API, e chama
+      # `/api/v1/...` em caminho relativo — o navegador nunca faz requisição
+      # cross-origin. Isso vale também atrás de proxy reverso: o navegador vê
+      # o domínio, o proxy encaminha para a 4545, e a origem continua a mesma.
+      #
+      # O default antigo (`https://seu-dominio.com`) era pior que vazio: não
+      # quebrava nada, mas fazia parecer que havia uma origem configurada — e
+      # quem fosse procurar por que algo era bloqueado perderia tempo ali.
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
       ENV: production
       AUTO_CREATE_TABLES: "true"
       PRINT_AGENT_URL: ${PRINT_AGENT_URL:-http://raspberry:9100}

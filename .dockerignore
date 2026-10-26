@@ -1,4 +1,4 @@
-.git
+﻿.git
 .gitignore
 .venv
 venv
@@ -12,3 +12,5 @@ __pycache__
 htmlcov
 tests
 frontend/node_modules
+# Template de importacao da stack — nao precisa entrar na imagem.
+.env.stack
