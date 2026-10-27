@@ -4,6 +4,10 @@ O que acontece quando o Nexus aponta para um banco vazio, o que ele cria
 sozinho, o que você precisa criar à mão, e o que conferir quando algo não
 bate.
 
+> **Quer só o passo a passo para subir?** Veja docs/banco-setup.md —
+> curto, na ordem em que se faz. Este documento explica o *porquê* e o
+> que fazer **depois** do primeiro acesso.
+>
 > Para **como escolher e configurar** o banco (SQLite, PostgreSQL, MySQL,
 > URL, senha com caractere especial), veja `.env.example` — a seção
 > "BANCO DE DADOS". Este documento começa **depois** disso.
