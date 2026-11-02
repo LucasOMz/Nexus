@@ -58,14 +58,57 @@ def _nome_base(motivo: str) -> str:
     return f"backup_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}_{motivo}"
 
 
+def _tabelas_com_soft_delete() -> set[str]:
+    """Nomes de tabela que têm a coluna `deleted_at`.
+
+    ## Por que o resumo precisa disto
+
+    O resumo contava `select count(*) from {tabela}` — **incluindo as linhas
+    excluídas**. Quem apagou 5 das 8 fotos via o backup dizer "8 fotos": o
+    número certo para quem olha a tela é **3**, e o backup parecia não ter
+    capturado a exclusão.
+
+    O dump **continua** trazendo as excluídas (é uma foto fiel, e restaurar
+    deve devolver o estado exato, inclusive as marcas de exclusão). O que
+    estava errado era o **número mostrado**.
+
+    ## Por que consultar o schema, e não uma lista fixa
+
+    Uma lista à mão ficaria desatualizada na primeira tabela nova com soft
+    delete — e o erro voltaria em silêncio.
+    """
+    try:
+        saida = subprocess.run(
+            ["psql", "-tAc",
+             "select table_name from information_schema.columns "
+             "where column_name = 'deleted_at' and table_schema = 'public'"],
+            capture_output=True, text=True, timeout=30, env=_pg_env(),
+        )
+        if saida.returncode == 0:
+            return {linha.strip() for linha in saida.stdout.splitlines() if linha.strip()}
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return set()
+
+
 def _resumo_sqlite(caminho: str) -> dict[str, int]:
     resumo: dict[str, int] = {}
     con = sqlite3.connect(caminho)
     try:
         nomes = {r[0] for r in con.execute("select name from sqlite_master where type='table'")}
         for tabela in _TABELAS_RESUMO:
-            if tabela in nomes:
-                resumo[tabela] = con.execute(f"select count(*) from {tabela}").fetchone()[0]  # noqa: S608
+            if tabela not in nomes:
+                continue
+            # Só as vivas: é o número que a tela mostra, e é o que a pessoa
+            # espera ver no resumo do backup.
+            tem_soft = any(
+                r[1] == "deleted_at"
+                for r in con.execute(f"pragma table_info({tabela})")  # noqa: S608
+            )
+            filtro = " where deleted_at is null" if tem_soft else ""
+            resumo[tabela] = con.execute(
+                f"select count(*) from {tabela}{filtro}"  # noqa: S608
+            ).fetchone()[0]
     except sqlite3.Error:
         pass
     finally:
@@ -95,10 +138,14 @@ def _pg_env() -> dict[str, str]:
 
 def _resumo_postgres() -> dict[str, int]:
     resumo: dict[str, int] = {}
+    com_soft = _tabelas_com_soft_delete()
     for tabela in _TABELAS_RESUMO:
         try:
+            # Só as vivas — o dump traz as excluídas, mas o resumo é do que
+            # está em uso agora.
+            filtro = " where deleted_at is null" if tabela in com_soft else ""
             saida = subprocess.run(
-                ["psql", "-tAc", f"select count(*) from {tabela}"],
+                ["psql", "-tAc", f"select count(*) from {tabela}{filtro}"],
                 capture_output=True, text=True, timeout=30, env=_pg_env(),
             )
             if saida.returncode == 0 and saida.stdout.strip().isdigit():
