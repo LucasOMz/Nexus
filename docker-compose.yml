@@ -38,7 +38,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-estoque}
       POSTGRES_DB: ${POSTGRES_DB:-estoque}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # Bind mount, e não volume nomeado. Ver a nota no topo de `volumes:`.
+      - ${NEXUS_DADOS:-./dados}/pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-estoque} -d ${POSTGRES_DB:-estoque}"]
       interval: 5s
@@ -117,19 +118,19 @@ services:
       NEXUS_CHAVE_LICENCAS: ${NEXUS_CHAVE_LICENCAS:-}
       NEXUS_CHAVE_LICENCAS_VERSAO: ${NEXUS_CHAVE_LICENCAS_VERSAO:-1}
     volumes:
-      # Fotos, termos e anexos. NUNCA remova este volume.
-      - media:/app/media
-      # Backups do banco. Para gravar em pasta de rede, troque por bind mount
-      # do compartilhamento já montado no host, ex.:
-      #   - /mnt/backups/estoque:/app/backups
-      - backups:/app/backups
+      # Bind mounts — todos sob `${NEXUS_DADOS}`. Ver a nota no fim do arquivo.
+      #
+      # Fotos, termos e anexos. NUNCA remova.
+      - ${NEXUS_DADOS:-./dados}/media:/app/media
+      # Backups do banco feitos pelo próprio Nexus.
+      - ${NEXUS_DADOS:-./dados}/backups:/app/backups
       # Segredos gerados no primeiro boot (JWT, QR, chave mestra).
       #
-      # NUNCA remova este volume depois de haver etiquetas impressas e
-      # licenças cadastradas. Perdê-lo gera segredos novos, e com eles:
-      # todos os logins caem, todas as etiquetas QR param de validar, e as
-      # chaves de licença ficam IRRECUPERÁVEIS.
-      - segredos:/app/segredos
+      # NUNCA remova depois de haver etiquetas impressas e licenças
+      # cadastradas. Perdê-lo gera segredos novos, e com eles: todos os logins
+      # caem, todas as etiquetas QR param de validar, e as chaves de licença
+      # ficam IRRECUPERÁVEIS.
+      - ${NEXUS_DADOS:-./dados}/segredos:/app/segredos
     ports:
       # Host : Container. Os dois lados precisam bater com o `--port` do
       # Dockerfile. Quando divergiram (aqui 5000, lá 8000), o Docker publicou
@@ -138,11 +139,54 @@ services:
       # `recv failure: conexão fechada pela outra ponta`.
       - "${API_PORT:-4545}:4545"
 
-volumes:
-  pgdata:
-  media:
-  backups:
-  # Segredos gerados no primeiro boot. Ver o comentário em `volumes:` do
-  # serviço da API — perder este volume invalida logins, etiquetas e
-  # licenças.
-  segredos:
+# =====================================================================
+# VOLUMES — bind mounts, não volumes nomeados
+# =====================================================================
+#
+# ## Por que
+#
+# Volume nomeado mora em `/var/lib/docker/volumes/<nome>/_data`. Funciona,
+# mas **não é uma pasta que se copia** — o Kopia (ou rsync, ou tar) não
+# alcança o conteúdo por caminho, e o backup vira um `docker run` de volume
+# auxiliar.
+#
+# Como o backup será feito pelo Kopia, os dados vão para **pastas no host**,
+# todas sob `NEXUS_DADOS`:
+#
+#     ${NEXUS_DADOS}/pgdata     banco
+#     ${NEXUS_DADOS}/media      fotos, termos em PDF, anexos
+#     ${NEXUS_DADOS}/backups    dumps feitos pelo próprio Nexus
+#     ${NEXUS_DADOS}/segredos   JWT, chave de QR, chave de licenças
+#
+# O Kopia então faz backup de **um caminho só**: `NEXUS_DADOS`.
+#
+# ## ⚠️ Permissão do pgdata
+#
+# O PostgreSQL roda como **uid 999** dentro da imagem (usuário `postgres`).
+# Se a pasta no host pertencer a outro usuário, o banco não sobe e o log diz
+# `could not change permissions` ou `data directory has wrong ownership`.
+#
+# Antes do primeiro `up`:
+#
+#     mkdir -p "$NEXUS_DADOS"/{pgdata,media,backups,segredos}
+#     sudo chown -R 999:999 "$NEXUS_DADOS"/pgdata
+#
+# As outras três pastas são escritas pela própria aplicação, que roda como
+# root na imagem — não precisam de ajuste.
+#
+# ## ⚠️ Migrar de volumes nomeados
+#
+# Trocar de volume nomeado para bind mount **não move os dados**. Numa
+# instalação que já tem dados, é preciso copiar antes:
+#
+#     docker run --rm -v nexus_pgdata:/origem -v "$NEXUS_DADOS"/pgdata:/destino \
+#       alpine sh -c "cp -a /origem/. /destino/"
+#
+# Se você está começando do zero, não há nada a fazer.
+#
+# ## O `./dados` é um padrão para desenvolvimento
+#
+# No Portainer, o caminho relativo resolve para dentro da stack — prefira um
+# caminho absoluto, como `/srv/nexus`. O Kopia precisa de um caminho estável.
+#
+# Não há mais bloco `volumes:` no fim deste arquivo: nada de volume nomeado.

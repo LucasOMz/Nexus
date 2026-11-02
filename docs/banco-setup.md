@@ -46,7 +46,40 @@ psql "postgresql://nexus:senha@10.0.0.50:5432/nexus" -c "select 1;"
 
 ---
 
-## 2. No Portainer: variáveis da stack
+## 2. No servidor: criar as pastas de dados
+
+Os dados ficam em **pastas no host**, não em volume nomeado — é o que permite
+o Kopia (ou rsync, ou tar) fazer backup por caminho.
+
+Tudo mora sob **`NEXUS_DADOS`**:
+
+```
+/srv/nexus/pgdata     banco
+/srv/nexus/media      fotos, termos em PDF, anexos
+/srv/nexus/backups    dumps feitos pelo próprio Nexus
+/srv/nexus/segredos   JWT, chave de QR, chave de licenças
+```
+
+**Antes do primeiro deploy:**
+
+```bash
+sudo mkdir -p /srv/nexus/{pgdata,media,backups,segredos}
+sudo chown -R 999:999 /srv/nexus/pgdata
+```
+
+> **O `chown` não é opcional.** O PostgreSQL roda como **uid 999** dentro da
+> imagem. Sem ele o banco não sobe, e o log diz `data directory has wrong
+> ownership` — mensagem que não menciona permissão de pasta do host.
+
+**As outras três pastas não precisam de ajuste**: a aplicação roda como root
+na imagem.
+
+**No Kopia**, aponte o backup para **`/srv/nexus`** — um caminho só cobre
+banco, mídia, backups e segredos.
+
+---
+
+## 3. No Portainer: variáveis da stack
 
 **Stacks → sua stack → Environment variables → Advanced mode**
 
@@ -62,6 +95,10 @@ SEED_ADMIN_PASSWORD=SENHA-DO-ADMIN
 ```
 
 **Só isso.** `DATABASE_URL` vazio faz o compose montar a conexão.
+
+`NEXUS_DADOS` também precisa estar definido — é onde os dados ficam no host,
+e o caminho que o Kopia vai encontrar. Use o mesmo da seção 2
+(`/srv/nexus`).
 
 ### Cenário B — banco externo
 
@@ -95,7 +132,7 @@ Arquivo pronto para colar: **`.env.stack`**
 
 ---
 
-## 3. Deploy e conferência
+## 4. Deploy e conferência
 
 **Deploy the stack.** Depois, três checagens:
 
@@ -125,7 +162,7 @@ O sistema **força a troca de senha** no primeiro acesso.
 
 ---
 
-## 4. Se não subir
+## 5. Se não subir
 
 | Mensagem no log | Causa | Correção |
 |---|---|---|
@@ -139,7 +176,7 @@ O sistema **força a troca de senha** no primeiro acesso.
 
 ---
 
-## 5. Trocar a senha do banco depois
+## 6. Trocar a senha do banco depois
 
 **A senha real fica no banco, não na variável.** Mudar só a variável quebra a
 conexão.
