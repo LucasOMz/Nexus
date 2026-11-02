@@ -31,7 +31,20 @@
 # =====================================================================
 services:
   db:
-    image: postgres:16-alpine
+    # PostgreSQL 15 — **não 16**, e o motivo é o `pg_dump`.
+    #
+    # A imagem da API é `python:3.12-slim` (Debian bookworm), que traz o
+    # cliente `pg_dump` versão 15. O `pg_dump` **recusa** servidor mais novo
+    # que ele:
+    #
+    #     pg_dump: error: server version: 16.x; pg_dump version: 15.x
+    #
+    # Com o servidor em 16, o backup falhava — e com ele a **importação de
+    # CSV** e a **exclusão em lote**, que exigem backup antes de gravar.
+    #
+    # Subir para 16 exige instalar o cliente 16 pela PGDG, não pelo pacote do
+    # Debian. Enquanto isso, 15 é o par certo: suportado até 2027.
+    image: postgres:15-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-estoque}

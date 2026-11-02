@@ -8,6 +8,32 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Cliente do PostgreSQL — o `pg_dump` do backup.
+#
+# ## Por que isto faltava, e o que custava
+#
+# `backup_service` executa `pg_dump -Fc` para gravar o dump. A imagem não
+# tinha esse binário: o processo levantava `FileNotFoundError`.
+#
+# O efeito não era só "backup não funciona":
+#
+#   * a **importação de CSV** exige backup antes, e cancelava inteira
+#   * a **exclusão em lote** exige backup antes, e cancelava
+#   * a tela de Backups nunca produziu arquivo nenhum
+#
+# E o sintoma enganava: a importação "carregava alguns segundos e não
+# importava", sem apontar para a falta de um binário do sistema.
+#
+# ## A versão precisa casar com o servidor
+#
+# `pg_dump` **recusa** servidor mais novo que ele. O Debian desta imagem
+# (bookworm) traz a 15; por isso o `docker-compose.yml` usa `postgres:15`.
+# Se um dia subir o servidor para 16, o cliente também precisa subir — e aí
+# é repositório PGDG, não o pacote do Debian.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
 # Camada de dependências (cacheável).
 COPY requirements.txt requirements-snmp.txt ./
 RUN pip install --no-cache-dir -r requirements.txt

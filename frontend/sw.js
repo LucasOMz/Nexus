@@ -11,7 +11,7 @@
    cache continua servindo como reserva quando esta offline.
    (cache-first causava o site ficar preso em uma versao antiga)
    ===================================================================== */
-const VERSION = "v208";
+const VERSION = "v209";
 const CACHE = `patrimonio-${VERSION}`;
 const CORE = ["/", "/index.html", "/styles.css", "/app.js", "/manifest.json"];
 
