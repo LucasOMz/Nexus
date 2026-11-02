@@ -195,3 +195,65 @@ class TestCadastrosGlobais:
             assert db.query(Ativo).count() == r["criados"]
         else:
             assert db.query(Ativo).count() == 0, "sobrou ativo de importação falha"
+
+class TestSerieUnica:
+    """A série é o identificador — e o índice único cobre linha excluída.
+
+    ## O erro que estes testes impedem
+
+        UniqueViolation: duplicate key value violates unique constraint
+        "ix_ativos_numero_serie"  Key (numero_serie)=(...) already exists
+
+    A validação ignorava `deleted_at`, então dizia que estava livre; o índice
+    único **não** ignora, e o INSERT estourava. Só aparecia depois de excluir
+    em lote e reimportar o mesmo arquivo.
+    """
+
+    CSV = ("\ufeffpatrimonio;dominio;tipo_item;numero_serie;modelo;marca;status\r\n"
+           "TI-1;ti;ativo;SERIAL-X;Latitude;Dell;em_uso\r\n")
+
+    def test_previa_acusa_serie_de_linha_viva(self, limpo):
+        db, planta_id = limpo
+        importar_ativos.importar(self.CSV.encode("utf-8"), db, planta_id)
+
+        a = importar_ativos.analisar(self.CSV.encode("utf-8"), db, planta_id)
+        erros = [e for linha in a.linhas for e in linha.erros]
+        assert any("série" in e for e in erros), erros
+
+    def test_reimportar_apos_excluir_funciona(self, limpo):
+        """O caso real: excluir em lote e subir o mesmo arquivo de novo."""
+        from datetime import datetime, timezone
+
+        db, planta_id = limpo
+        importar_ativos.importar(self.CSV.encode("utf-8"), db, planta_id)
+
+        ativo = db.query(Ativo).first()
+        ativo.deleted_at = datetime.now(timezone.utc)
+        db.commit()
+
+        r = importar_ativos.importar(self.CSV.encode("utf-8"), db, planta_id)
+        assert r["ok"] is True, r.get("mensagem")
+        assert r["criados"] == 1
+
+    def test_excluido_tem_o_valor_liberado(self, limpo):
+        """O detentor antigo é renomeado, não apagado.
+
+        Apagar o histórico seria pior: perde-se a rastreabilidade de quem
+        tinha aquele equipamento. O sufixo deixa claro que é registro morto.
+        """
+        from datetime import datetime, timezone
+
+        db, planta_id = limpo
+        importar_ativos.importar(self.CSV.encode("utf-8"), db, planta_id)
+
+        ativo = db.query(Ativo).first()
+        ativo.deleted_at = datetime.now(timezone.utc)
+        db.commit()
+        importar_ativos.importar(self.CSV.encode("utf-8"), db, planta_id)
+
+        morto = db.query(Ativo).filter(Ativo.deleted_at.isnot(None)).one()
+        assert morto.numero_serie.startswith("SERIAL-X")
+        assert "excluído" in morto.numero_serie, morto.numero_serie
+
+        vivo = db.query(Ativo).filter(Ativo.deleted_at.is_(None)).one()
+        assert vivo.numero_serie == "SERIAL-X"

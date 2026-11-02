@@ -318,6 +318,13 @@ def analisar(conteudo: bytes, db: Session, planta_id: int | None) -> Analise:
         .filter(Ativo.deleted_at.is_(None)).all() if p
     }
 
+    # Séries em uso por linha viva. As de linha excluída ficam de fora: o
+    # importar libera o valor antes de gravar.
+    series_existentes = {
+        s for (s,) in db.query(Ativo.numero_serie)
+        .filter(Ativo.deleted_at.is_(None)).all() if s
+    }
+
     vistos: set[str] = set()
 
     # Ids de imagem que existem — para acusar foto inexistente na PRÉVIA, e
@@ -348,6 +355,21 @@ def analisar(conteudo: bytes, db: Session, planta_id: int | None) -> Analise:
             elif patrimonio in existentes:
                 linha.erros.append(f"`{patrimonio}` já existe no sistema")
             vistos.add(patrimonio or "")
+
+            # --- número de série -------------------------------------------
+            #
+            # É **o identificador** do ativo desde que a regra mudou, e a
+            # prévia não o conferia. Resultado: a tela dizia "5.000 serão
+            # importadas" e o INSERT estourava no primeiro duplicado:
+            #
+            #     UniqueViolation: Key (numero_serie)=(...) already exists
+            #
+            # A conferência aqui é do série **de linha viva**. A que está em
+            # linha excluída não bloqueia: `importar` libera o valor
+            # renomeando o detentor (`... (excluído #N)`).
+            numero_serie_lido = _texto(col("numero_serie"))
+            if numero_serie_lido and numero_serie_lido in series_existentes:
+                linha.erros.append(f"série `{numero_serie_lido}` já existe no sistema")
 
             dominio = _enum_seguro(
                 Dominio,
@@ -641,6 +663,32 @@ def importar(conteudo: bytes, db: Session, planta_id: int | None,
             d.setdefault("tipo_item", TipoItem.ATIVO)
             d.setdefault("status", StatusAtivo.ESTOQUE)
             d["planta_id"] = exigir_planta(db, planta_id, "importar ativos")
+
+            # --- libera os valores únicos presos em linhas excluídas --------
+            #
+            # ## O erro que isto resolve
+            #
+            #     UniqueViolation: duplicate key value violates unique
+            #     constraint "ix_ativos_numero_serie"
+            #     Key (numero_serie)=(UW9KYKEML) already exists
+            #
+            # A validação (`analisar`) ignora linhas com `deleted_at`, porque
+            # um ativo excluído não deveria contar como "já existe". Mas o
+            # **índice único não ignora**: ele cobre todas as linhas, inclusive
+            # as excluídas.
+            #
+            # Resultado: a prévia dizia que estava livre, e o INSERT estourava.
+            # Foi o que aconteceu depois de excluir em lote e reimportar o
+            # mesmo arquivo.
+            #
+            # `liberar` renomeia o detentor excluído para `VALOR (excluído #id)`
+            # — o histórico continua legível, e o valor volta a estar livre.
+            from app.services import unicidade
+
+            for campo in ("numero_serie", "patrimonio"):
+                valor = d.get(campo)
+                if valor:
+                    unicidade.liberar(db, Ativo, campo, valor)
 
             ativo = Ativo(**{k: v for k, v in d.items() if hasattr(Ativo, k)})
             db.add(ativo)
