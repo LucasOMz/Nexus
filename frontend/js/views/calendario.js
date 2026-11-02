@@ -285,9 +285,17 @@ export async function renderCalendario(root) {
   );
 
   try {
-    [dados] = await Promise.all([
+    // Duas fontes: empréstimo e contrato. A agenda mostrava só empréstimo,
+    // e vencimento de contrato é compromisso com data igual — quem planeja
+    // o mês precisa ver os dois no mesmo calendário.
+    const [emp, contratos] = await Promise.all([
       api.get("/calendario/emprestimos", { inicio: iso(de), fim: iso(ate) }),
+      // Contrato é acessório: se a rota falhar, a agenda continua útil.
+      api.get("/calendario/contratos", { inicio: iso(de), fim: iso(ate) })
+        .catch(() => []),
     ]);
+    dados = emp;
+    dados.contratos = Array.isArray(contratos) ? contratos : [];
   } catch (e) {
     alvo.innerHTML = "";
     alvo.append(el("div", { class: "card" }, el("p", { class: "text-error" }, e.message)));

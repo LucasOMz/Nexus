@@ -21,18 +21,37 @@ const CORES = {
 
 function irPara(item, fechar) {
   fechar();
+
   // Aviso da integração com o OCS: abre o painel já na aba certa.
   if (item.painel === "ocs") {
     location.hash = "#/admin?aba=ocs";
     return;
   }
+
   // Transferência pendente: leva direto para a tela de decisão.
   if (item.transferencia_id) {
     location.hash = "#/movimentacoes";
     return;
   }
-  // Abre a tela de Ativos já filtrada e com o item destacado.
-  location.hash = `#/ativos?busca=${encodeURIComponent(item.patrimonio)}&destaque=${item.ativo_id}`;
+
+  // Contrato NÃO tem ativo. Antes caía no destino padrão e a busca virava
+  // a palavra "undefined" — porque `item.patrimonio` não existe e
+  // `encodeURIComponent(undefined)` produz a string `"undefined"`.
+  if (String(item.tipo || "").startsWith("contrato")) {
+    location.hash = "#/calendario";
+    return;
+  }
+
+  // Só monta a busca quando há ativo e identificador de verdade.
+  if (item.ativo_id) {
+    const busca = item.patrimonio || item.numero_serie || "";
+    location.hash = `#/ativos?busca=${encodeURIComponent(busca)}&destaque=${item.ativo_id}`;
+    return;
+  }
+
+  // Sem destino específico: a tela de avisos lista tudo e nunca é um
+  // caminho errado.
+  location.hash = "#/avisos";
 }
 
 function abrirPainel(dados, fechar) {
