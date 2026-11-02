@@ -441,7 +441,24 @@ def restaurar_backup(nome: str) -> dict[str, Any]:
                     "pg_restore ignorou parâmetros de sessão desconhecidos. "
                     "O cliente que gerou o dump é mais novo que este servidor."
                 )
-            recriar_engine()
+            # --- fecha o pool, mas NÃO reconecta ----------------------
+            #
+            # ## A diferença que custou dados invisíveis
+            #
+            # `recriar_engine()` faz dispose() E cria outra conexão.
+            # Chamado antes da troca, ele reconectava ao banco AINDA com o
+            # nome antigo — e a troca seguinte movia esse mesmo banco físico
+            # para estoque_anterior.
+            #
+            # Renomear não move conexão: as sessões abertas continuam ligadas
+            # ao mesmo banco, agora com outro nome. O app seguia lendo os
+            # dados VELHOS, com o status dizendo "restaurado".
+            #
+            # Por isso: aqui só se FECHA. A reconexão acontece depois da
+            # troca, quando o nome novo já é o certo.
+            from app.database import engine as _engine
+
+            _engine.dispose()
 
             # --- derruba as conexões antes de renomear --------------------
             #
@@ -509,6 +526,9 @@ def restaurar_backup(nome: str) -> dict[str, Any]:
                     ),
                     "backup_seguranca": seguranca,
                 }
+
+            # Agora sim: o nome estoque aponta para o banco restaurado.
+            recriar_engine()
         except (OSError, subprocess.SubprocessError) as exc:
             return {"ok": False, "mensagem": f"Falha na restauração: {exc}", "backup_seguranca": seguranca}
 
