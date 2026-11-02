@@ -333,6 +333,49 @@ def validar_backup(nome: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Restaurar
 # ---------------------------------------------------------------------------
+def _erros_graves_do_restore(stderr: str) -> list[str]:
+    """Erros do pg_restore que **não** são ruído de versão.
+
+    ## Por que isto existe
+
+    Um dump feito por cliente mais novo carrega SET de parâmetros que o
+    servidor antigo não conhece:
+
+        pg_restore: error: could not execute query: ERROR: unrecognized
+        configuration parameter "transaction_timeout"
+        Command was: SET transaction_timeout = 0;
+        pg_restore: warning: errors ignored on restore: 1
+
+    O pg_restore **já ignorou** e terminou — 	ransaction_timeout é ajuste
+    de sessão, não dado. Mas o código de saída é diferente de zero, e o
+    restore era abortado **depois de ter restaurado tudo**.
+
+    Nesse caso o usuário via "pg_restore falhou" com o banco já pronto, e a
+    próxima tentativa desperdiçava a janela de manutenção.
+
+    ## O que NÃO é ignorado
+
+    Qualquer outro pg_restore: error — tabela inexistente, permissão,
+    sintaxe. Só o parâmetro de sessão desconhecido passa, e o resto continua
+    abortando. Ignorar tudo mascararia restauração parcial, que é pior que
+    falhar.
+    """
+    IGNORAVEIS = (
+        "unrecognized configuration parameter",
+        "transaction_timeout",
+        "errors ignored on restore",
+    )
+    graves: list[str] = []
+    for linha in (stderr or "").splitlines():
+        texto = linha.strip()
+        if not texto.lower().startswith("pg_restore: error"):
+            continue
+        if any(ruido in texto.lower() for ruido in IGNORAVEIS):
+            continue
+        graves.append(texto)
+    return graves
+
+
 def restaurar_backup(nome: str) -> dict[str, Any]:
     """Restaura um backup, com backup automático do estado atual antes.
 
@@ -363,6 +406,10 @@ def restaurar_backup(nome: str) -> dict[str, Any]:
         banco = env.get("PGDATABASE", "estoque")
         banco_tmp = f"{banco}_restore"
         banco_antigo = f"{banco}_anterior"
+
+        # Avisos que não impedem a restauração mas precisam ser mostrados —
+        # ex.: dump feito por cliente mais novo que o servidor.
+        avisos: list[str] = []
         try:
             subprocess.run(["dropdb", "--if-exists", banco_tmp], capture_output=True, text=True, timeout=120, env=env)
             subprocess.run(["createdb", banco_tmp], capture_output=True, text=True, timeout=120, env=env)
@@ -371,7 +418,19 @@ def restaurar_backup(nome: str) -> dict[str, Any]:
                 capture_output=True, text=True, timeout=1800, env=env,
             )
             if rest.returncode != 0:
-                return {"ok": False, "mensagem": f"pg_restore falhou: {rest.stderr.strip()[:300]}", "backup_seguranca": seguranca}
+                graves = _erros_graves_do_restore(rest.stderr)
+                if graves:
+                    return {
+                        "ok": False,
+                        "mensagem": f"pg_restore falhou: {' | '.join(graves)[:300]}",
+                        "backup_seguranca": seguranca,
+                    }
+                # Só ruído de versão: o restore **aconteceu**. Segue, mas
+                # registra — quem restaurou precisa saber que houve aviso.
+                avisos.append(
+                    "pg_restore ignorou parâmetros de sessão desconhecidos. "
+                    "O cliente que gerou o dump é mais novo que este servidor."
+                )
             recriar_engine()  # libera as conexões do banco atual
             subprocess.run(["dropdb", "--if-exists", banco_antigo], capture_output=True, text=True, timeout=120, env=env)
             subprocess.run(["psql", "-d", "postgres", "-c", f'ALTER DATABASE "{banco}" RENAME TO "{banco_antigo}"'],
