@@ -72,7 +72,7 @@ COLUNAS: list[tuple[str, bool, str]] = [
     ("data_aquisicao", False, "Data da compra, no formato AAAA-MM-DD."),
     ("data_garantia", False, "Fim da garantia, AAAA-MM-DD."),
     ("valor", False, "Valor de compra. Use ponto como decimal: 3499.90"),
-    ("forma_aquisicao", False, "comprado, locado ou assinatura."),
+    ("forma_aquisicao", False, "comprado ou locado."),
     ("observacoes", False, "Texto livre."),
     ("foto", False, "NÚMERO da foto, como aparece no sistema. Use o id da imagem já enviada. Vazio deixa o ativo sem foto."),
     # --- ficha de TI (só quando dominio = ti) ---
@@ -84,10 +84,10 @@ COLUNAS: list[tuple[str, bool, str]] = [
     ("ram_gb", False, "[TI] Memória em GB."),
     ("armazenamento_gb", False, "[TI] Disco em GB."),
     # --- ficha de impressora (só quando dominio = impressora) ---
-    ("tipo_impressao", False, "[Impressora] laser, jato_tinta, termica, matricial."),
+    ("tipo_impressao", False, "[Impressora] laser, jato, termica, matricial, plotter."),
     ("colorida", False, "[Impressora] sim ou nao."),
     ("contador_paginas", False, "[Impressora] Contador atual."),
-    ("conectividade", False, "[Impressora] rede, usb, wifi."),
+    ("conectividade", False, "[Impressora] rede, usb, wifi, paralela, serial."),
     ("driver", False, "[Impressora] Nome do driver."),
 ]
 

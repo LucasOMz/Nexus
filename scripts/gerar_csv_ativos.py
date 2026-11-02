@@ -70,8 +70,8 @@ IMP_MODELOS = [
     ("HP", "Color LaserJet Pro M454dw", "laser", "sim"),
     ("Brother", "HL-L2350DW", "laser", "nao"),
     ("Brother", "DCP-L3551CDW", "laser", "sim"),
-    ("Epson", "EcoTank L3250", "jato_tinta", "sim"),
-    ("Epson", "EcoTank L15150", "jato_tinta", "sim"),
+    ("Epson", "EcoTank L3250", "jato", "sim"),
+    ("Epson", "EcoTank L15150", "jato", "sim"),
     ("Zebra", "ZD220", "termica", "nao"),
     ("Zebra", "ZT411", "termica", "nao"),
     ("Elgin", "i9", "termica", "nao"),
@@ -112,13 +112,21 @@ def _ip(rng: random.Random, usado: set[str]) -> str:
             return ip
 
 
-def gerar(total: int, saida: Path) -> None:
+def gerar(total: int, saida: Path, dominio: str = "misto") -> None:
     rng = random.Random(SEMENTE)
 
-    # A distribuição 4:1 mantém a proporção e garante que as duas fichas
-    # apareçam com volume suficiente para exercitar a importação.
-    qtd_impressoras = max(1, total // 5)
-    qtd_ti = total - qtd_impressoras
+    # A divisão depende do que se quer testar.
+    #
+    # misto (padrão) mantém a proporção 4:1 e exercita as duas fichas num
+    # arquivo só. 	i e impressora geram um inventário puro — útil para
+    # testar uma tela por vez, sem o importador descartar metade das linhas.
+    if dominio == "impressora":
+        qtd_impressoras, qtd_ti = total, 0
+    elif dominio == "ti":
+        qtd_impressoras, qtd_ti = 0, total
+    else:
+        qtd_impressoras = max(1, total // 5)
+        qtd_ti = total - qtd_impressoras
 
     seriais: set[str] = set()
     ips: set[str] = set()
@@ -166,7 +174,7 @@ def gerar(total: int, saida: Path) -> None:
             "data_aquisicao": data_aquisicao.isoformat(),
             "data_garantia": data_garantia.isoformat(),
             "valor": f"{valor:.2f}",
-            "forma_aquisicao": rng.choice(["comprado"] * 8 + ["locado", "assinatura"]),
+            "forma_aquisicao": rng.choice(["comprado"] * 8 + ["locado", "locado"]),
             "observacoes": "",
             "foto": "",
         }
@@ -207,11 +215,12 @@ def main() -> None:
     p = argparse.ArgumentParser(description="Gera CSV de ativos para importar pela tela.")
     p.add_argument("--total", type=int, default=5000)
     p.add_argument("--saida", type=Path, default=Path("ativos_teste_5000.csv"))
+    p.add_argument("--dominio", choices=["misto", "ti", "impressora"], default="misto")
     a = p.parse_args()
 
     if a.total < 1:
         raise SystemExit("--total precisa ser >= 1")
-    gerar(a.total, a.saida)
+    gerar(a.total, a.saida, a.dominio)
 
 
 if __name__ == "__main__":
