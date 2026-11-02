@@ -38,8 +38,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-estoque}
       POSTGRES_DB: ${POSTGRES_DB:-estoque}
     volumes:
-      # Bind mount, e não volume nomeado. Ver a nota no topo de `volumes:`.
-      - ${NEXUS_DADOS:-./dados}/pgdata:/var/lib/postgresql/data
+      # Volume nomeado do Docker. O banco vive aqui, não no host.
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-estoque} -d ${POSTGRES_DB:-estoque}"]
       interval: 5s
@@ -118,19 +118,34 @@ services:
       NEXUS_CHAVE_LICENCAS: ${NEXUS_CHAVE_LICENCAS:-}
       NEXUS_CHAVE_LICENCAS_VERSAO: ${NEXUS_CHAVE_LICENCAS_VERSAO:-1}
     volumes:
-      # Bind mounts — todos sob `${NEXUS_DADOS}`. Ver a nota no fim do arquivo.
-      #
-      # Fotos, termos e anexos. NUNCA remova.
-      - ${NEXUS_DADOS:-./dados}/media:/app/media
-      # Backups do banco feitos pelo próprio Nexus.
-      - ${NEXUS_DADOS:-./dados}/backups:/app/backups
-      # Segredos gerados no primeiro boot (JWT, QR, chave mestra).
+      # Fotos, termos e anexos. Volume nomeado do Docker. NUNCA remova.
+      - media:/app/media
+
+      # Segredos gerados no primeiro boot (JWT, QR, chave mestra). Volume
+      # nomeado do Docker.
       #
       # NUNCA remova depois de haver etiquetas impressas e licenças
       # cadastradas. Perdê-lo gera segredos novos, e com eles: todos os logins
       # caem, todas as etiquetas QR param de validar, e as chaves de licença
       # ficam IRRECUPERÁVEIS.
-      - ${NEXUS_DADOS:-./dados}/segredos:/app/segredos
+      - segredos:/app/segredos
+
+      # Backups: o ÚNICO que fica em pasta do host.
+      #
+      # ## Por que só este
+      #
+      # O Kopia precisa alcançar os arquivos por caminho. Um volume nomeado
+      # mora em `/var/lib/docker/volumes/...`, que ele não enxerga — e o
+      # backup viraria cópia de volume auxiliar.
+      #
+      # Aqui não há esse problema: o que o Kopia precisa copiar são os
+      # **arquivos `.dump`** que o próprio Nexus grava com `pg_dump`. O banco
+      # em si continua no volume `pgdata`, e entra no backup **como dump**,
+      # não como arquivos soltos.
+      #
+      # Aponte para uma pasta real do servidor. O caminho padrão serve para
+      # teste local.
+      - ${NEXUS_BACKUP_DIR:-./backups}:/app/backups
     ports:
       # Host : Container. Os dois lados precisam bater com o `--port` do
       # Dockerfile. Quando divergiram (aqui 5000, lá 8000), o Docker publicou
@@ -142,51 +157,34 @@ services:
 # =====================================================================
 # VOLUMES — bind mounts, não volumes nomeados
 # =====================================================================
+# VOLUMES
+# =====================================================================
 #
-# ## Por que
+#   pgdata    volume do Docker    banco de dados
+#   media     volume do Docker    fotos, termos em PDF, anexos
+#   segredos  volume do Docker    JWT, chave de QR, chave de licenças
+#   backups   PASTA DO HOST       os .dump que o Nexus grava
 #
-# Volume nomeado mora em `/var/lib/docker/volumes/<nome>/_data`. Funciona,
-# mas **não é uma pasta que se copia** — o Kopia (ou rsync, ou tar) não
-# alcança o conteúdo por caminho, e o backup vira um `docker run` de volume
-# auxiliar.
+# ## Por que só o backup fica no host
 #
-# Como o backup será feito pelo Kopia, os dados vão para **pastas no host**,
-# todas sob `NEXUS_DADOS`:
+# O Kopia precisa alcançar arquivos por caminho. Volume nomeado mora em
+# /var/lib/docker/volumes/..., que ele não enxerga.
 #
-#     ${NEXUS_DADOS}/pgdata     banco
-#     ${NEXUS_DADOS}/media      fotos, termos em PDF, anexos
-#     ${NEXUS_DADOS}/backups    dumps feitos pelo próprio Nexus
-#     ${NEXUS_DADOS}/segredos   JWT, chave de QR, chave de licenças
+# Mas o que precisa ser copiado **não é o banco em arquivos** — é o
+# resultado do pg_dump, que já é um arquivo só. Copiar pgdata com o banco
+# rodando é arriscado: os arquivos mudam enquanto são lidos, e o conjunto
+# pode ficar incoerente de um jeito que o PostgreSQL não recupera.
 #
-# O Kopia então faz backup de **um caminho só**: `NEXUS_DADOS`.
+# Então: banco no volume (bom para o Docker), dump na pasta (bom para o
+# Kopia). O Kopia aponta para NEXUS_BACKUP_DIR e só.
 #
-# ## ⚠️ Permissão do pgdata
+# ## Criar a pasta antes do primeiro deploy
 #
-# O PostgreSQL roda como **uid 999** dentro da imagem (usuário `postgres`).
-# Se a pasta no host pertencer a outro usuário, o banco não sobe e o log diz
-# `could not change permissions` ou `data directory has wrong ownership`.
+#     sudo mkdir -p /srv/nexus/backups
 #
-# Antes do primeiro `up`:
+# A aplicação roda como root na imagem, então não precisa de chown.
 #
-#     mkdir -p "$NEXUS_DADOS"/{pgdata,media,backups,segredos}
-#     sudo chown -R 999:999 "$NEXUS_DADOS"/pgdata
-#
-# As outras três pastas são escritas pela própria aplicação, que roda como
-# root na imagem — não precisam de ajuste.
-#
-# ## ⚠️ Migrar de volumes nomeados
-#
-# Trocar de volume nomeado para bind mount **não move os dados**. Numa
-# instalação que já tem dados, é preciso copiar antes:
-#
-#     docker run --rm -v nexus_pgdata:/origem -v "$NEXUS_DADOS"/pgdata:/destino \
-#       alpine sh -c "cp -a /origem/. /destino/"
-#
-# Se você está começando do zero, não há nada a fazer.
-#
-# ## O `./dados` é um padrão para desenvolvimento
-#
-# No Portainer, o caminho relativo resolve para dentro da stack — prefira um
-# caminho absoluto, como `/srv/nexus`. O Kopia precisa de um caminho estável.
-#
-# Não há mais bloco `volumes:` no fim deste arquivo: nada de volume nomeado.
+volumes:
+  pgdata:
+  media:
+  segredos:

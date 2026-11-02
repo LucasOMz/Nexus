@@ -46,36 +46,30 @@ psql "postgresql://nexus:senha@10.0.0.50:5432/nexus" -c "select 1;"
 
 ---
 
-## 2. No servidor: criar as pastas de dados
+## 2. No servidor: criar a pasta de backups
 
-Os dados ficam em **pastas no host**, não em volume nomeado — é o que permite
-o Kopia (ou rsync, ou tar) fazer backup por caminho.
+**Banco, mídia e segredos ficam em volumes do Docker** — o Docker gerencia, e
+você não precisa mexer.
 
-Tudo mora sob **`NEXUS_DADOS`**:
-
-```
-/srv/nexus/pgdata     banco
-/srv/nexus/media      fotos, termos em PDF, anexos
-/srv/nexus/backups    dumps feitos pelo próprio Nexus
-/srv/nexus/segredos   JWT, chave de QR, chave de licenças
-```
-
-**Antes do primeiro deploy:**
+**Só o backup fica em pasta do host**, porque é o único que o Kopia precisa
+alcançar por caminho:
 
 ```bash
-sudo mkdir -p /srv/nexus/{pgdata,media,backups,segredos}
-sudo chown -R 999:999 /srv/nexus/pgdata
+sudo mkdir -p /srv/nexus/backups
 ```
 
-> **O `chown` não é opcional.** O PostgreSQL roda como **uid 999** dentro da
-> imagem. Sem ele o banco não sobe, e o log diz `data directory has wrong
-> ownership` — mensagem que não menciona permissão de pasta do host.
+**A aplicação roda como root na imagem** — não precisa de `chown`.
 
-**As outras três pastas não precisam de ajuste**: a aplicação roda como root
-na imagem.
+**No Kopia**, aponte o backup para **`/srv/nexus/backups`** e só.
 
-**No Kopia**, aponte o backup para **`/srv/nexus`** — um caminho só cobre
-banco, mídia, backups e segredos.
+### Por que só o backup
+
+O Kopia copia os **arquivos `.dump`** que o Nexus grava com `pg_dump`. O banco
+em si **entra no backup como dump**, não como arquivos soltos.
+
+> Copiar `pgdata` com o banco rodando é arriscado: os arquivos mudam enquanto
+> são lidos, e o conjunto pode ficar incoerente de um jeito que o PostgreSQL
+> não recupera. O dump é uma foto consistente, feita pelo próprio banco.
 
 ---
 
@@ -96,9 +90,9 @@ SEED_ADMIN_PASSWORD=SENHA-DO-ADMIN
 
 **Só isso.** `DATABASE_URL` vazio faz o compose montar a conexão.
 
-`NEXUS_DADOS` também precisa estar definido — é onde os dados ficam no host,
-e o caminho que o Kopia vai encontrar. Use o mesmo da seção 2
-(`/srv/nexus`).
+`NEXUS_BACKUP_DIR` também precisa estar definido — é a pasta do host onde os
+dumps caem, e o caminho que o Kopia vai encontrar. Use o mesmo da seção 2
+(`/srv/nexus/backups`).
 
 ### Cenário B — banco externo
 
