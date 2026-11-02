@@ -169,15 +169,46 @@ class TestRegistro:
         assert registro.usos_feitos == 0, "não pode consumir uso"
         assert banco.query(EquipamentoPendente).count() == 1
 
-    def test_serial_desconhecido_vai_para_fila(self, banco, codigo):
-        registro, valor = codigo
-        r = svc.registrar(banco, codigo=valor, serial="ZZ999999",
-                          hostname="X", payload=payload())
+    def test_serial_desconhecido_cria_o_ativo(self, banco, codigo):
+        """Registro automático — a fila de aprovação saiu.
 
-        assert r["ok"] is False
-        assert r["motivo"] == "serial_nao_cadastrado"
-        assert r["status"] == 404
-        assert registro.usos_feitos == 0
+        ## Por que a regra mudou
+
+        A fila existia para impedir que quarenta placas brancas casassem
+        todas com o mesmo `To be filled by O.E.M.`. Com o agente enviando
+        `OEM-<MachineGuid>` — único por máquina — o risco desapareceu.
+
+        O que sobrou era burocracia: instalar, pedir aprovação, aprovar,
+        instalar de novo, pedir de novo.
+        """
+        registro, valor = codigo
+        r = svc.registrar(banco, codigo=valor, serial="OEM-ABC123DEF456",
+                          hostname="BRANCA-01", payload=payload())
+
+        assert r["ok"] is True
+        assert r["criado"] is True
+        assert r["ativo_id"] is not None
+        assert registro.usos_feitos == 1
+
+        from app.models.core import Ativo
+
+        ativo = banco.get(Ativo, r["ativo_id"])
+        assert ativo.numero_serie == "OEM-ABC123DEF456"
+
+    def test_segundo_registro_nao_duplica(self, banco, codigo):
+        """O mesmo identificador reaproveita o ativo, não cria outro."""
+        _registro, valor = codigo
+        r1 = svc.registrar(banco, codigo=valor, serial="OEM-ABC123DEF456",
+                           hostname="BRANCA-01", payload=payload())
+        r2 = svc.registrar(banco, codigo=valor, serial="OEM-ABC123DEF456",
+                           hostname="BRANCA-01", payload=payload())
+
+        assert r2["ativo_id"] == r1["ativo_id"]
+        assert r2["criado"] is False
+
+        from app.models.core import Ativo
+
+        assert banco.query(Ativo).count() == 2, "o ativo do fixture + o criado"
 
     def test_codigo_invalido_e_recusado(self, banco):
         r = svc.registrar(banco, codigo="XXXX-YYYY-ZZZZ", serial=SERIAL,

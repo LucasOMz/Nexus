@@ -163,6 +163,53 @@ def _registrar_pendente(
     return novo
 
 
+def _criar_ativo_do_payload(db: Session, serial: str, payload: dict, hostname: str | None):
+    """Cria o ativo a partir do que o agente enviou.
+
+    Usa a **primeira planta ativa** como dona: o agente não tem sessão, e não
+    há como perguntar a que planta a máquina pertence. Um administrador pode
+    mover depois.
+
+    O `numero_serie` é o que veio do agente — inclusive o `OEM-...` derivado
+    do MachineGuid. É por ele que as próximas coletas vão casar.
+    """
+    from app.models.core import Planta
+    from app.models.enums import Dominio, StatusAtivo, TipoItem
+    from app.models.ti import AtivoTI
+
+    planta = db.query(Planta).filter(Planta.ativa.is_(True), Planta.deleted_at.is_(None)).first()
+    if planta is None:
+        planta = db.query(Planta).filter(Planta.deleted_at.is_(None)).first()
+    if planta is None:
+        return None
+
+    basico = payload.get("basico") or {}
+    ativo = Ativo(
+        planta_id=planta.id,
+        dominio=Dominio.TI,
+        tipo_item=TipoItem.ATIVO,
+        status=StatusAtivo.ESTOQUE,
+        numero_serie=serial,
+        patrimonio=None,
+        modelo=(str(basico.get("modelo"))[:120] if basico.get("modelo") else None),
+        marca=(str(basico.get("fabricante"))[:80] if basico.get("fabricante") else None),
+    )
+    db.add(ativo)
+    db.flush()
+
+    ficha = AtivoTI(ativo_id=ativo.id)
+    ficha.hostname = (str(hostname)[:120] if hostname else None)
+    ficha.so = (str(basico.get("so"))[:120] if basico.get("so") else None)
+    ficha.cpu = (str(basico.get("cpu"))[:160] if basico.get("cpu") else None)
+    if basico.get("ram_gb"):
+        ficha.ram_gb = int(basico["ram_gb"])
+    if basico.get("armazenamento_gb"):
+        ficha.armazenamento_gb = int(basico["armazenamento_gb"])
+    db.add(ficha)
+
+    return ativo
+
+
 def registrar(
     db: Session, *, codigo: str, serial: str | None, hostname: str | None, payload: dict
 ) -> dict:
@@ -187,13 +234,22 @@ def registrar(
         return {"ok": False, "status": 422, "motivo": "sem_serial"}
 
     ativo = _achar_ativo_por_serial(db, serial)
+    criado = False
     if ativo is None:
+        # Registro automático. Com `OEM-<MachineGuid>` o identificador é único
+        # por máquina, então criar não gera duplicata — e o técnico não
+        # precisa esperar aprovação nenhuma.
+        ativo = _criar_ativo_do_payload(db, serial, payload, hostname)
+        criado = ativo is not None
+
+    if ativo is None:
+        # Só chega aqui sem planta cadastrada — instalação sem `Planta`.
         _registrar_pendente(
             db, serial=serial, hostname=hostname,
             mac=_mac_do_payload(payload), ip=_ip_do_payload(payload),
-            payload=payload, motivo="serial_nao_cadastrado",
+            payload=payload, motivo="sem_planta",
         )
-        return {"ok": False, "status": 404, "motivo": "serial_nao_cadastrado"}
+        return {"ok": False, "status": 409, "motivo": "sem_planta"}
 
     # Reaproveita o token se a máquina já estava registrada: reinstalar o
     # agente não deve deixar tokens órfãos acumulando.
@@ -224,6 +280,7 @@ def registrar(
         "token": valor,          # única vez que este valor existe
         "ativo_id": ativo.id,
         "prefixo": token.prefixo,
+        "criado": criado,
     }
 
 
