@@ -569,7 +569,7 @@ def importar(conteudo: bytes, db: Session, planta_id: int | None,
     }
 
     criados: list[str] = []
-    novos_vinculos: dict[str, int] = {}
+    novos_vinculos: dict[tuple[str, str], int] = {}
 
     try:
         for linha in validas:
@@ -586,10 +586,29 @@ def importar(conteudo: bytes, db: Session, planta_id: int | None,
                 if not novo:
                     continue
                 nome = novo[0]
+
+                # ## A chave inclui o TIPO, não só o nome
+                #
+                # Antes o mapa era `dict[str, int]` com o nome como chave, e
+                # **os quatro cadastros dividiam o mesmo mapa**. Como existem
+                # nomes repetidos entre tabelas diferentes — "Financeiro" e
+                # "Diretoria" são localização E departamento — o segundo
+                # reaproveitava o id do primeiro:
+                #
+                #     localizacao "Financeiro"   -> id 5
+                #     departamento "Financeiro"  -> achou no mapa -> usou id 5
+                #     INSERT em ativos -> departamento_id=5 (é uma LOCALIZAÇÃO)
+                #
+                #     ForeignKeyViolation: Key (departamento_id)=(5) is not
+                #     present in table "departamentos"
+                #
+                # Com a chave composta, cada tabela tem o seu mapa.
+                vinculo = (chave, nome)
+
                 # Reaproveita o que outra LINHA do mesmo arquivo já criou —
                 # sem isto, 40 ativos com "Notebook" criariam 40 categorias.
-                if nome in novos_vinculos:
-                    d[f"{chave}_id"] = novos_vinculos[nome]
+                if vinculo in novos_vinculos:
+                    d[f"{chave}_id"] = novos_vinculos[vinculo]
                     continue
 
                 # ## Cadastros de apoio são GLOBAIS, não por planta
@@ -616,7 +635,7 @@ def importar(conteudo: bytes, db: Session, planta_id: int | None,
                 obj = modelo(**argumentos)
                 db.add(obj)
                 db.flush()
-                novos_vinculos[nome] = obj.id
+                novos_vinculos[vinculo] = obj.id
                 d[f"{chave}_id"] = obj.id
 
             d.setdefault("tipo_item", TipoItem.ATIVO)
