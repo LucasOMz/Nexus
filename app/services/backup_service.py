@@ -333,6 +333,16 @@ def validar_backup(nome: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Restaurar
 # ---------------------------------------------------------------------------
+def _sql_literal(texto: str) -> str:
+    """Valor como literal SQL, entre aspas simples e escapado.
+
+    Nome de banco vem do DATABASE_URL, não de entrada do usuário — mas
+    concatenar direto numa consulta é hábito ruim, e um ' no nome quebraria
+    a sintaxe.
+    """
+    return "'" + str(texto).replace("'", "''") + "'"
+
+
 def _erros_graves_do_restore(stderr: str) -> list[str]:
     """Erros do pg_restore que **não** são ruído de versão.
 
@@ -431,14 +441,74 @@ def restaurar_backup(nome: str) -> dict[str, Any]:
                     "pg_restore ignorou parâmetros de sessão desconhecidos. "
                     "O cliente que gerou o dump é mais novo que este servidor."
                 )
-            recriar_engine()  # libera as conexões do banco atual
-            subprocess.run(["dropdb", "--if-exists", banco_antigo], capture_output=True, text=True, timeout=120, env=env)
-            subprocess.run(["psql", "-d", "postgres", "-c", f'ALTER DATABASE "{banco}" RENAME TO "{banco_antigo}"'],
-                           capture_output=True, text=True, timeout=120, env={**env, "PGDATABASE": "postgres"})
-            troca = subprocess.run(["psql", "-d", "postgres", "-c", f'ALTER DATABASE "{banco_tmp}" RENAME TO "{banco}"'],
-                                   capture_output=True, text=True, timeout=120, env={**env, "PGDATABASE": "postgres"})
-            if troca.returncode != 0:
-                return {"ok": False, "mensagem": f"Falha ao trocar os bancos: {troca.stderr.strip()[:300]}", "backup_seguranca": seguranca}
+            recriar_engine()
+
+            # --- derruba as conexões antes de renomear --------------------
+            #
+            # ## Por que isto é obrigatório
+            #
+            # `ALTER DATABASE ... RENAME` **falha enquanto houver qualquer
+            # sessão conectada** — inclusive a da própria aplicação. E o erro
+            # não é claro:
+            #
+            #     ERROR: database "estoque" is being accessed by other users
+            #
+            # A versão anterior chamava `recriar_engine()` e torcia. Não
+            # funciona: recriar o engine faz ele **reconectar**, então a
+            # sessão continua lá.
+            #
+            # Pior: o resultado do primeiro rename era ignorado, então o
+            # segundo falhava com "database estoque already exists" — e a
+            # mensagem culpava o passo errado. O banco restaurado ficava em
+            # `estoque_restore`, invisível, e o sistema seguia no banco velho.
+            def _derruba_conexoes(nome_banco: str) -> None:
+                subprocess.run(
+                    ["psql", "-d", "postgres", "-tAc",
+                     f"SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                     f"WHERE datname = {_sql_literal(nome_banco)} "
+                     f"AND pid <> pg_backend_pid()"],
+                    capture_output=True, text=True, timeout=60,
+                    env={**env, "PGDATABASE": "postgres"},
+                )
+
+            def _renomeia(de: str, para: str) -> tuple[bool, str]:
+                _derruba_conexoes(de)
+                r = subprocess.run(
+                    ["psql", "-d", "postgres", "-c",
+                     f'ALTER DATABASE "{de}" RENAME TO "{para}"'],
+                    capture_output=True, text=True, timeout=120,
+                    env={**env, "PGDATABASE": "postgres"},
+                )
+                return r.returncode == 0, (r.stderr or "").strip()
+
+            subprocess.run(["dropdb", "--if-exists", banco_antigo],
+                           capture_output=True, text=True, timeout=120, env=env)
+
+            ok_antigo, erro_antigo = _renomeia(banco, banco_antigo)
+            if not ok_antigo:
+                return {
+                    "ok": False,
+                    "mensagem": (
+                        f"Não foi possível mover o banco atual para "
+                        f"'{banco_antigo}': {erro_antigo[:200]}. "
+                        f"O banco restaurado continua em '{banco_tmp}' — "
+                        "nada foi perdido."
+                    ),
+                    "backup_seguranca": seguranca,
+                }
+
+            ok_troca, erro_troca = _renomeia(banco_tmp, banco)
+            if not ok_troca:
+                # Volta atrás: sem isto, o sistema ficaria sem banco nenhum.
+                _renomeia(banco_antigo, banco)
+                return {
+                    "ok": False,
+                    "mensagem": (
+                        f"Falha ao promover o banco restaurado: {erro_troca[:200]}. "
+                        "O banco anterior foi devolvido ao lugar."
+                    ),
+                    "backup_seguranca": seguranca,
+                }
         except (OSError, subprocess.SubprocessError) as exc:
             return {"ok": False, "mensagem": f"Falha na restauração: {exc}", "backup_seguranca": seguranca}
 
