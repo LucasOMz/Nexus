@@ -252,6 +252,82 @@ _mac_do_payload = _primeiro_mac
 _ip_do_payload = _primeiro_ip
 
 
+# Campos que dizem o que a máquina É. Fora daqui ficam os voláteis: uptime,
+# IP e usuário logado mudam a cada coleta e fariam toda coleta parecer
+# mudança.
+CAMPOS_ESTAVEIS = (
+    ("hostname", "Hostname"),
+    ("so", "Sistema operacional"),
+    ("cpu", "Processador"),
+    ("ram_gb", "Memória RAM (GB)"),
+    ("armazenamento_gb", "Armazenamento (GB)"),
+    ("dominio", "Domínio"),
+    ("fabricante", "Fabricante"),
+    ("modelo", "Modelo"),
+)
+
+
+def _snapshot_estavel(payload: dict) -> dict:
+    basico = payload.get("basico") or {}
+    saida = {}
+    for chave, _rotulo in CAMPOS_ESTAVEIS:
+        if chave == "hostname":
+            saida[chave] = basico.get("hostname") or payload.get("hostname")
+        else:
+            saida[chave] = basico.get(chave)
+    return saida
+
+
+def detectar_mudanca(db: Session, ativo_id: int, payload: dict) -> dict | None:
+    """Compara com a última coleta e grava histórico se algo mudou.
+
+    Devolve o diff gravado, ou `None` quando nada mudou — e aí o chamador só
+    atualiza a data da última coleta.
+    """
+    from app.models.historico_inventario import HistoricoInventario
+
+    atual = _snapshot_estavel(payload)
+    # `sort_keys` é obrigatório: sem ele a ordem das chaves mudaria o hash e
+    # toda coleta pareceria diferente.
+    novo_hash = hashlib.sha256(
+        json.dumps(atual, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+
+    anterior = (
+        db.query(HistoricoInventario)
+        .filter(HistoricoInventario.ativo_id == ativo_id)
+        .order_by(HistoricoInventario.quando.desc())
+        .first()
+    )
+
+    if anterior is not None and anterior.hash == novo_hash:
+        return None
+
+    try:
+        antigo = json.loads(anterior.snapshot_json or "{}") if anterior else {}
+    except (ValueError, TypeError):
+        antigo = {}
+
+    mudancas = {}
+    for chave, rotulo in CAMPOS_ESTAVEIS:
+        antes, depois = antigo.get(chave), atual.get(chave)
+        if antes != depois:
+            mudancas[chave] = {"rotulo": rotulo, "de": antes, "para": depois}
+
+    # Primeira coleta não é "mudança": grava como linha de base, sem diff,
+    # para que a próxima tenha com o que comparar.
+    registro = HistoricoInventario(
+        ativo_id=ativo_id,
+        quando=datetime.now(timezone.utc),
+        hash=novo_hash,
+        snapshot_json=json.dumps(atual, ensure_ascii=False),
+        mudancas_json=json.dumps(mudancas, ensure_ascii=False),
+        origem="agente",
+    )
+    db.add(registro)
+    return mudancas
+
+
 def aplicar_inventario(db: Session, token: TokenAgente, payload: dict) -> dict:
     """Grava o inventário no ativo dono do token.
 
@@ -292,10 +368,20 @@ def aplicar_inventario(db: Session, token: TokenAgente, payload: dict) -> dict:
     if ip:
         ficha.ip = ip
 
+    # Detecta mudança ANTES de sobrescrever: o snapshot antigo é a
+    # referência, e depois da gravação ele não existe mais.
+    mudancas = detectar_mudanca(db, ativo.id, payload)
+
     ficha.inventario_json = json.dumps(detalhes, ensure_ascii=False)
     ficha.inventario_em = datetime.now(timezone.utc)
 
     token.ultimo_uso_em = datetime.now(timezone.utc)
     db.commit()
 
-    return {"ok": True, "status": 200, "ativo_id": ativo.id}
+    return {
+        "ok": True,
+        "status": 200,
+        "ativo_id": ativo.id,
+        "mudancas": mudancas or {},
+        "historico": bool(mudancas),
+    }

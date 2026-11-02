@@ -7,6 +7,7 @@ import { api } from "../api.js";
 import { state } from "../state.js";
 import { ctx } from "../context.js";
 import { el, icon, toast, dialog, confirmSheet, emptyState, skeleton, fmtDate, fmtMoney, statusBadge, mostrarErro } from "../ui.js";
+import { abrirDetalhes } from "./ativo_detalhes.js";
 import { loadLookups, optionsOf } from "../lookups.js";
 import { erroDeResposta } from "../erros.js";
 import { renderLabelSVG, renderAvisos } from "../label.js";
@@ -536,6 +537,7 @@ function openDetail(ativo, lookups) {
         { label: "Imprimir", variant: "outlined", onClick: () => escolherDispositivo([ativo]) },
         { label: "Status", variant: "outlined", onClick: () => alterarStatus(ativo) },
         { label: "Atribuir", variant: "outlined", onClick: () => atribuir(ativo, lookups) },
+        { label: "Detalhes", variant: "outlined", onClick: () => abrirDetalhes(ativo) },
         { label: "Editar", variant: "tonal", onClick: () => openForm(ativo, lookups) },
       ] : []),
       ...(state.canDelete ? [{ label: "Excluir", variant: "danger", onClick: () => excluirAtivo(ativo) }] : []),

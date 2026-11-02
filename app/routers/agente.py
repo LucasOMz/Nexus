@@ -363,3 +363,69 @@ def resolver_pendente(
     db.commit()
 
     return {"ok": True, "ativo_id": ativo.id}
+
+
+class MudancaSaida(BaseModel):
+    campo: str
+    rotulo: str | None = None
+    de: object | None = None
+    para: object | None = None
+
+
+class HistoricoSaida(BaseModel):
+    id: int
+    quando: datetime
+    origem: str
+    mudancas: list[MudancaSaida] = []
+    # Primeira coleta não tem diff: é a linha de base.
+    linha_de_base: bool = False
+
+
+@router.get("/admin/agentes/historico/{ativo_id}", response_model=list[HistoricoSaida])
+def historico_do_ativo(
+    ativo_id: int,
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(get_current_user),
+) -> list[HistoricoSaida]:
+    """Alterações de hardware detectadas para um ativo, da mais recente
+    para a mais antiga.
+
+    A primeira linha é a **base**: o retrato do primeiro contato. Ela não
+    tem mudanças, e mostrá-la como "alteração" confundiria — daí o
+    `linha_de_base`.
+    """
+    from app.models.agente import HistoricoInventario
+
+    linhas = (
+        db.query(HistoricoInventario)
+        .filter(HistoricoInventario.ativo_id == ativo_id)
+        .order_by(HistoricoInventario.quando.desc())
+        .limit(100)
+        .all()
+    )
+
+    saida = []
+    for h in linhas:
+        try:
+            bruto = json.loads(h.mudancas_json or "{}")
+        except (ValueError, TypeError):
+            bruto = {}
+        mudancas = [
+            MudancaSaida(
+                campo=chave,
+                rotulo=(valor or {}).get("rotulo"),
+                de=(valor or {}).get("de"),
+                para=(valor or {}).get("para"),
+            )
+            for chave, valor in bruto.items()
+        ]
+        saida.append(
+            HistoricoSaida(
+                id=h.id,
+                quando=h.quando,
+                origem=h.origem,
+                mudancas=mudancas,
+                linha_de_base=not mudancas,
+            )
+        )
+    return saida

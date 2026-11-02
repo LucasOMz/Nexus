@@ -44,6 +44,7 @@ from app.models.enums import (
     TipoMov,
     TipoSuprimento,
 )
+from app.models.historico_inventario import HistoricoInventario
 from app.models.impressora import AtivoImpressora, LeituraContador, SuprimentoImpressora
 from app.models.notificacao import (
     ConfiguracaoSMTP,
@@ -92,6 +93,7 @@ __all__ = [
     "Dominio",
     "FiltroSalvo",
     "Fornecedor",
+    "HistoricoInventario",
     "Imagem",
     "LeituraContador",
     "Licenca",

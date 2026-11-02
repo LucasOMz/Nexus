@@ -788,4 +788,24 @@ CREATE TABLE IF NOT EXISTS equipamentos_pendentes (
 	FOREIGN KEY(ativo_criado_id) REFERENCES ativos (id)
 );
 
+/* =====================================================================
+   Historico de alteracoes de hardware (agente)
+   ===================================================================== */
+
+CREATE TABLE IF NOT EXISTS historico_inventario (
+	id SERIAL NOT NULL, 
+	ativo_id INTEGER NOT NULL, 
+	quando TIMESTAMP WITH TIME ZONE NOT NULL, 
+	hash VARCHAR(64) NOT NULL, 
+	snapshot_json TEXT NOT NULL, 
+	mudancas_json TEXT NOT NULL, 
+	origem VARCHAR(20) NOT NULL, 
+	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+	updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+	deleted_at TIMESTAMP WITH TIME ZONE, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(ativo_id) REFERENCES ativos (id)
+);
+
+
 COMMIT;

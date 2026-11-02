@@ -19,6 +19,7 @@ import { renderBanco } from "./admin_banco.js";
 import { renderAuditoria } from "./admin_auditoria.js";
 import { renderNotificacoes } from "./admin_notificacoes.js";
 import { renderManutencao } from "./admin_manutencao.js";
+import { renderAgente } from "./admin_agente.js";
 import { renderPlantas } from "./admin_plantas.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -578,6 +579,7 @@ export async function renderAdmin(root) {
     ["reconciliacao", "Reconciliação OCS"],
     ["lgpd", "Privacidade (LGPD)"],
     ["manutencao", "Modo Manutenção"],
+    ["agente", "Agente Nexus"],
     ["banco", "Conexão com DBA"],
   ];
 
@@ -604,6 +606,7 @@ export async function renderAdmin(root) {
     ocs: ["inventario automatico", "servidor", "token", "sincronizacao", "agente"],
     reconciliacao: ["divergencia", "fantasma", "perdido", "rede", "comparar"],
     banco: ["dba", "conexao", "postgresql", "servidor", "sqlite", "mysql"],
+    agente: ["agente", "nexus", "instalacao", "instalação", "serial", "token", "pendente"],
     manutencao: ["manutencao", "manutenção", "sessao", "sessão", "derrubar", "logado", "online", "bloqueio"],
     notificacoes: ["email", "smtp", "aviso", "alerta", "notificar", "toner", "devolucao"],
   };
@@ -627,7 +630,7 @@ export async function renderAdmin(root) {
     // "Notificações" entrou aqui: é a saída de informação do sistema — o
     // oposto do OCS, que é a entrada. Quem procura "por que não chega e-mail"
     // procura em Sistema, não em Patrimônio.
-    ["Sistema", ["auth", "notificacoes", "ocs", "backups", "banco", "manutencao"]],
+    ["Sistema", ["auth", "notificacoes", "ocs", "backups", "banco", "manutencao", "agente"]],
   ];
 
   // Aba fora de qualquer grupo não pode sumir: cai em "Outros".
@@ -765,5 +768,6 @@ export async function renderAdmin(root) {
   else if (abaAtiva === "reconciliacao") await renderReconciliacao(alvo);
   else if (abaAtiva === "lgpd") await renderLgpd(alvo);
   else if (abaAtiva === "manutencao") await renderManutencao(alvo);
+  else if (abaAtiva === "agente") await renderAgente(alvo);
   else if (abaAtiva === "banco") await renderBanco(alvo);
 }

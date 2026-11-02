@@ -36,6 +36,12 @@ class AtivoTIOut(AtivoTIBase):
 
     ativo_id: int
 
+    # Somente leitura: vem do agente, não de formulário. Sem estes campos a
+    # tela de "Detalhes Completos" receberia a ficha sem o inventário e sem
+    # a data da coleta — e mostraria tudo vazio.
+    inventario_json: str | None = None
+    inventario_em: datetime | None = None
+
 
 class AtivoImpressoraBase(SemVazios):
     model_config = ConfigDict(extra="forbid")
