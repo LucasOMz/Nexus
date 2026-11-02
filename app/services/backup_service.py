@@ -538,6 +538,44 @@ def restaurar_backup(nome: str) -> dict[str, Any]:
     invalidar_tokens()
     recriar_engine()
 
+    # --- o banco restaurado tem algo VISÍVEL? -------------------------
+    #
+    # ## O problema que isto resolve
+    #
+    # O backup é uma **foto**, inclusive das exclusões. Restaurar um backup
+    # tirado depois de excluir traz os ativos de volta — **marcados como
+    # excluídos**. A tela responde "restaurado", o banco ocupa 13 MB, e a
+    # lista aparece **vazia**.
+    #
+    # Aconteceu de verdade: foram horas de diagnóstico, os dados estavam lá
+    # o tempo todo, e nada na interface dizia isso.
+    #
+    # Restaurar não é "desfazer exclusão". Quem restaurou precisa saber a
+    # diferença na hora, não depois de investigar.
+    try:
+        from app.database import SessionLocal
+        from app.models.core import Ativo
+
+        sessao = SessionLocal()
+        try:
+            total = sessao.query(Ativo).count()
+            vivos = sessao.query(Ativo).filter(Ativo.deleted_at.is_(None)).count()
+        finally:
+            sessao.close()
+
+        if total and not vivos:
+            avisos.append(
+                f"O banco foi restaurado, mas os {total} ativo(s) estão marcados "
+                "como EXCLUÍDOS e por isso não aparecem na lista. Restaurar não "
+                "desfaz exclusão: o backup é uma foto, e essa foto foi tirada "
+                "depois da exclusão. Para voltar a vê-los, reative os registros."
+            )
+        elif total:
+            avisos.append(f"{vivos} de {total} ativo(s) visíveis.")
+    except Exception:  # noqa: BLE001
+        # Uma checagem informativa não pode derrubar o restore, que já deu certo.
+        pass
+
     return {
         "ok": True,
         "mensagem": "Backup restaurado. Todos os usuários precisam entrar novamente.",
