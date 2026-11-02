@@ -76,6 +76,7 @@ def gerar_codigo(
     valor = "-".join(secrets.token_hex(2).upper() for _ in range(3))
     registro = CodigoInstalacao(
         codigo_hash=hash_segredo(valor),
+        codigo_valor=valor,
         prefixo=valor.split("-")[0],
         rotulo=rotulo,
         usos_max=max(1, usos_max),

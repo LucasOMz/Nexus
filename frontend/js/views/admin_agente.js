@@ -160,8 +160,13 @@ export async function renderAgente(root) {
         const restantes = Math.max(0, (c.usos_max || 0) - (c.usos_feitos || 0));
         cartaoCodigos.append(el("div", { class: "list-row" },
           el("div", { class: "list-main" },
-            el("div", { class: "list-title" },
-              `${c.prefixo}…${c.rotulo ? " · " + c.rotulo : ""}`),
+            el("div", { class: "list-title", style: "font-family:monospace" },
+              // O código completo, quando conhecido. Códigos criados antes da
+              // coluna `codigo_valor` só têm o prefixo — e aí a tela pede
+              // para gerar outro, em vez de mostrar um valor incompleto que
+              // não serve para instalar nada.
+              (c.codigo || (c.prefixo + "… (antigo, gere outro)"))
+              + (c.rotulo ? " · " + c.rotulo : "")),
             el("div", { class: "list-sub" },
               `${c.usos_feitos}/${c.usos_max} usados · ${restantes} restantes · `
               + `expira ${quando(c.expira_em)}`)),

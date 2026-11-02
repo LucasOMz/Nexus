@@ -121,6 +121,8 @@ class CodigoEntrada(BaseModel):
 
 class CodigoSaida(BaseModel):
     id: int
+    # Visível de novo na lista — ver a explicação no modelo.
+    codigo: str | None = None
     prefixo: str
     rotulo: str | None = None
     usos_max: int
@@ -134,6 +136,7 @@ class CodigoSaida(BaseModel):
 def _serializar(c: CodigoInstalacao) -> CodigoSaida:
     return CodigoSaida(
         id=c.id,
+        codigo=c.codigo_valor,
         prefixo=c.prefixo,
         rotulo=c.rotulo,
         usos_max=c.usos_max,

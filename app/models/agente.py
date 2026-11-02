@@ -56,6 +56,10 @@ class CodigoInstalacao(BaseModel, Base):
 
     # Guarda o SHA-256, não o código. Mostrado uma única vez, na criação.
     codigo_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    # Valor em claro, para poder ser mostrado de novo na lista.
+    # Nullable porque códigos criados antes desta coluna não o têm —
+    # para eles a tela mostra só o prefixo.
+    codigo_valor: Mapped[str | None] = mapped_column(String(32))
     # Prefixo legível ("A7K2-…") para o administrador identificar qual é qual
     # na lista sem precisar do valor completo.
     prefixo: Mapped[str] = mapped_column(String(16))
