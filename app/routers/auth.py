@@ -124,6 +124,26 @@ def login(
     if not user.ativo:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Usuário inativo")
 
+    # --- modo manutenção --------------------------------------------------
+    #
+    # A checagem vem DEPOIS da senha: quem não acertou a senha recebe o erro
+    # genérico e não descobre, pela mensagem de manutenção, que o usuário
+    # existe.
+    #
+    # O administrador entra mesmo com o modo ligado — é ele que vai desligar.
+    # 503 e não 403: o frontend mostra a tela de manutenção com o texto
+    # escrito pelo administrador, em vez de um "acesso negado" seco.
+    papel_do_login = getattr(user.papel, "value", user.papel)
+    if papel_do_login != "admin":
+        from app.services import manutencao as _manutencao
+
+        if _manutencao.esta_ativa(db):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=_manutencao.mensagem(db),
+                headers={"Retry-After": "60"},
+            )
+
     # --- Primeiro acesso e segunda etapa ---------------------------------
     # A ordem importa. Trocar a senha vem ANTES do MFA: enquanto a senha for a
     # que o administrador definiu, ela e conhecida por outra pessoa - proteger

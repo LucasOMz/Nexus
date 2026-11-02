@@ -165,6 +165,22 @@ class Usuario(BaseModel, Base):
     mfa_obrigatorio: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     primeiro_acesso_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # --- presença e expulsão --------------------------------------------
+    #
+    # `ultimo_acesso_em` alimenta a lista de "quem está usando agora" na tela
+    # de administração. Não é sessão: o token é stateless, e uma tabela de
+    # sessões exigiria `sid` no JWT — o que invalidaria todo token existente.
+    #
+    # Atualizado no máximo uma vez por minuto. Escrever em toda requisição
+    # custaria um UPDATE por chamada, e o pool é pequeno.
+    ultimo_acesso_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # Carimbo de "derrube todas as sessões desta pessoa". O token carrega
+    # `iat`; quem foi emitido antes deste instante é recusado no
+    # `get_current_user`. Derruba **todas** as sessões dela — que é o
+    # comportamento certo para manutenção.
+    forcar_logout_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     departamento: Mapped[Departamento | None] = relationship(back_populates="usuarios")
 
     @property
@@ -755,6 +771,16 @@ class ConfiguracaoSistema(BaseModel, Base):
     empresa_favicon: Mapped[str | None] = mapped_column(String(300))
     # Frase curta exibida no login (opcional).
     empresa_rodape: Mapped[str | None] = mapped_column(String(200))
+
+    # --- modo manutenção ------------------------------------------------
+    #
+    # Bloqueia o login de quem não é administrador e derruba as sessões
+    # abertas na próxima requisição. O administrador continua entrando, que
+    # é o ponto: alguém precisa poder desligar o modo.
+    manutencao_ativa: Mapped[bool] = mapped_column(default=False, nullable=False)
+    manutencao_mensagem: Mapped[str | None] = mapped_column(String(500))
+    manutencao_desde: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    manutencao_por_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
 
 
 class QRZerado(CreatedAtModel, Base):

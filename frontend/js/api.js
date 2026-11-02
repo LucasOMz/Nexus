@@ -105,6 +105,14 @@ export const api = {
       const erro = new ApiError(res.status, mensagemErro(detalhe, res.status));
       erro.detail = detalhe;
       erro.campos = camposComErro(detalhe);
+
+      // 503 = modo manutenção. Mostra a tela do administrador em vez de um
+      // erro genérico: a pessoa precisa entender que não é problema dela, e
+      // a mensagem é escrita por quem ligou o modo.
+      if (res.status === 503) {
+        mostrarManutencao(typeof detalhe === "string" ? detalhe : null);
+      }
+
       throw erro;
     }
     return data;

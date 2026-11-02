@@ -42,6 +42,53 @@ def _resolver_usuario(db: Session, token: str | None) -> Usuario | None:
     email_token = payload.get("email")
     if email_token and email_token != user.email:
         return None
+
+    # --- o administrador derrubou as sessões desta pessoa? ----------------
+    #
+    # `forcar_logout_em` é um carimbo. O token sabe quando foi emitido
+    # (`iat`); se for anterior, a sessão não vale mais.
+    #
+    # Comparar com `iat` — e não com "agora" — é o que faz isto funcionar sem
+    # tabela de sessões: um token emitido DEPOIS do carimbo continua válido,
+    # então a própria pessoa pode logar de novo na hora.
+    if user.forcar_logout_em is not None:
+        emitido = payload.get("iat")
+        if emitido is not None and int(emitido) < int(user.forcar_logout_em.timestamp()):
+            return None
+
+    # --- modo manutenção --------------------------------------------------
+    #
+    # 503, e não 401: não é credencial errada, é o sistema indisponível. O
+    # frontend usa o status para mostrar a tela de manutenção em vez de
+    # mandar a pessoa para o login — onde ela bateria na mesma parede.
+    papel = getattr(user.papel, "value", user.papel)
+    if papel != "admin":
+        from app.services import manutencao as _manutencao
+
+        if _manutencao.esta_ativa(db):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=_manutencao.mensagem(db),
+                headers={"Retry-After": "60"},
+            )
+
+    # --- presença ---------------------------------------------------------
+    #
+    # Uma escrita por minuto, no máximo. Em toda requisição seria um UPDATE
+    # por chamada, e o pool é pequeno.
+    #
+    # Falhar aqui NUNCA pode derrubar a requisição: é telemetria.
+    try:
+        from datetime import datetime, timezone
+
+        agora = datetime.now(timezone.utc)
+        ultimo = user.ultimo_acesso_em
+        if ultimo is None or (agora - ultimo).total_seconds() > 60:
+            user.ultimo_acesso_em = agora
+            db.commit()
+    except Exception:  # noqa: BLE001
+        db.rollback()
+
     return user
 
 

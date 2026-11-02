@@ -18,6 +18,7 @@ import { renderChecklist } from "./admin_checklist.js";
 import { renderBanco } from "./admin_banco.js";
 import { renderAuditoria } from "./admin_auditoria.js";
 import { renderNotificacoes } from "./admin_notificacoes.js";
+import { renderManutencao } from "./admin_manutencao.js";
 import { renderPlantas } from "./admin_plantas.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -576,6 +577,7 @@ export async function renderAdmin(root) {
     ["ocs", "OCS Inventory"],
     ["reconciliacao", "Reconciliação OCS"],
     ["lgpd", "Privacidade (LGPD)"],
+    ["manutencao", "Modo Manutenção"],
     ["banco", "Conexão com DBA"],
   ];
 
@@ -602,6 +604,7 @@ export async function renderAdmin(root) {
     ocs: ["inventario automatico", "servidor", "token", "sincronizacao", "agente"],
     reconciliacao: ["divergencia", "fantasma", "perdido", "rede", "comparar"],
     banco: ["dba", "conexao", "postgresql", "servidor", "sqlite", "mysql"],
+    manutencao: ["manutencao", "manutenção", "sessao", "sessão", "derrubar", "logado", "online", "bloqueio"],
     notificacoes: ["email", "smtp", "aviso", "alerta", "notificar", "toner", "devolucao"],
   };
 
@@ -624,7 +627,7 @@ export async function renderAdmin(root) {
     // "Notificações" entrou aqui: é a saída de informação do sistema — o
     // oposto do OCS, que é a entrada. Quem procura "por que não chega e-mail"
     // procura em Sistema, não em Patrimônio.
-    ["Sistema", ["auth", "notificacoes", "ocs", "backups", "banco"]],
+    ["Sistema", ["auth", "notificacoes", "ocs", "backups", "banco", "manutencao"]],
   ];
 
   // Aba fora de qualquer grupo não pode sumir: cai em "Outros".
@@ -761,5 +764,6 @@ export async function renderAdmin(root) {
   else if (abaAtiva === "ocs") await renderOCS(alvo);
   else if (abaAtiva === "reconciliacao") await renderReconciliacao(alvo);
   else if (abaAtiva === "lgpd") await renderLgpd(alvo);
+  else if (abaAtiva === "manutencao") await renderManutencao(alvo);
   else if (abaAtiva === "banco") await renderBanco(alvo);
 }
