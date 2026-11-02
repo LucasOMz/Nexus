@@ -37,6 +37,76 @@ class EmprestimoNoCalendario(BaseModel):
     dias_restantes: int = 0
 
 
+class ContratoNoCalendario(BaseModel):
+    """Um contrato vencendo, para aparecer no dia.
+
+    ## Por que ele entra na agenda
+
+    A agenda mostrava **só empréstimo**. Mas contrato vencendo é compromisso
+    com data, igual — e quem abre o mês para planejar precisa ver os dois no
+    mesmo calendário, não descobrir o vencimento numa notificação solta.
+
+    O sino já avisava (`_contratos_vencendo`); aqui o mesmo dado vira marca
+    no dia.
+    """
+
+    contrato_id: int
+    numero: str
+    tipo: str | None = None
+    fornecedor: str | None = None
+    planta_sigla: str | None = None
+    fim: date
+    dias_restantes: int = 0
+    valor_mensal: float | None = None
+
+
+@router.get("/contratos")
+def contratos(
+    inicio: date | None = Query(default=None, description="Primeiro dia do período"),
+    fim: date | None = Query(default=None, description="Último dia do período"),
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(get_current_user),
+    planta_id: int | None = Depends(planta_ativa),
+) -> list[ContratoNoCalendario]:
+    """Contratos cujo vencimento cai no período visível.
+
+    Sem filtro de status: contrato não tem ciclo, ele simplesmente vence. O
+    que interessa é a data de fim dentro da janela que a tela está mostrando.
+    """
+    from app.models.contrato import Contrato
+
+    hoje = date.today()
+    primeiro = inicio or hoje.replace(day=1)
+    ultimo = fim or (primeiro + timedelta(days=45))
+
+    consulta = (
+        db.query(Contrato)
+        .options(selectinload(Contrato.planta), selectinload(Contrato.fornecedor))
+        .filter(
+            Contrato.deleted_at.is_(None),
+            Contrato.fim.isnot(None),
+            Contrato.fim >= primeiro,
+            Contrato.fim <= ultimo,
+        )
+    )
+    consulta = aplicar_filtro(consulta, Contrato, planta_id)
+
+    return [
+        ContratoNoCalendario(
+            contrato_id=c.id,
+            numero=c.numero or f"#{c.id}",
+            tipo=getattr(c.tipo, "value", c.tipo),
+            fornecedor=getattr(getattr(c, "fornecedor", None), "nome", None),
+            planta_sigla=getattr(getattr(c, "planta", None), "sigla", None),
+            fim=c.fim,
+            dias_restantes=(c.fim - hoje).days,
+            valor_mensal=float(c.valor_mensal) if c.valor_mensal is not None else None,
+        )
+        for c in consulta.order_by(Contrato.fim).all()
+    ]
+
+
+
 @router.get("/emprestimos")
 def emprestimos(
     inicio: date | None = Query(default=None, description="Primeiro dia do período"),

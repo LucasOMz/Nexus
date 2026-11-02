@@ -60,7 +60,19 @@ function abrirPainel(dados, fechar) {
     });
   }
 
+  // ## Por que "Ver todas" existe
+  //
+  // O painel é bom para três ou quatro avisos. Com trinta, ele passa da
+  // altura da tela e a pessoa perde o fim da lista — o sino vira um lugar
+  // onde ninguém rola até o final.
+  //
+  // A tela completa usa a mesma API e mostra os mesmos itens com espaço:
+  // dá para ler, filtrar por urgência e agir.
   painel.append(el("div", { class: "notif-rodape" },
+    el("button", {
+      type: "button", class: "btn text small",
+      onclick: () => { fechar(); location.hash = "#/avisos"; },
+    }, "Ver todas"),
     el("button", {
       type: "button", class: "btn text small",
       onclick: () => { fechar(); location.hash = "#/calendario"; },

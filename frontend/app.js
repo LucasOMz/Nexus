@@ -33,6 +33,7 @@ import { renderScanner, stopScanner } from "./js/views/scanner.js";
 import { renderRelatorios } from "./js/views/relatorios.js";
 import { renderCadastros } from "./js/views/cadastros.js";
 import { renderAdmin } from "./js/views/admin.js";
+import { renderAvisos } from "./js/views/avisos.js";
 import { botaoEasterEgg } from "./js/easteregg.js";
 import * as barraLateral from "./js/barra_lateral.js";
 import * as ordenar from "./js/ordenar.js";
@@ -58,6 +59,7 @@ const MODULOS = {
   impressao: { rotulo: "Impressão", icone: "print" },
   cadastros: { rotulo: "Cadastros", icone: "cadastros" },
   reporte: { rotulo: "Reporte de Erro", icone: "reporte" },
+  avisos: { rotulo: "Avisos", icone: "bell" },
   admin: { rotulo: "Administração", icone: "cadastros" },
 };
 
@@ -75,6 +77,7 @@ const VIEWS = {
   software: renderSoftware,
   emprestimos: renderEmprestimos,
   monitor: renderMonitor,
+  avisos: renderAvisos,
   seguranca: renderSeguranca,
   relatorios: renderRelatorios,
   calendario: renderCalendario,

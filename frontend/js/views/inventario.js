@@ -28,7 +28,8 @@ const TILES = [
   { path: "contagens", modulo: "contagens", rotulo: "Contagens", icone: "contagens", desc: "Inventário cíclico: conferência física e divergências" },
   { path: "relatorios", modulo: "relatorios", rotulo: "Relatórios", icone: "relatorios", desc: "Indicadores, gráficos, CSV e PDF" },
   { path: "impressao", modulo: "impressao", rotulo: "Impressão", icone: "print", desc: "Impressora da minha planta e etiqueta padrão" },
-  { path: "calendario", modulo: "calendario", rotulo: "Calendário", icone: "calendario", desc: "Agenda de empréstimos e devoluções" },
+  { path: "avisos", modulo: "avisos", rotulo: "Avisos", icone: "bell", desc: "Devoluções, contratos vencendo e pendências" },
+  { path: "calendario", modulo: "calendario", rotulo: "Calendário", icone: "calendario", desc: "Agenda de empréstimos, devoluções e contratos" },
   { path: "cadastros", modulo: "cadastros", rotulo: "Cadastros", icone: "cadastros", desc: "Departamentos, locais e fornecedores" },
   // Canal de retorno da implantação — some do menu quando desativado.
   { path: "reporte", modulo: "reporte", rotulo: "Reporte de Erro", icone: "reporte", desc: "Encontrou um problema? Avise a equipe de TI" },

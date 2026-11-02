@@ -76,7 +76,7 @@ function verEmprestimo(item) {
  *
  * Devolução primeiro — é o que tem prazo.
  */
-function verDia(dia, devolvem, emCurso = []) {
+function verDia(dia, devolvem, emCurso = [], contratos = []) {
   const atrasadas = devolvem.filter((e) => e.atrasado).length;
 
   const titulo = `${dia.getDate()} de ${MESES[dia.getMonth()]} de ${dia.getFullYear()}`;
@@ -138,14 +138,35 @@ function verDia(dia, devolvem, emCurso = []) {
     corpo.append(el("div", {}, ...emCurso.map(linhaDe)));
   }
 
-  if (!devolvem.length && !emCurso.length) {
+  if (contratos.length) {
+    corpo.append(el("h3", { class: "secao-titulo", style: "margin-top:16px" },
+      "Contratos vencendo"));
+    corpo.append(el("p", { class: "muted", style: "font-size:12.5px;margin:0 0 8px" },
+      "A renovação precisa ser negociada antes desta data."));
+    for (const ct of contratos) {
+      const dias = ct.dias_restantes;
+      const tom = dias < 0 ? "danger" : dias <= 30 ? "aviso" : "";
+      corpo.append(el("div", { class: "list-row" },
+        el("div", { class: "list-main" },
+          el("div", { class: "list-title" },
+            ct.numero + (ct.planta_sigla ? " · " + ct.planta_sigla : "")),
+          el("div", { class: "list-sub" },
+            [ct.tipo, ct.fornecedor, "vence " + fmtDate(ct.fim)]
+              .filter(Boolean).join(" · "))),
+        el("span", { class: "badge" + (tom ? " " + tom : "") },
+          dias < 0 ? Math.abs(dias) + "d atrás" : dias + "d"),
+      ));
+    }
+  }
+
+  if (!devolvem.length && !emCurso.length && !contratos.length) {
     corpo.append(el("p", { class: "muted", style: "margin:0" },
       "Nada agendado para este dia."));
   }
 
   dialog({
     title: titulo,
-    wide: devolvem.length + emCurso.length > 6,
+    wide: devolvem.length + emCurso.length + contratos.length > 6,
     body: corpo,
     actions: [{ label: "Fechar", variant: "text" }],
   });
@@ -181,15 +202,28 @@ function montarGrade() {
         return ini <= dia && dia <= fim;
       });
 
+      // Contratos que vencem neste dia. Tipo diferente de empréstimo, e por
+      // isso marcados de forma diferente — quem lê a grade precisa distinguir
+      // "devolver equipamento" de "renovar contrato" antes de clicar.
+      const vencem = (dados.contratos || [])
+        .filter((c) => mesmoDia(diaDe(c.fim), dia));
+
       const classe = ["cal-dia"];
       if (foraDoMes) classe.push("fora");
       if (mesmoDia(dia, hoje)) classe.push("hoje");
       if (emCurso.length && !foraDoMes) classe.push("em-curso");
       if (devolvem.some((i) => i.atrasado)) classe.push("tem-atraso");
+      if (vencem.length && !foraDoMes) classe.push("tem-contrato");
 
       const celula = el("div", { class: classe.join(" ") },
         el("div", { class: "cal-numero" }, String(dia.getDate())),
         el("div", { class: "cal-itens" },
+          ...vencem.slice(0, 2).map((c) => el("button", {
+            type: "button",
+            class: "cal-item contrato",
+            title: `${c.tipo || "contrato"} ${c.numero} vence em ${fmtDate(c.fim)}`,
+            onclick: (ev) => { ev.stopPropagation(); verDia(dia, devolvem, emCurso, vencem); },
+          }, `📄 ${c.numero}`)),
           ...devolvem.slice(0, 4).map((i) => {
             const etiqueta = el("button", {
               type: "button",
@@ -199,11 +233,11 @@ function montarGrade() {
             }, `${i.patrimonio}${i.planta_sigla ? ` · ${i.planta_sigla}` : ""}`);
             return etiqueta;
           }),
-          devolvem.length > 4
+          devolvem.length + vencem.length > 4
             ? el("button", {
                 type: "button", class: "cal-mais",
-                onclick: (ev) => { ev.stopPropagation(); verDia(dia, devolvem); },
-              }, `+${devolvem.length - 4} mais`)
+                onclick: (ev) => { ev.stopPropagation(); verDia(dia, devolvem, emCurso, vencem); },
+              }, `+${devolvem.length + vencem.length - 4} mais`)
             : null,
         ),
       );
