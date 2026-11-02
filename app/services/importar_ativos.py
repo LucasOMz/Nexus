@@ -585,13 +585,35 @@ def importar(conteudo: bytes, db: Session, planta_id: int | None,
                 novo = linha.dados.get(f"novo_{chave}")
                 if not novo:
                     continue
-                nome, planta = novo
+                nome = novo[0]
                 # Reaproveita o que outra LINHA do mesmo arquivo já criou —
                 # sem isto, 40 ativos com "Notebook" criariam 40 categorias.
                 if nome in novos_vinculos:
                     d[f"{chave}_id"] = novos_vinculos[nome]
                     continue
-                obj = modelo(nome=nome, planta_id=planta)
+
+                # ## Cadastros de apoio são GLOBAIS, não por planta
+                #
+                # `Categoria`, `Fornecedor`, `Localizacao` e `Departamento`
+                # **não têm `planta_id`** — existem uma vez para o sistema
+                # todo. O código passava o argumento mesmo assim, e o
+                # SQLAlchemy recusava:
+                #
+                #     TypeError: 'planta_id' is an invalid keyword argument
+                #                for Categoria
+                #
+                # O erro ficou escondido enquanto o backup falhava: a
+                # importação morria antes de chegar nesta linha, e a causa
+                # visível era sempre "sem backup".
+                #
+                # Só `Categoria` tem `dominio` — e ele importa: sem isso, uma
+                # categoria criada por um ativo de impressora apareceria
+                # também no inventário de TI.
+                argumentos: dict = {"nome": nome}
+                if "dominio" in modelo.__table__.columns and d.get("dominio") is not None:
+                    argumentos["dominio"] = d["dominio"]
+
+                obj = modelo(**argumentos)
                 db.add(obj)
                 db.flush()
                 novos_vinculos[nome] = obj.id
