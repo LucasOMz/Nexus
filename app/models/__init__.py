@@ -1,4 +1,5 @@
 """Exporta todos os modelos e a Base para o SQLAlchemy."""
+from app.models.agente import CodigoInstalacao, EquipamentoPendente, TokenAgente
 from app.models.base import Base, BaseModel, CreatedAtModel, sa_enum
 from app.models.contagem import Contagem, ContagemItem, ResultadoItem, StatusContagem
 from app.models.contrato import Contrato
@@ -68,6 +69,9 @@ __all__ = [
     "Base",
     "BaseModel",
     "Categoria",
+    "CodigoInstalacao",
+    "EquipamentoPendente",
+    "TokenAgente",
     "Conectividade",
     "ConfiguracaoSistema",
     "ConfiguracaoSMTP",

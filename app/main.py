@@ -26,6 +26,7 @@ from app.core.rate_limit import api_limiter, chave_do_cliente
 from app.database import SessionLocal, init_db
 from app.routers import (
     admin,
+    agente,
     ativos,
     auditoria,
     auth,
@@ -317,6 +318,7 @@ app.include_router(calendario.router, prefix=API)
 app.include_router(notificacoes.router, prefix=API)
 app.include_router(notificacoes_admin.router, prefix=API)
 app.include_router(manutencao_admin.router, prefix=API)
+app.include_router(agente.router, prefix=API)
 app.include_router(reportes.router, prefix=API)
 app.include_router(ocs.router, prefix=API)
 app.include_router(ocs_reconciliacao.router, prefix=API)

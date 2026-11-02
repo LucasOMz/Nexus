@@ -729,4 +729,63 @@ CREATE INDEX IF NOT EXISTS ix_emails_enviados_chave ON emails_enviados (chave);
 CREATE INDEX IF NOT EXISTS ix_emails_enviados_referencia ON emails_enviados (referencia);
 CREATE INDEX IF NOT EXISTS ix_emails_enviados_enviado_em ON emails_enviados (enviado_em);
 
+
+Agentes — instalacao, tokens de maquina e fila de cadastro
+   ===================================================================== */
+
+CREATE TABLE IF NOT EXISTS codigos_instalacao (
+	id SERIAL NOT NULL, 
+	codigo_hash VARCHAR(64) NOT NULL, 
+	prefixo VARCHAR(16) NOT NULL, 
+	rotulo VARCHAR(120), 
+	usos_max INTEGER NOT NULL, 
+	usos_feitos INTEGER NOT NULL, 
+	expira_em TIMESTAMP WITH TIME ZONE NOT NULL, 
+	revogado_em TIMESTAMP WITH TIME ZONE, 
+	criado_por_id INTEGER, 
+	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+	updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+	deleted_at TIMESTAMP WITH TIME ZONE, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(criado_por_id) REFERENCES usuarios (id)
+);
+
+CREATE TABLE IF NOT EXISTS tokens_agente (
+	id SERIAL NOT NULL, 
+	token_hash VARCHAR(64) NOT NULL, 
+	prefixo VARCHAR(16) NOT NULL, 
+	ativo_id INTEGER NOT NULL, 
+	hostname VARCHAR(120), 
+	serial VARCHAR(120), 
+	ultimo_uso_em TIMESTAMP WITH TIME ZONE, 
+	ultimo_ip VARCHAR(64), 
+	revogado_em TIMESTAMP WITH TIME ZONE, 
+	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+	updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+	deleted_at TIMESTAMP WITH TIME ZONE, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(ativo_id) REFERENCES ativos (id)
+);
+
+CREATE TABLE IF NOT EXISTS equipamentos_pendentes (
+	id SERIAL NOT NULL, 
+	serial_bruto VARCHAR(120), 
+	hostname VARCHAR(120), 
+	mac VARCHAR(64), 
+	ip VARCHAR(64), 
+	payload_json TEXT NOT NULL, 
+	motivo VARCHAR(40) NOT NULL, 
+	visto_em TIMESTAMP WITH TIME ZONE NOT NULL, 
+	ultima_vez_em TIMESTAMP WITH TIME ZONE, 
+	resolvido_em TIMESTAMP WITH TIME ZONE, 
+	resolvido_por_id INTEGER, 
+	ativo_criado_id INTEGER, 
+	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+	updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+	deleted_at TIMESTAMP WITH TIME ZONE, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(resolvido_por_id) REFERENCES usuarios (id), 
+	FOREIGN KEY(ativo_criado_id) REFERENCES ativos (id)
+);
+
 COMMIT;

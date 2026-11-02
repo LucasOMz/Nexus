@@ -1,9 +1,10 @@
 """Extensão de domínio TI — atributos específicos de equipamentos de TI."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, Integer, String
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -33,5 +34,13 @@ class AtivoTI(Base):
     ocs_id: Mapped[str | None] = mapped_column(String(40), index=True)
     # Quando o OCS viu a máquina pela última vez (texto, como o OCS envia).
     ocs_ultimo_contato: Mapped[str | None] = mapped_column(String(40))
+
+    # --- inventário do agente ---------------------------------------
+    #
+    # O payload completo que o agente enviou, em JSON. Colunas para
+    # tudo o que muda a cada versão do coletor significariam uma
+    # migração por campo novo.
+    inventario_json: Mapped[str | None] = mapped_column(Text)
+    inventario_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     ativo: Mapped["Ativo"] = relationship(back_populates="ti")
