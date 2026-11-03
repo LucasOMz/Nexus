@@ -330,3 +330,77 @@ class TestHistorico:
 
         assert r["historico"] is True
         assert banco.query(HistoricoInventario).count() == 3
+
+class TestAtualizacaoDoAtivo:
+    """O agente preenche a tabela base, não só a ficha.
+
+    ## O bug
+
+    `modelo` e `marca` vivem em `ativos`. A criação já os preenchia, mas a
+    **atualização** só tocava na ficha `ativos_ti`.
+
+    Resultado: cadastrar o ativo à mão com apenas o serial e deixar o agente
+    completar **não completava nada** — modelo e marca ficavam vazios para
+    sempre, mesmo com o "Detalhes Completos" cheio.
+    """
+
+    def test_preenche_modelo_e_marca_do_payload(self, banco, codigo):
+        """O cenário real: ativo criado só com serial, agente completa."""
+        from app.models.core import Ativo
+        from app.models.enums import Dominio, StatusAtivo, TipoItem
+
+        # ativo cadastrado à mão, sem modelo nem marca
+        banco.add(Ativo(
+            planta_id=1, dominio=Dominio.TI, tipo_item=TipoItem.ATIVO,
+            status=StatusAtivo.ESTOQUE, numero_serie="OEM-TESTE123",
+        ))
+        banco.commit()
+
+        _registro, valor = codigo
+        pay = payload()
+        pay["serial"] = "OEM-TESTE123"
+
+        r = svc.registrar(
+            banco, codigo=valor, serial="OEM-TESTE123",
+            hostname="DESKTOP-042", payload=pay,
+        )
+        assert r["ok"] is True, r.get("motivo")
+
+        token = svc.buscar_token(banco, r["token"])
+        svc.aplicar_inventario(banco, token, pay)
+
+        ativo = (
+            banco.query(Ativo)
+            .filter(Ativo.numero_serie == "OEM-TESTE123")
+            .one()
+        )
+        assert ativo.modelo == "OptiPlex 7090", ativo.modelo
+        assert ativo.marca == "Dell Inc.", ativo.marca
+
+    def test_payload_sem_modelo_nao_apaga_o_que_existe(self, banco, codigo):
+        """Campo vazio no payload não zera o valor do ativo.
+
+        Uma coleta com dado faltando não pode destruir o cadastro.
+        """
+        from app.models.core import Ativo
+
+        _registro, valor = codigo
+        r = svc.registrar(
+            banco, codigo=valor, serial=SERIAL,
+            hostname="DESKTOP-042", payload=payload(),
+        )
+        token = svc.buscar_token(banco, r["token"])
+
+        # primeira coleta preenche
+        svc.aplicar_inventario(banco, token, payload())
+
+        # segunda coleta vem sem modelo/fabricante
+        sem = payload()
+        sem["basico"]["modelo"] = None
+        sem["basico"]["fabricante"] = None
+        svc.aplicar_inventario(banco, token, sem)
+
+        ativo = banco.get(Ativo, r["ativo_id"])
+        banco.refresh(ativo)
+        assert ativo.modelo == "OptiPlex 7090", "o modelo foi apagado"
+        assert ativo.marca == "Dell Inc.", "a marca foi apagada"

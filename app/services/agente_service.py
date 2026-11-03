@@ -163,6 +163,28 @@ def _registrar_pendente(
     return novo
 
 
+# Fabricante que nao identifica nada. Placa de montagem propria devolve isto
+# no campo SMBIOS — e a criacao copiava direto para marca, deixando o ativo
+# com "To Be Filled By O.E.M." no cadastro.
+LIXO_DE_FABRICANTE = {
+    "", "0", "to be filled by o.e.m.", "to be filled by oem",
+    "default string", "none", "not specified", "unknown", "n/a",
+    "system manufacturer", "o.e.m.", "oem",
+}
+
+
+def fabricante_valido(valor) -> str | None:
+    """Devolve o fabricante, ou None quando e lixo de SMBIOS."""
+    if not valor:
+        return None
+    texto = str(valor).strip()
+    if texto.lower() in LIXO_DE_FABRICANTE:
+        return None
+    if texto.lower().startswith("to be filled"):
+        return None
+    return texto[:80]
+
+
 def _criar_ativo_do_payload(db: Session, serial: str, payload: dict, hostname: str | None):
     """Cria o ativo a partir do que o agente enviou.
 
@@ -200,7 +222,7 @@ def _criar_ativo_do_payload(db: Session, serial: str, payload: dict, hostname: s
         numero_serie=serial,
         patrimonio=None,
         modelo=(str(basico.get("modelo"))[:120] if basico.get("modelo") else None),
-        marca=(str(basico.get("fabricante"))[:80] if basico.get("fabricante") else None),
+        marca=fabricante_valido(basico.get("fabricante")),
     )
     db.add(ativo)
     db.flush()
@@ -453,6 +475,23 @@ def aplicar_inventario(db: Session, token: TokenAgente, payload: dict) -> dict:
     # Detecta mudança ANTES de sobrescrever: o snapshot antigo é a
     # referência, e depois da gravação ele não existe mais.
     mudancas = detectar_mudanca(db, ativo.id, payload)
+
+    # --- campos da tabela base ------------------------------------------
+    #
+    # modelo e marca vivem em tivos, nao na ficha tivos_ti.
+    # A criacao ja os preenchia; a ATUALIZACAO nao tocava neles — e o ativo
+    # ficava com modelo e marca vazios mesmo depois de varias coletas.
+    #
+    # O agente e a fonte de verdade do hardware: se alguem corrigiu o modelo
+    # a mao e a BIOS diz outra coisa, vale a BIOS. E o mesmo motivo pelo qual
+    # "Detalhes Completos" e somente leitura.
+    modelo = basico.get("modelo")
+    if modelo:
+        ativo.modelo = str(modelo).strip()[:120] or ativo.modelo
+
+    marca = fabricante_valido(basico.get("fabricante"))
+    if marca:
+        ativo.marca = marca
 
     ficha.inventario_json = json.dumps(detalhes, ensure_ascii=False)
     ficha.inventario_em = datetime.now(timezone.utc)
