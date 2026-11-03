@@ -53,7 +53,18 @@ def _resolver_usuario(db: Session, token: str | None) -> Usuario | None:
     # então a própria pessoa pode logar de novo na hora.
     if user.forcar_logout_em is not None:
         emitido = payload.get("iat")
-        if emitido is not None and int(emitido) < int(user.forcar_logout_em.timestamp()):
+        # `<=` e não `<`: o `iat` tem precisão de **segundos**, e a derrubada
+        # pode cair no mesmo segundo em que o token foi emitido. Com `<`, o
+        # token sobrevivia — e o teste ficava intermitente, dependendo de
+        # cruzar ou não a fronteira do segundo.
+        #
+        # O CI pegou isso e a máquina local não: lá, tudo roda em
+        # milissegundos e os dois instantes são sempre iguais.
+        #
+        # Efeito colateral: quem fizer login exatamente no segundo da própria
+        # derrubada é recusado. Edge case raro, e falhar fechado é o lado
+        # certo para uma trava.
+        if emitido is not None and int(emitido) <= int(user.forcar_logout_em.timestamp()):
             return None
 
     # --- modo manutenção --------------------------------------------------
