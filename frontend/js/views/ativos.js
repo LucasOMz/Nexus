@@ -746,8 +746,16 @@ async function renderList(root, lookups) {
     });
   }
 
-  const cabecalhos = podeLote ? ["", "", "Patrimônio", "Planta", "Modelo", "Status", "Localização", "Garantia", "Ações"]
-                              : ["", "Patrimônio", "Planta", "Modelo", "Status", "Localização", "Garantia", "Ações"];
+  // Colunas da lista.
+  //
+  // "Garantia" saiu: é informação de vencimento, e quem olha a lista está
+  // procurando o equipamento, não o contrato. A garantia continua na tela
+  // própria e na ficha do ativo.
+  //
+  // "Usuário" entrou no lugar: é a pergunta que a lista não respondia —
+  // com quem está este equipamento.
+  const cabecalhos = podeLote ? ["", "", "Patrimônio", "Planta", "Modelo", "Status", "Usuário", "Localização", "Ações"]
+                              : ["", "Patrimônio", "Planta", "Modelo", "Status", "Usuário", "Localização", "Ações"];
 
   const table = el("table", { class: "data" },
     el("thead", {}, el("tr", {}, ...cabecalhos.map((h, i) => {
@@ -788,8 +796,11 @@ async function renderList(root, lookups) {
           : el("span", { class: "muted" }, "—")),
         el("td", {}, a.modelo || "—"),
         el("td", { html: statusBadge(a.status) }),
+        // Quem está com o equipamento. Vazio é o normal em estoque — não é
+        // dado faltando.
+        el("td", {}, a.emprestado_para_nome
+          || el("span", { class: "muted" }, "—")),
         el("td", {}, loc || "—"),
-        el("td", {}, a.data_garantia ? fmtDate(a.data_garantia) : "—"),
         el("td", { class: "actions" },
           ...(state.canWrite ? [
             el("button", { class: "iconbtn", title: "QR", onclick: (e) => { e.stopPropagation(); acaoQR(a); }, html: icon("qr") }),
