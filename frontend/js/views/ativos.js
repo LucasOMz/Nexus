@@ -796,9 +796,17 @@ async function renderList(root, lookups) {
           : el("span", { class: "muted" }, "—")),
         el("td", {}, a.modelo || "—"),
         el("td", { html: statusBadge(a.status) }),
-        // Quem está com o equipamento. Vazio é o normal em estoque — não é
-        // dado faltando.
-        el("td", {}, a.emprestado_para_nome
+        // Quem usa a máquina. A ordem importa:
+        //
+        // 1. ultimo_usuario — quem o AGENTE viu logado. É o dado vivo,
+        //    atualizado a cada coleta.
+        // 2. emprestado_para_nome — quem o técnico atribuiu. Vale quando a
+        //    máquina ainda não reportou, ou está em estoque com destino
+        //    definido.
+        //
+        // Vazio é o normal em equipamento parado — não é dado faltando.
+        el("td", {}, a.ultimo_usuario
+          || a.emprestado_para_nome
           || el("span", { class: "muted" }, "—")),
         el("td", {}, loc || "—"),
         el("td", { class: "actions" },

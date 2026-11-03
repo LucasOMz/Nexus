@@ -486,3 +486,40 @@ def salvar_senha(
     """
     servico.definir_senha_fechamento(db, entrada.senha.strip() or None)
     return {"ok": True, "definida": bool(entrada.senha.strip())}
+
+class UsuarioDoAtivoSaida(BaseModel):
+    nome: str
+    primeira_vez: datetime
+    ultimo_login: datetime
+
+
+@router.get(
+    "/admin/agentes/usuarios-do-ativo/{ativo_id}",
+    response_model=list[UsuarioDoAtivoSaida],
+)
+def usuarios_do_ativo(
+    ativo_id: int,
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(get_current_user),
+) -> list[UsuarioDoAtivoSaida]:
+    """Quem já usou esta máquina, do mais recente para o mais antigo.
+
+    Máquina compartilhada tem mais de uma pessoa. A lista é corrente: um
+    registro por pessoa, e quem não aparece há 30 dias sai — não é histórico
+    de logon.
+    """
+    from app.models.usuario_ativo import UsuarioDoAtivo
+
+    linhas = (
+        db.query(UsuarioDoAtivo)
+        .filter(UsuarioDoAtivo.ativo_id == ativo_id)
+        .order_by(UsuarioDoAtivo.ultimo_login.desc())
+        .limit(50)
+        .all()
+    )
+    return [
+        UsuarioDoAtivoSaida(
+            nome=u.nome, primeira_vez=u.primeira_vez, ultimo_login=u.ultimo_login
+        )
+        for u in linhas
+    ]

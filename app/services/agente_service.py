@@ -429,6 +429,65 @@ def detectar_mudanca(db: Session, ativo_id: int, payload: dict) -> dict | None:
     return mudancas
 
 
+def registrar_usuario_do_ativo(db: Session, ativo_id: int, nome: str | None) -> None:
+    """Anota quem esta usando a maquina.
+
+    ## Duas coisas acontecem
+
+    1. Ativo.ultimo_usuario recebe o nome, para a lista principal mostrar
+       sem consulta por linha.
+
+    2. UsuarioDoAtivo guarda **uma linha por pessoa**, com a ultima vez que
+       ela apareceu. Nao e log: nao se cria linha por evento, so se atualiza
+       ultimo_login.
+
+    ## A expiracao de 30 dias
+
+    Quem nao aparece ha mais de um mes sai da lista. Sem isso, a maquina
+    usada por dez pessoas em dois anos acumularia nomes sem relacao com o
+    uso atual — e a pergunta que a tela responde e "quem usa isto", nao
+    "quem ja usou alguma vez".
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from app.models.core import Ativo
+    from app.models.usuario_ativo import UsuarioDoAtivo
+
+    if not nome:
+        return
+
+    limpo = str(nome).strip()[:120]
+    if not limpo:
+        return
+
+    agora = datetime.now(timezone.utc)
+    corte = agora - timedelta(days=30)
+
+    ativo = db.get(Ativo, ativo_id)
+    if ativo is None:
+        return
+    ativo.ultimo_usuario = limpo
+    ativo.ultimo_usuario_em = agora
+
+    atual = (
+        db.query(UsuarioDoAtivo)
+        .filter(UsuarioDoAtivo.ativo_id == ativo_id, UsuarioDoAtivo.nome == limpo)
+        .first()
+    )
+    if atual is None:
+        db.add(UsuarioDoAtivo(
+            ativo_id=ativo_id, nome=limpo, primeira_vez=agora, ultimo_login=agora,
+        ))
+    else:
+        atual.ultimo_login = agora
+
+    # Limpeza: quem nao aparece ha 30 dias sai da lista.
+    db.query(UsuarioDoAtivo).filter(
+        UsuarioDoAtivo.ativo_id == ativo_id,
+        UsuarioDoAtivo.ultimo_login < corte,
+    ).delete(synchronize_session=False)
+
+
 def aplicar_inventario(db: Session, token: TokenAgente, payload: dict) -> dict:
     """Grava o inventário no ativo dono do token.
 
@@ -495,6 +554,15 @@ def aplicar_inventario(db: Session, token: TokenAgente, payload: dict) -> dict:
 
     ficha.inventario_json = json.dumps(detalhes, ensure_ascii=False)
     ficha.inventario_em = datetime.now(timezone.utc)
+
+    # Quem está usando, segundo o agente. Sem isto a lista de ativos não
+    # mostra usuário nenhum — e é o dado que o coletor já enviava e ninguém
+    # aproveitava.
+    #
+    # `detalhes.usuario_logado` é o mais preciso quando existe (vem do
+    # registro do Windows); `usuario` é o campo de topo do payload.
+    nome_usuario = detalhes.get("usuario_logado") or payload.get("usuario")
+    registrar_usuario_do_ativo(db, ativo.id, nome_usuario)
 
     token.ultimo_uso_em = datetime.now(timezone.utc)
     db.commit()

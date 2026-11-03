@@ -807,5 +807,22 @@ CREATE TABLE IF NOT EXISTS historico_inventario (
 	FOREIGN KEY(ativo_id) REFERENCES ativos (id)
 );
 
+/* =====================================================================
+   Usuarios que ja usaram cada ativo (agente)
+   ===================================================================== */
+
+CREATE TABLE IF NOT EXISTS usuarios_do_ativo (
+	id SERIAL NOT NULL, 
+	ativo_id INTEGER NOT NULL, 
+	nome VARCHAR(120) NOT NULL, 
+	primeira_vez TIMESTAMP WITH TIME ZONE NOT NULL, 
+	ultimo_login TIMESTAMP WITH TIME ZONE NOT NULL, 
+	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+	updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+	deleted_at TIMESTAMP WITH TIME ZONE, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(ativo_id) REFERENCES ativos (id)
+);
+
 
 COMMIT;

@@ -81,10 +81,15 @@ export async function abrirDetalhes(ativo) {
   // O histórico pode falhar sem derrubar a tela — é acessório.
   let ficha = null;
   let historico = [];
+  let usuarios = [];
   try {
     const dados = await api.get(`/ativos/${ativo.id}`);
     ficha = dados.ti || dados.impressora || null;
     historico = await api.get(`/admin/agentes/historico/${ativo.id}`).catch(() => []);
+    // Lista corrente de quem já logou nesta máquina. Quem não aparece há 30
+    // dias já foi removido pelo servidor.
+    usuarios = await api.get(`/admin/agentes/usuarios-do-ativo/${ativo.id}`)
+      .catch(() => []);
   } catch (e) {
     corpo.innerHTML = "";
     corpo.append(emptyState("ativos", "Não foi possível carregar", e.message));
@@ -183,6 +188,26 @@ export async function abrirDetalhes(ativo) {
   }
 
   corpo.append(secao("Hardware", hardware) || el("div", {}));
+
+  // --- 2b. quem já usou -------------------------------------------------
+  //
+  // Máquina compartilhada tem mais de uma pessoa. A lista é corrente: um
+  // registro por pessoa, e quem não aparece há 30 dias sai — não é histórico
+  // de logon.
+  if (usuarios.length) {
+    const lista = el("div", {});
+    for (const u of usuarios) {
+      lista.append(el("div", { class: "list-row" },
+        el("div", { class: "list-main" },
+          el("div", { class: "list-title" }, u.nome),
+          el("div", { class: "list-sub" },
+            "último acesso em " + dataHora(u.ultimo_login))),
+        u.nome === (ficha.usuario_logado || "")
+          ? el("span", { class: "chip" }, "atual")
+          : el("span", {}, "")));
+    }
+    corpo.append(secao("Usuários desta máquina", lista) || el("div", {}));
+  }
 
   // --- 3. histórico -----------------------------------------------------
   if (!historico.length) {

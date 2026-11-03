@@ -60,6 +60,7 @@ from app.models.software import (
     SoftwareInstalado,
 )
 from app.models.ti import AtivoTI
+from app.models.usuario_ativo import UsuarioDoAtivo
 
 __all__ = [
     "Anexo",
@@ -123,5 +124,6 @@ __all__ = [
     "TipoMov",
     "TipoSuprimento",
     "Usuario",
+    "UsuarioDoAtivo",
     "sa_enum",
 ]

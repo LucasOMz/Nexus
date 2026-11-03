@@ -173,6 +173,13 @@ class AtivoOut(AtivoBase, DatasComFuso):
     devolucao_prevista: date | None = None
     emprestado_para_id: int | None = None
     emprestado_para_nome: str | None = None
+
+    # --- quem usa, segundo o agente -------------------------------------
+    #
+    # Preenchido pelas coletas. Não substitui `emprestado_para_id`: aquele é
+    # a empresa entregando o equipamento, este é quem fez login na máquina.
+    ultimo_usuario: str | None = None
+    ultimo_usuario_em: datetime | None = None
     emprestimo_atrasado: bool = False
     dominio: Dominio
     tipo_item: TipoItem

@@ -442,6 +442,15 @@ class Ativo(BaseModel, Base):
     )
     # Sem `cascade`: o contrato existe por si. Apagar um ativo não pode
     # apagar o contrato que cobre outros cinquenta.
+    # --- quem usa esta máquina, segundo o agente ------------------------
+    #
+    # Denormalizado de propósito: a lista carrega centenas de linhas, e
+    # descobrir o último usuário de cada uma por subconsulta custaria.
+    #
+    # A lista de quem JÁ usou fica em usuarios_do_ativo.
+    ultimo_usuario: Mapped[str | None] = mapped_column(String(120))
+    ultimo_usuario_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     contrato: Mapped[Contrato | None] = relationship(back_populates="ativos")
     suprimentos: Mapped[list[SuprimentoImpressora]] = relationship(
         back_populates="ativo", cascade="all, delete-orphan"
