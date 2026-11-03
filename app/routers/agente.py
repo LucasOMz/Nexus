@@ -432,3 +432,57 @@ def historico_do_ativo(
             )
         )
     return saida
+
+class SenhaEntrada(BaseModel):
+    senha: str = Field(default="", max_length=200)
+
+
+@router.post("/agente/validar-senha")
+def validar_senha(
+    entrada: SenhaEntrada,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Confere a senha de fechamento informada pelo agente.
+
+    Autenticado pelo **token da maquina**, nao por sessao de usuario: quem
+    pergunta e o agente instalado, nao uma pessoa logada no painel.
+
+    Sem rede o agente nao consegue validar e **nao fecha** — falhar fechado
+    e o comportamento certo para uma trava.
+    """
+    cabecalho = request.headers.get("Authorization") or ""
+    if not cabecalho.lower().startswith("bearer "):
+        raise HTTPException(401, "token_ausente")
+    if servico.buscar_token(db, cabecalho[7:].strip()) is None:
+        raise HTTPException(401, "token_invalido")
+
+    if servico.validar_senha_fechamento(db, entrada.senha):
+        return {"ok": True}
+    raise HTTPException(403, "senha_incorreta")
+
+
+@router.get("/admin/agentes/senha")
+def estado_senha(
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(require_admin),
+) -> dict:
+    """Diz se existe senha de fechamento, sem revelar qual."""
+    from app.services import manutencao
+
+    cfg = manutencao.configuracao(db)
+    return {"definida": bool(cfg.senha_fechamento_hash)}
+
+
+@router.post("/admin/agentes/senha")
+def salvar_senha(
+    entrada: SenhaEntrada,
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(require_admin),
+) -> dict:
+    """Define ou remove a senha de fechamento do agente.
+
+    Enviar string vazia remove a senha — e o fechamento volta a ser livre.
+    """
+    servico.definir_senha_fechamento(db, entrada.senha.strip() or None)
+    return {"ok": True, "definida": bool(entrada.senha.strip())}

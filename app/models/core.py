@@ -782,6 +782,12 @@ class ConfiguracaoSistema(BaseModel, Base):
     manutencao_desde: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     manutencao_por_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
 
+    # --- senha para encerrar o agente -----------------------------------
+    #
+    # Guardada com hash, como qualquer senha. Nula = fechamento livre, para
+    # que uma instalacao nova nao fique impossivel de encerrar.
+    senha_fechamento_hash: Mapped[str | None] = mapped_column(String(200))
+
 
 class QRZerado(CreatedAtModel, Base):
     """Etiqueta QR gerada EM BRANCO, para colar no equipamento e cadastrar depois.

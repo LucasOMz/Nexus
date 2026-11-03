@@ -52,12 +52,16 @@ export async function renderAgente(root) {
     let codigos = [];
     let pendentes = [];
     let tokens = [];
+    let senhaDefinida = false;
     try {
-      [codigos, pendentes, tokens] = await Promise.all([
+      const [c, p, t, s] = await Promise.all([
         api.get("/admin/agentes/codigos").catch(() => []),
         api.get("/admin/agentes/pendentes").catch(() => []),
         api.get("/admin/agentes/tokens").catch(() => []),
+        api.get("/admin/agentes/senha").catch(() => ({ definida: false })),
       ]);
+      codigos = c; pendentes = p; tokens = t;
+      senhaDefinida = !!(s && s.definida);
     } catch (e) {
       alvo.innerHTML = "";
       alvo.append(emptyState("settings", "Não foi possível carregar", e.message));
@@ -147,6 +151,59 @@ export async function renderAgente(root) {
       campoRotulo, selectDias, campoUsos, botaoGerar,
       areaCodigo,
     ));
+
+    // ------------------------------------------------------------ senha
+    //
+    // Senha para encerrar o agente. Validada no servidor A CADA tentativa,
+    // sem cache na maquina — trocar aqui invalida a antiga na hora, em toda
+    // a frota.
+    const campoSenha = el("input", {
+      class: "field", type: "password",
+      placeholder: senhaDefinida ? "Nova senha (deixe vazio para manter)" : "Definir senha",
+      style: "margin-bottom:8px",
+    });
+
+    const cartaoSenha = el("div", { class: "card", style: "margin-bottom:16px" },
+      el("div", { class: "row between wrap", style: "gap:10px;align-items:center" },
+        el("b", {}, "Senha para fechar o agente"),
+        el("span", { class: "chip" + (senhaDefinida ? "" : " aviso") },
+          senhaDefinida ? "definida" : "livre")),
+      el("p", { class: "muted", style: "font-size:12.5px;margin:4px 0 12px" },
+        "Sem senha, qualquer um encerra o agente pelo ícone da bandeja. "
+        + "Com senha, o agente consulta o servidor a cada tentativa — "
+        + "trocar aqui invalida a anterior imediatamente."),
+      campoSenha,
+      el("div", { class: "row", style: "gap:8px;flex-wrap:wrap" },
+        el("button", {
+          class: "btn",
+          onclick: async (ev) => {
+            const bt = ev.currentTarget;
+            const valor = campoSenha.value.trim();
+            if (!valor) { toast("Digite a senha."); return; }
+            bt.disabled = true;
+            try {
+              await api.post("/admin/agentes/senha", { senha: valor });
+              toast("Senha definida.");
+              await desenhar();
+            } catch (e) { mostrarErro(e); }
+            finally { bt.disabled = false; }
+          },
+        }, "Salvar senha"),
+        senhaDefinida
+          ? el("button", {
+              class: "btn text small",
+              onclick: async () => {
+                if (!confirm("Remover a senha? O fechamento volta a ser livre.")) return;
+                try {
+                  await api.post("/admin/agentes/senha", { senha: "" });
+                  toast("Senha removida.");
+                  await desenhar();
+                } catch (e) { mostrarErro(e); }
+              },
+            }, "Remover senha")
+          : null),
+    );
+    alvo.append(cartaoSenha);
 
     // ------------------------------------------------------------ codigos
     const cartaoCodigos = el("div", { class: "card", style: "margin-bottom:16px" },

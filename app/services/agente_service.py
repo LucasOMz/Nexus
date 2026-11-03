@@ -467,3 +467,26 @@ def aplicar_inventario(db: Session, token: TokenAgente, payload: dict) -> dict:
         "mudancas": mudancas or {},
         "historico": bool(mudancas),
     }
+
+def definir_senha_fechamento(db: Session, senha: str | None) -> None:
+    """Define (ou remove) a senha de fechamento do agente."""
+    from app.core.security import hash_password
+    from app.services import manutencao
+
+    cfg = manutencao.configuracao(db)
+    cfg.senha_fechamento_hash = hash_password(senha) if senha else None
+    db.commit()
+
+
+def validar_senha_fechamento(db: Session, senha: str) -> bool:
+    """Confere a senha de fechamento.
+
+    Sem senha definida, qualquer valor passa — e o fechamento e livre.
+    """
+    from app.core.security import verify_password
+    from app.services import manutencao
+
+    cfg = manutencao.configuracao(db)
+    if not cfg.senha_fechamento_hash:
+        return True
+    return verify_password(senha or "", cfg.senha_fechamento_hash)
