@@ -183,6 +183,14 @@ def _criar_ativo_do_payload(db: Session, serial: str, payload: dict, hostname: s
     if planta is None:
         return None
 
+    # O serial pode estar preso em uma linha EXCLUIDA — o indice unico nao
+    # ignora deleted_at. Liberar antes de criar, senao a insercao viola a
+    # restricao e o recadastro falha.
+    from app.services import unicidade
+
+    unicidade.liberar(db, Ativo, "numero_serie", serial, limite=120)
+    db.flush()
+
     basico = payload.get("basico") or {}
     ativo = Ativo(
         planta_id=planta.id,
@@ -221,8 +229,21 @@ def registrar(
     registro = buscar_codigo(db, codigo)
     if registro is None:
         return {"ok": False, "status": 401, "motivo": "codigo_invalido"}
-    if not registro.util:
-        return {"ok": False, "status": 403, "motivo": "codigo_expirado"}
+    # `util` exige nao-revogado, nao-expirado E nao-esgotado. O ultimo nao
+    # pode barrar: o agente guarda o codigo para refazer o cadastro quando o
+    # ativo e excluido, e nesse momento os usos ja foram consumidos.
+    #
+    # Validade e revogacao continuam sendo o controle de verdade.
+    if registro.revogado_em is not None:
+        return {"ok": False, "status": 403, "motivo": "codigo_revogado"}
+
+    agora = datetime.now(timezone.utc)
+    expira = registro.expira_em
+    if expira is not None:
+        if expira.tzinfo is None:
+            expira = expira.replace(tzinfo=timezone.utc)
+        if expira < agora:
+            return {"ok": False, "status": 403, "motivo": "codigo_expirado"}
 
     if not serial_valido(serial):
         # Não consome uso: a máquina veio, mas não tem identificador.
@@ -394,6 +415,9 @@ def aplicar_inventario(db: Session, token: TokenAgente, payload: dict) -> dict:
     """
     ativo = db.get(Ativo, token.ativo_id)
     if ativo is None or ativo.deleted_at is not None:
+        # Sem recuperacao aqui. O agente guarda o codigo de instalacao e
+        # refaz o registro por conta propria — quem decide isso e o cliente,
+        # nao o servidor.
         return {"ok": False, "status": 404, "motivo": "ativo_removido"}
 
     basico = payload.get("basico") or {}
