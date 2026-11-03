@@ -516,8 +516,16 @@ function openDetail(ativo, lookups) {
     if (ativo.valor_residual) info.push(["Opção de compra", fmtMoney(ativo.valor_residual)]);
   }
   if (ext) {
+    // Campos que não entram na ficha resumida.
+    //
+    // `inventario_json` é o payload bruto do agente — ocupa meia tela e não
+    // se lê ali. Ele tem tela própria em "Detalhes Completos", formatado por
+    // seção. `inventario_em` é a data dessa coleta, e aparece lá também.
+    const OCULTOS = new Set(["ativo_id", "inventario_json", "inventario_em"]);
+
     for (const [k, v] of Object.entries(ext)) {
-      if (k !== "ativo_id") info.push([k.replace(/_/g, " "), v === null || v === "" ? "—" : String(v)]);
+      if (OCULTOS.has(k)) continue;
+      info.push([k.replace(/_/g, " "), v === null || v === "" ? "—" : String(v)]);
     }
   }
   const rows = info.map(([k, v]) => el("div", { class: "row between", style: "border-bottom:1px solid var(--md-sys-color-outline-variant);padding:8px 0" },

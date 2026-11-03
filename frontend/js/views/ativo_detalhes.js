@@ -72,7 +72,9 @@ export async function abrirDetalhes(ativo) {
     title: `Detalhes — ${ativo.patrimonio || ativo.numero_serie || "ativo"}`,
     body: corpo,
     wide: true,
-    actions: [{ label: "Fechar", variant: "tonal", onClick: (f) => f.close() }],
+    // `onClick` recebe a função de fechar, não o objeto do diálogo —
+    // `f.close()` estourava e o botão não fazia nada.
+    actions: [{ label: "Fechar", variant: "tonal", onClick: (fechar) => fechar() }],
   });
 
   // O detalhe completo vem de duas fontes: a ficha do ativo e o histórico.
