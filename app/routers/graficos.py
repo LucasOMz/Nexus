@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, require_module
@@ -313,10 +313,21 @@ def _parque(db: Session, dominio: Dominio, cond: list) -> dict:
     comprados = contagem.get("comprado", 0)
     locados = contagem.get("locado", 0)
 
-    # Valor patrimonial: só o comprado. Um locado não é bem da empresa.
+    # Valor patrimonial: o que não é locado. Um locado não é bem da empresa.
+    #
+    # `!=` sozinho **exclui NULL**: em SQL, `NULL != 'locado'` é nulo, não
+    # verdadeiro. Como "não informado" passou a ser um estado válido, sem o
+    # `is_(None)` todo ativo sem aquisição preenchida sumiria do valor
+    # patrimonial — e o parque apareceria valendo menos do que vale.
     valor_comprado = (
         db.query(func.coalesce(func.sum(Ativo.valor), 0))
-        .filter(*cond, Ativo.forma_aquisicao != FormaAquisicao.LOCADO)
+        .filter(
+            *cond,
+            or_(
+                Ativo.forma_aquisicao.is_(None),
+                Ativo.forma_aquisicao != FormaAquisicao.LOCADO,
+            ),
+        )
         .scalar()
         or 0
     )

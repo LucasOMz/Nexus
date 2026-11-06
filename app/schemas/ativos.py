@@ -89,7 +89,7 @@ class AtivoBase(SemVazios):
     # O padrão COMPRADO preserva o comportamento anterior: todo ativo
     # cadastrado por um cliente que não conhece o campo continua comprado,
     # que é o que ele sempre foi.
-    forma_aquisicao: FormaAquisicao = FormaAquisicao.COMPRADO
+    forma_aquisicao: FormaAquisicao | None = None
     # Contrato do qual o ativo faz parte (locação/comodato/compra em lote).
     contrato_id: int | None = None
     # Preço de compra ao fim da locação, quando o contrato já o define.

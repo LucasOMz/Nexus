@@ -61,7 +61,25 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def _default_sql(coluna, dialeto: str) -> str:  # noqa: ANN001 - Column do SQLAlchemy
-    """Valor DEFAULT para uma coluna nova que seja NOT NULL."""
+    """Valor DEFAULT para uma coluna nova que seja NOT NULL.
+
+    ## O caso `forma_aquisicao`
+
+    A coluna deixou de ter default no modelo — ativo novo nasce "não
+    informado". Mas **os ativos que já existiam foram tratados como
+    comprados** durante todo este tempo, e mudá-los para vazio alteraria o
+    valor patrimonial de um parque inteiro na primeira atualização.
+
+    Por isso o default de **migração** é `'comprado'`, e o de **criação** não
+    existe. São decisões diferentes: uma é sobre o histórico, a outra é sobre
+    o cadastro novo.
+    """
+    BACKFILL = {"forma_aquisicao": "comprado"}
+
+    nome = getattr(coluna, "name", "")
+    if nome in BACKFILL:
+        return "'" + BACKFILL[nome].replace("'", "''") + "'"
+
     padrao = getattr(coluna, "default", None)
     arg = getattr(padrao, "arg", None)
     if arg is not None and not callable(arg):
@@ -112,6 +130,21 @@ def _adicionar_colunas_faltantes(bind) -> list[str]:  # noqa: ANN001
             try:
                 with bind.begin() as conn:
                     conn.execute(text(ddl))
+                    # ## Backfill do histórico
+                    #
+                    # `forma_aquisicao` perdeu o default no modelo: ativo NOVO
+                    # nasce "não informado". Mas quem já existia foi tratado
+                    # como comprado durante toda a vida do sistema, e deixá-los
+                    # em branco mudaria o valor patrimonial de um parque
+                    # inteiro na primeira atualização.
+                    #
+                    # O DEFAULT no DDL só entra quando a coluna é NOT NULL —
+                    # coluna opcional nasce NULL. Daí o UPDATE explícito.
+                    if coluna.name == "forma_aquisicao":
+                        conn.execute(text(
+                            f'UPDATE "{nome_tabela}" SET forma_aquisicao = '
+                            "'comprado' WHERE forma_aquisicao IS NULL"
+                        ))
                 adicionadas.append(f"{nome_tabela}.{coluna.name}")
             except Exception:  # noqa: BLE001 - coluna problemática não deve impedir o boot
                 continue
@@ -145,6 +178,55 @@ def _criar_indices_faltantes(bind) -> list[str]:  # noqa: ANN001
             except Exception:  # noqa: BLE001 - índice problemático não deve impedir o boot
                 continue
     return criados
+
+
+def _relaxar_colunas_agora_opcionais(bind) -> list[str]:  # noqa: ANN001
+    """Remove `NOT NULL` de colunas que o modelo passou a aceitar vazias.
+
+    ## Por que isto existe
+
+    `_adicionar_colunas_faltantes` cria colunas novas. **Não muda restrição de
+    coluna existente** — e uma instalação antiga manteria `NOT NULL` para
+    sempre, recusando gravações que o código novo considera válidas.
+
+    Caso concreto: `forma_aquisicao` deixou de ser obrigatória. Em produção,
+    sem este passo, todo ativo sem aquisição informada falharia com
+    `not-null constraint violation` — enquanto nos testes passaria, porque o
+    banco nasce do modelo.
+
+    ## Por que a lista é explícita
+
+    Descobrir "quais colunas ficaram opcionais" exigiria comparar o banco com
+    o modelo em toda inicialização, e um falso positivo derrubaria uma
+    restrição que alguém quis manter. Três linhas nomeando o caso é mais
+    seguro que uma regra que adivinha.
+    """
+    from sqlalchemy import inspect, text
+
+    ALVOS = [
+        ("ativos", "forma_aquisicao"),
+    ]
+
+    inspetor = inspect(bind)
+    alteradas: list[str] = []
+
+    for tabela, coluna in ALVOS:
+        if not inspetor.has_table(tabela):
+            continue
+        colunas = {c["name"]: c for c in inspetor.get_columns(tabela)}
+        info = colunas.get(coluna)
+        if info is None or info.get("nullable", True):
+            continue
+        try:
+            with bind.begin() as conexao:
+                conexao.execute(
+                    text(f'ALTER TABLE {tabela} ALTER COLUMN "{coluna}" DROP NOT NULL')
+                )
+            alteradas.append(f"{tabela}.{coluna}")
+        except Exception:  # noqa: BLE001 - SQLite não suporta; o banco nasce do modelo
+            continue
+
+    return alteradas
 
 
 def _tem_estatisticas(bind) -> bool:  # noqa: ANN001
@@ -187,6 +269,11 @@ def init_db() -> None:
     novas = _adicionar_colunas_faltantes(engine)
     if novas:
         logging.getLogger("app").info("Colunas adicionadas automaticamente: %s", ", ".join(novas))
+
+    # Relaxa colunas que o modelo passou a aceitar vazias. Precisa vir
+    # antes de qualquer escrita: sem isso, a primeira gravacao sem o
+    # campo falha com not-null violation.
+    _relaxar_colunas_agora_opcionais(engine)
 
     indices = _criar_indices_faltantes(engine)
     if indices:

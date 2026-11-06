@@ -466,11 +466,21 @@ FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 -- criadas pelo SQLAlchemy: nada é sobrescrito nem perdido.
 
 -- --- Locação: colunas novas no ativo -------------------------------------
--- `forma_aquisicao` nasce 'comprado' de propósito: todo ativo cadastrado
--- antes deste campo existir foi tratado como comprado, e continua correto
--- sem migração de dado.
+-- `forma_aquisicao` é opcional: "não informado" e "comprado" são estados
+-- diferentes, e preencher por padrão fazia o financeiro contar como
+-- patrimônio próprio algo sem origem conhecida.
+--
+-- Os ativos criados antes deste campo existir continuam 'comprado' — na
+-- época, era a única leitura possível. Não há migração de dado: o default
+-- abaixo só se aplica a instalações que ainda não têm a coluna.
 ALTER TABLE ativos
-    ADD COLUMN IF NOT EXISTS forma_aquisicao VARCHAR(20) NOT NULL DEFAULT 'comprado';
+    ADD COLUMN IF NOT EXISTS forma_aquisicao VARCHAR(20) DEFAULT 'comprado';
+
+-- Instalações que já rodaram o comando acima receberam `NOT NULL`. A
+-- relaxação é feita em `init_db` (`_relaxar_colunas_agora_opcionais`), que
+-- pode rodar sem erro em toda inicialização.
+ALTER TABLE ativos
+    ALTER COLUMN forma_aquisicao DROP NOT NULL;
 ALTER TABLE ativos
     ADD COLUMN IF NOT EXISTS contrato_id INTEGER;
 ALTER TABLE ativos

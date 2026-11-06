@@ -113,7 +113,11 @@ function commonFields(ativo, lookups, fotos) {
         <select name="status">${["estoque","reservado","em_uso","manutencao","descartado"].map((s) => `<option ${a.status === s ? "selected" : ""}>${s}</option>`).join("")}</select></div>
       <div class="field"><label>Aquisição</label>
         <select name="forma_aquisicao">
-          <option value="comprado" ${(a.forma_aquisicao || "comprado") === "comprado" ? "selected" : ""}>Comprado</option>
+          <!-- Vazio é o padrão. "Não informado" e "comprado" são coisas
+               diferentes: preencher por conta própria faz o financeiro
+               contar como patrimônio próprio algo sem origem conhecida. -->
+          <option value="" ${!a.forma_aquisicao ? "selected" : ""}>— Não informado —</option>
+          <option value="comprado" ${a.forma_aquisicao === "comprado" ? "selected" : ""}>Comprado</option>
           <option value="locado" ${a.forma_aquisicao === "locado" ? "selected" : ""}>Locado</option>
         </select>
         <span class="hint">Locado não deprecia: o custo é a mensalidade do contrato.</span>
@@ -168,7 +172,9 @@ function buildPayload(data) {
     dominio: state.dominio, tipo_item: "ativo",
     // Locado não tem valor de compra nem data de aquisição — mandar os dois
     // inflaria o patrimônio com um bem que não é da empresa.
-    forma_aquisicao: data.forma_aquisicao || "comprado",
+    // Sem default: não informado é um estado válido, e o formulário
+    // manda null quando o usuário não escolhe.
+    forma_aquisicao: data.forma_aquisicao || null,
     valor_residual: data.forma_aquisicao === "locado" ? (data.valor_residual || null) : null,
   };
   if (state.dominio === "ti") {
@@ -509,7 +515,9 @@ function openDetail(ativo, lookups) {
     // vazio porque não houve compra, e "—" sozinho parece dado faltando.
     ["Aquisição", ativo.forma_aquisicao === "locado"
       ? "Locado (não é patrimônio da empresa)"
-      : "Comprado"],
+      : ativo.forma_aquisicao === "comprado"
+        ? "Comprado"
+        : "— Não informado"],
   ];
   if (ativo.forma_aquisicao === "locado") {
     info.push(["Data de aquisição", "— (a depreciação começa só na compra)"]);

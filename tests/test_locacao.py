@@ -33,11 +33,21 @@ def _planta(db, sigla="TAT"):
 
 
 class TestFormaAquisicao:
-    def test_o_padrao_e_comprado(self, client):
-        """Todo ativo que já existia foi tratado como comprado.
+    def test_ativo_novo_nasce_sem_forma(self, client):
+        """Ativo novo nasce SEM forma de aquisição.
 
-        O campo nascer como `locado` mudaria o significado do parque inteiro
-        no dia do deploy.
+        ## Por que a regra mudou
+
+        O padrão era `comprado`, e isso fazia o financeiro contar como
+        patrimônio próprio um equipamento sem origem conhecida — escondia a
+        falta de informação em vez de mostrá-la.
+
+        ## O que NÃO mudou
+
+        Quem já existia continua `comprado`: na época era a única leitura
+        possível, e reclassificar o parque inteiro na primeira atualização
+        alteraria os números patrimoniais. A migração faz o backfill;
+        `test_migracao_locacao` cobre isso.
         """
         db = _db(client)
         a = Ativo(dominio="ti", tipo_item="ativo", patrimonio="PADRAO", numero_serie="NS-PADRAO",
@@ -45,7 +55,7 @@ class TestFormaAquisicao:
         db.add(a)
         db.commit()
         db.refresh(a)
-        assert a.forma_aquisicao == FormaAquisicao.COMPRADO
+        assert a.forma_aquisicao is None, "ativo novo não deve nascer comprado"
 
     def test_os_valores_do_enum(self):
         assert FormaAquisicao.COMPRADO == "comprado"

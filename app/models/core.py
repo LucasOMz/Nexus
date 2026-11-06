@@ -389,8 +389,13 @@ class Ativo(BaseModel, Base):
     # --- Como o equipamento chegou ao parque ------------------------------
     # Padrão COMPRADO: todo ativo cadastrado antes deste campo existir foi
     # tratado como comprado, e assim continua correto sem migrar dado.
-    forma_aquisicao: Mapped[FormaAquisicao] = mapped_column(
-        sa_enum(FormaAquisicao), default=FormaAquisicao.COMPRADO, nullable=False, index=True
+    # Sem default e sem NOT NULL: "não informado" é um estado válido.
+    #
+    # Preencher "comprado" automaticamente fazia o financeiro contar como
+    # patrimônio próprio um equipamento sem origem conhecida — e escondia a
+    # falta de informação em vez de mostrá-la.
+    forma_aquisicao: Mapped[FormaAquisicao | None] = mapped_column(
+        sa_enum(FormaAquisicao), default=None, nullable=True, index=True
     )
     # Contrato do qual o ativo faz parte (locação/comodato/compra em lote).
     contrato_id: Mapped[int | None] = mapped_column(ForeignKey("contratos.id"), index=True)
