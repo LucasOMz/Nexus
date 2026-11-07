@@ -834,5 +834,65 @@ CREATE TABLE IF NOT EXISTS usuarios_do_ativo (
 	FOREIGN KEY(ativo_id) REFERENCES ativos (id)
 );
 
+/* =====================================================================
+   Kanban: buckets, atividades, checklist e responsaveis
+   ===================================================================== */
+
+CREATE TABLE IF NOT EXISTS kanban_buckets (
+	id SERIAL NOT NULL, 
+	planta_id INTEGER, 
+	nome VARCHAR(80) NOT NULL, 
+	ordem INTEGER NOT NULL, 
+	cor VARCHAR(20), 
+	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+	updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+	deleted_at TIMESTAMP WITH TIME ZONE, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(planta_id) REFERENCES plantas (id)
+);
+
+CREATE TABLE IF NOT EXISTS kanban_atividades (
+	id SERIAL NOT NULL, 
+	bucket_id INTEGER NOT NULL, 
+	titulo VARCHAR(200) NOT NULL, 
+	descricao TEXT, 
+	ordem INTEGER NOT NULL, 
+	prazo TIMESTAMP WITH TIME ZONE, 
+	concluida_em TIMESTAMP WITH TIME ZONE, 
+	criado_por_id INTEGER, 
+	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+	updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+	deleted_at TIMESTAMP WITH TIME ZONE, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(bucket_id) REFERENCES kanban_buckets (id), 
+	FOREIGN KEY(criado_por_id) REFERENCES usuarios (id)
+);
+
+CREATE TABLE IF NOT EXISTS kanban_itens (
+	id SERIAL NOT NULL, 
+	atividade_id INTEGER NOT NULL, 
+	texto VARCHAR(300) NOT NULL, 
+	feito BOOLEAN NOT NULL, 
+	ordem INTEGER NOT NULL, 
+	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+	updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+	deleted_at TIMESTAMP WITH TIME ZONE, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(atividade_id) REFERENCES kanban_atividades (id)
+);
+
+CREATE TABLE IF NOT EXISTS kanban_responsaveis (
+	id SERIAL NOT NULL, 
+	atividade_id INTEGER NOT NULL, 
+	usuario_id INTEGER NOT NULL, 
+	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+	updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+	deleted_at TIMESTAMP WITH TIME ZONE, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_kanban_responsavel UNIQUE (atividade_id, usuario_id), 
+	FOREIGN KEY(atividade_id) REFERENCES kanban_atividades (id), 
+	FOREIGN KEY(usuario_id) REFERENCES usuarios (id)
+);
+
 
 COMMIT;

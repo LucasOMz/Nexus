@@ -37,6 +37,9 @@ MODULOS: dict[str, str] = {
     "impressao": "Impressão (minha planta)",
     # Agenda de empréstimos e devoluções.
     "calendario": "Calendário de empréstimos",
+    # Quadro de tarefas em colunas. Liberado por usuário, como as demais
+    # telas — quem não tem o módulo não vê o ícone nem acessa a rota.
+    "kanban": "Kanban de atividades",
 }
 
 INVENTARIOS: dict[str, str] = {"ti": "Inventário de TI", "impressora": "Inventário de Impressoras"}

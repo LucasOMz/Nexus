@@ -46,6 +46,12 @@ from app.models.enums import (
 )
 from app.models.historico_inventario import HistoricoInventario
 from app.models.impressora import AtivoImpressora, LeituraContador, SuprimentoImpressora
+from app.models.kanban import (
+    Atividade,
+    AtividadeItem,
+    AtividadeResponsavel,
+    Bucket,
+)
 from app.models.notificacao import (
     ConfiguracaoSMTP,
     EmailEnviado,
@@ -125,5 +131,9 @@ __all__ = [
     "TipoSuprimento",
     "Usuario",
     "UsuarioDoAtivo",
+    "Atividade",
+    "AtividadeItem",
+    "AtividadeResponsavel",
+    "Bucket",
     "sa_enum",
 ]
