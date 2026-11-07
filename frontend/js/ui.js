@@ -37,6 +37,8 @@ const ICONS = {
   camera: '<path d="M3 8a2 2 0 012-2h2l2-2h6l2 2h2a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><circle cx="12" cy="12.5" r="3.5"/>',
   download: '<path d="M12 3v12"/><path d="M6 11l6 6 6-6"/><path d="M4 21h16"/>',
   check: '<path d="M20 6L9 17l-5-5"/>',
+  mais: '<circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/>',
+  paleta: '<circle cx="12" cy="12" r="9"/><circle cx="8.5" cy="9.5" r="1"/><circle cx="15.5" cy="9.5" r="1"/><circle cx="9" cy="15" r="1"/>',
   chevL: '<path d="M15 18l-6-6 6-6"/>',
   chevR: '<path d="M9 18l6-6-6-6"/>',
   back: '<line x1="19" y1="12" x2="5" y2="12"/><path d="M12 19l-7-7 7-7"/>',

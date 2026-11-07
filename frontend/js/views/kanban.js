@@ -256,19 +256,20 @@ function coluna(root, bucket) {
     },
   });
 
+  // Cor da coluna: vira o contorno da coluna inteira. Sem cor, transparente.
+  col.style.setProperty("--kb-cor", bucket.cor || "transparent");
+
   col.append(el("div", { class: "kb-cabecalho" },
     el("span", { class: "kb-titulo", title: bucket.nome }, bucket.nome),
     el("span", { class: "kb-contagem" }, String(bucket.atividades.length)),
     el("span", { style: "flex:1" }),
     el("button", {
-      class: "kb-fechar", title: "Renomear coluna",
-      onclick: () => renomearBucket(root, bucket),
-      html: icon("edit", 15),
-    }),
-    el("button", {
-      class: "kb-fechar", title: "Excluir coluna",
-      onclick: () => excluirBucket(root, bucket),
-      html: icon("trash", 15),
+      class: "kb-fechar", title: "Mais opções",
+      onclick: (ev) => {
+        ev.stopPropagation();
+        abrirMenuBucket(root, bucket, ev.currentTarget);
+      },
+      html: icon("mais", 18),
     })));
 
   const lista = el("div", { class: "kb-cartoes" });
@@ -410,6 +411,121 @@ async function mover(root, atividadeId, bucketId) {
 // ---------------------------------------------------------------------------
 // Colunas
 // ---------------------------------------------------------------------------
+
+const CORES = [
+  { valor: "", nome: "Sem cor" },
+  { valor: "#0f9d58", nome: "Verde" },
+  { valor: "#0a7ea4", nome: "Azul" },
+  { valor: "#7c5cff", nome: "Roxo" },
+  { valor: "#d9822b", nome: "Laranja" },
+  { valor: "#c43e6b", nome: "Rosa" },
+  { valor: "#8a8f98", nome: "Cinza" },
+];
+
+let menuAberto = null;
+
+/** Fecha o menu de contexto, se houver. */
+function fecharMenu() {
+  if (!menuAberto) return;
+  document.removeEventListener("mousedown", menuAberto.aoClicar);
+  menuAberto.elemento.remove();
+  menuAberto = null;
+}
+
+/**
+ * Menu de três pontos da coluna.
+ *
+ * Posicionado por `fixed`, a partir do botão que o abriu — assim não é
+ * cortado pelo `overflow` do trilho, que é horizontal.
+ */
+function abrirMenuBucket(root, bucket, ancora) {
+  fecharMenu();
+
+  const menu = el("div", { class: "kb-menu" },
+    el("button", {
+      class: "kb-menu-item",
+      onclick: () => { fecharMenu(); renomearBucket(root, bucket); },
+    }, el("span", { html: icon("edit", 16) }), el("span", {}, "Renomear")),
+
+    el("button", {
+      class: "kb-menu-item",
+      onclick: () => { fecharMenu(); alterarCor(root, bucket); },
+    }, el("span", { html: icon("paleta", 16) }), el("span", {}, "Alterar cor")),
+
+    el("button", {
+      class: "kb-menu-item perigo",
+      onclick: () => { fecharMenu(); excluirBucket(root, bucket); },
+    }, el("span", { html: icon("trash", 16) }), el("span", {}, "Excluir coluna")));
+
+  document.body.append(menu);
+
+  // Posiciona abaixo do botão, preso à direita da tela se faltar espaço.
+  const r = ancora.getBoundingClientRect();
+  const largura = 180;
+  menu.style.top = `${r.bottom + 6}px`;
+  menu.style.left = `${Math.min(r.left, window.innerWidth - largura - 12)}px`;
+
+  const aoClicar = (ev) => {
+    if (!menu.contains(ev.target)) fecharMenu();
+  };
+
+  // `mousedown` e não `click`: fecha antes de o próximo botão receber o
+  // evento, evitando que o menu do anterior fique aberto.
+  setTimeout(() => document.addEventListener("mousedown", aoClicar), 0);
+
+  menuAberto = { elemento: menu, aoClicar };
+}
+
+function alterarCor(root, bucket) {
+  const atual = bucket.cor || "";
+
+  const paleta = el("div", { class: "kb-cores" });
+  let escolhida = atual;
+
+  for (const c of CORES) {
+    const botao = el("button", {
+      class: "kb-cor-opcao" + (c.valor === atual ? " escolhida" : "") +
+             (c.valor ? "" : " sem-cor"),
+      title: c.nome,
+      style: c.valor ? `background:${c.valor}` : "",
+      onclick: () => {
+        escolhida = c.valor;
+        for (const outro of paleta.children) {
+          outro.classList.toggle("escolhida", outro === botao);
+        }
+      },
+    }, c.valor ? "" : "—");
+
+    paleta.append(botao);
+  }
+
+  modal({
+    titulo: "Cor da coluna",
+    abas: [{
+      id: "a",
+      rotulo: "Cor",
+      render: () => el("div", {},
+        el("p", {
+          style: "margin:0 0 14px;font-size:13px;color:var(--md-sys-color-on-surface-variant)",
+        }, "A cor aparece como contorno da coluna."),
+        paleta),
+    }],
+    acoes: [
+      { label: "Cancelar", classe: "", onClick: (fechar) => fechar() },
+      {
+        label: "Aplicar",
+        classe: "cheio",
+        onClick: async (fechar) => {
+          try {
+            await api.patch(`/kanban/buckets/${bucket.id}`, { cor: escolhida });
+            fechar();
+            await recarregar(root);
+          } catch (e) { mostrarErro(e); }
+        },
+      },
+    ],
+  });
+}
 
 function criarBucket(root) {
   const entrada = el("input", { placeholder: "Ex.: Em andamento" });

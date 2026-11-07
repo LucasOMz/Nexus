@@ -3220,3 +3220,231 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 .kb-carregando {
   display: block;
 }
+
+/* =====================================================================
+   Kanban — refinamentos
+   =====================================================================
+   Três pontos no lugar dos botões soltos, cor por coluna, checkbox
+   redondo e campos com mais presença. */
+
+/* --- menu de contexto da coluna --------------------------------------- */
+
+.kb-menu {
+  position: absolute;
+  z-index: 1300;
+  min-width: 180px;
+  padding: 6px;
+  border-radius: var(--shape-md);
+  background: var(--md-sys-color-surface-container-high);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .22);
+  animation: kbMenu .12s ease-out;
+}
+
+@keyframes kbMenu {
+  from { opacity: 0; transform: translateY(-4px) scale(.98); }
+  to   { opacity: 1; transform: none; }
+}
+
+.kb-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 11px;
+  border: none;
+  border-radius: var(--shape-sm);
+  background: transparent;
+  color: var(--md-sys-color-on-surface);
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: background .12s;
+}
+
+.kb-menu-item:hover {
+  background: var(--md-sys-color-surface-container-highest);
+}
+
+.kb-menu-item.perigo {
+  color: var(--md-sys-color-error);
+}
+
+.kb-menu-item.perigo:hover {
+  background: var(--md-sys-color-error-container, #f9dedc);
+}
+
+.kb-menu-item svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+/* --- cor da coluna ----------------------------------------------------- */
+
+/* A cor escolhida vira contorno da coluna inteira. Sem ela, o contorno é
+   transparente e a coluna mantém a aparência padrão. */
+.kb-coluna {
+  border: 2px solid var(--kb-cor, transparent);
+}
+
+/* O cabeçalho recebe um leve banho da cor, para a coluna ler como bloco. */
+.kb-coluna[style*="--kb-cor"] .kb-cabecalho {
+  border-radius: var(--shape-lg) var(--shape-lg) 0 0;
+}
+
+.kb-cores {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 4px 2px;
+}
+
+.kb-cor-opcao {
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  position: relative;
+  box-shadow: 0 0 0 2px transparent;
+  transition: box-shadow .12s, transform .12s;
+}
+
+.kb-cor-opcao:hover {
+  transform: scale(1.1);
+}
+
+.kb-cor-opcao.escolhida {
+  box-shadow: 0 0 0 2px var(--md-sys-color-on-surface);
+}
+
+.kb-cor-opcao.sem-cor {
+  background: var(--md-sys-color-surface-container-highest);
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 11px;
+  display: grid;
+  place-items: center;
+}
+
+/* --- checkbox redondo -------------------------------------------------- */
+
+/* `appearance:none` troca o controle nativo por um círculo próprio. O
+   nativo não aceita `border-radius` no Chrome, então não há outro caminho. */
+.kb-check,
+.kb-item input[type="checkbox"],
+.kb-pessoa input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--md-sys-color-outline);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  transition: background .14s, border-color .14s, transform .1s;
+}
+
+.kb-check {
+  margin-top: 1px;
+}
+
+.kb-check:hover,
+.kb-item input[type="checkbox"]:hover,
+.kb-pessoa input[type="checkbox"]:hover {
+  border-color: var(--md-sys-color-primary);
+}
+
+.kb-check:active,
+.kb-item input[type="checkbox"]:active,
+.kb-pessoa input[type="checkbox"]:active {
+  transform: scale(.9);
+}
+
+.kb-check:checked,
+.kb-item input[type="checkbox"]:checked,
+.kb-pessoa input[type="checkbox"]:checked {
+  background: var(--md-sys-color-primary);
+  border-color: var(--md-sys-color-primary);
+}
+
+/* O visto é um canto de borda rotacionado — dois lados de um quadrado. */
+.kb-check:checked::after,
+.kb-item input[type="checkbox"]:checked::after,
+.kb-pessoa input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 2px;
+  width: 5px;
+  height: 9px;
+  border: solid var(--md-sys-color-on-primary);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+/* --- campos com mais presença ----------------------------------------- */
+
+.kb-campo input,
+.kb-campo textarea,
+.kb-campo select {
+  height: 46px;
+  padding: 0 15px;
+  border-radius: var(--shape-md);
+  background: var(--md-sys-color-surface-container-lowest);
+  font-size: 14.5px;
+  letter-spacing: .1px;
+  box-shadow: inset 0 0 0 1px var(--kb-borda), 0 1px 2px rgba(0, 0, 0, .04);
+  transition: box-shadow .16s, background .16s;
+}
+
+:root[data-theme="dark"] .kb-campo input,
+:root[data-theme="dark"] .kb-campo textarea,
+:root[data-theme="dark"] .kb-campo select {
+  background: var(--md-sys-color-surface-container-low);
+}
+
+.kb-campo textarea {
+  height: auto;
+  padding: 12px 15px;
+  min-height: 96px;
+  line-height: 1.55;
+}
+
+.kb-campo input:hover,
+.kb-campo textarea:hover,
+.kb-campo select:hover {
+  box-shadow: inset 0 0 0 1px var(--md-sys-color-outline), 0 1px 2px rgba(0, 0, 0, .05);
+}
+
+.kb-campo input:focus,
+.kb-campo textarea:focus,
+.kb-campo select:focus {
+  background: var(--md-sys-color-surface-container-lowest);
+  box-shadow: inset 0 0 0 2px var(--md-sys-color-primary), 0 0 0 4px color-mix(in srgb, var(--md-sys-color-primary) 14%, transparent);
+}
+
+.kb-campo input::placeholder,
+.kb-campo textarea::placeholder {
+  color: var(--md-sys-color-on-surface-variant);
+  opacity: .75;
+}
+
+/* Data tem largura própria — não precisa ocupar a linha inteira. */
+.kb-campo input[type="date"] {
+  max-width: 200px;
+}
+
+/* Rótulo com mais peso, e um respiro maior entre campos. */
+.kb-campo {
+  margin-bottom: 20px;
+}
+
+.kb-campo > label {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: .2px;
+  text-transform: uppercase;
+  opacity: .8;
+}

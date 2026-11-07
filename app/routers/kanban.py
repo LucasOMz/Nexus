@@ -186,19 +186,31 @@ def criar_bucket(
                      cor=bucket.cor, atividades=[])
 
 
+class BucketPatch(BaseModel):
+    """Edicao parcial: nome e cor sao independentes.
+
+    `cor = ""` LIMPA a cor. Antes, `None` significava "nao mexer" e nao havia
+    como remover uma cor escolhida por engano.
+    """
+
+    nome: str | None = Field(default=None, min_length=1, max_length=80)
+    cor: str | None = Field(default=None, max_length=20)
+
+
 @router.patch("/buckets/{bucket_id}", response_model=BucketOut)
 def editar_bucket(
     bucket_id: int,
-    entrada: BucketEntrada,
+    entrada: BucketPatch,
     db: Session = Depends(get_db),
     user: Usuario = Depends(get_current_user),
 ) -> BucketOut:
     bucket = db.get(Bucket, bucket_id)
     if bucket is None:
         raise HTTPException(404, "Bucket não encontrado.")
-    bucket.nome = entrada.nome.strip()
+    if entrada.nome is not None:
+        bucket.nome = entrada.nome.strip()
     if entrada.cor is not None:
-        bucket.cor = entrada.cor
+        bucket.cor = entrada.cor.strip() or None
     db.commit()
     db.refresh(bucket)
     return BucketOut(id=bucket.id, nome=bucket.nome, ordem=bucket.ordem,
