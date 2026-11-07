@@ -38,6 +38,8 @@ const ICONS = {
   download: '<path d="M12 3v12"/><path d="M6 11l6 6 6-6"/><path d="M4 21h16"/>',
   check: '<path d="M20 6L9 17l-5-5"/>',
   mais: '<circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/>',
+  seta: '<path d="M6 9l6 6 6-6"/>',
+  bandeira: '<path d="M4 21V4h13l-2 4 2 4H4"/>',
   paleta: '<circle cx="12" cy="12" r="9"/><circle cx="8.5" cy="9.5" r="1"/><circle cx="15.5" cy="9.5" r="1"/><circle cx="9" cy="15" r="1"/>',
   chevL: '<path d="M15 18l-6-6 6-6"/>',
   chevR: '<path d="M9 18l6-6-6-6"/>',

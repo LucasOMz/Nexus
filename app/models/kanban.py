@@ -82,6 +82,19 @@ class Atividade(BaseModel, Base):
     # permite "concluídas nos últimos 30 dias" sem depender do bucket.
     concluida_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # --- prioridade e progresso ----------------------------------------
+    #
+    # Prioridade ordena a atenção: urgente pinta a borda do cartão. Guardar
+    # como texto simples evita migração de enum no PostgreSQL.
+    prioridade: Mapped[str] = mapped_column(String(10), default="normal", index=True)
+
+    # Progresso declarado à mão, 0 a 100. Independente do checklist: serve
+    # para "estou na metade" sem marcar item nenhum.
+    progresso: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Quando começa. O prazo já existia; juntos dão o intervalo da tarefa.
+    data_inicio: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     criado_por_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
 
     itens: Mapped[list["AtividadeItem"]] = relationship(

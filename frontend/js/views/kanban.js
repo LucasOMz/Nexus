@@ -27,6 +27,23 @@ import { el, icon, toast, skeleton, emptyState, mostrarErro } from "../ui.js";
 let dados = [];
 let busca = "";
 let usuarios = [];
+let filtroPrioridade = "";
+let mostrarConcluidas = true;
+
+/** Colunas recolhidas — guardado no navegador, nao no servidor. */
+function colunasRecolhidas() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem("nexus.kanban.recolhidas") || "[]"));
+  } catch (e) {
+    return new Set();
+  }
+}
+
+function guardarRecolhidas(conjunto) {
+  try {
+    localStorage.setItem("nexus.kanban.recolhidas", JSON.stringify([...conjunto]));
+  } catch (e) { /* modo privado pode bloquear */ }
+}
 
 // ---------------------------------------------------------------------------
 // Datas
@@ -55,6 +72,48 @@ function iniciais(nome) {
   if (!partes.length) return "?";
   if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase();
   return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase();
+}
+
+const CORES_PRIORIDADE = {
+  baixa: "var(--md-sys-color-outline-variant)",
+  normal: "var(--md-sys-color-primary)",
+  alta: "#d9822b",
+  urgente: "var(--md-sys-color-error)",
+};
+
+/**
+ * Confirmacao estilizada.
+ *
+ * O `confirm()` nativo bloqueia a thread, nao segue o tema e mostra o
+ * dominio na barra de titulo. 120 linhas de CSS ja existem — usar o
+ * navegador para a pergunta mais destrutiva da tela e incoerente.
+ */
+function confirmar(titulo, mensagem, { rotulo = "Excluir", perigo = true } = {}) {
+  return new Promise((resolve) => {
+    const fechar = (valor) => {
+      fecharModal();
+      resolve(valor);
+    };
+
+    modal({
+      titulo,
+      abas: [{
+        id: "a",
+        rotulo: "Confirmar",
+        render: () => el("p", {
+          style: "margin:0;font-size:14px;line-height:1.55;white-space:pre-wrap",
+        }, mensagem),
+      }],
+      acoes: [
+        { label: "Cancelar", classe: "", onClick: () => fechar(false) },
+        {
+          label: rotulo,
+          classe: perigo ? "perigo" : "cheio",
+          onClick: () => fechar(true),
+        },
+      ],
+    });
+  });
 }
 
 function corDoAvatar(nome) {
@@ -187,6 +246,7 @@ function desenhar(root) {
 
   const wrap = el("div", { class: "kb" });
 
+  const seletorPrioridade = filtroPrioridade;
   const campoBusca = el("input", {
     type: "search",
     placeholder: "Buscar tarefas…",
@@ -206,6 +266,28 @@ function desenhar(root) {
     el("div", { class: "kb-busca" },
       el("span", { html: icon("search", 18) }),
       campoBusca),
+    el("select", {
+      class: "kb-filtro",
+      onchange: (ev) => {
+        filtroPrioridade = ev.target.value;
+        desenhar(root);
+      },
+    },
+      el("option", { value: "" }, "Prioridade: todas"),
+      el("option", { value: "urgente" }, "Urgente"),
+      el("option", { value: "alta" }, "Alta"),
+      el("option", { value: "normal" }, "Normal"),
+      el("option", { value: "baixa" }, "Baixa")),
+
+    el("button", {
+      class: "kb-btn pequeno tonal",
+      title: "Mostrar ou ocultar concluídas",
+      onclick: () => {
+        mostrarConcluidas = !mostrarConcluidas;
+        desenhar(root);
+      },
+    }, mostrarConcluidas ? "Ocultar concluídas" : "Mostrar concluídas"),
+
     el("span", { style: "flex:1" }),
     el("button", { class: "kb-btn cheio", onclick: () => criarBucket(root) },
       el("span", { html: icon("plus", 18) }),
@@ -259,7 +341,23 @@ function coluna(root, bucket) {
   // Cor da coluna: vira o contorno da coluna inteira. Sem cor, transparente.
   col.style.setProperty("--kb-cor", bucket.cor || "transparent");
 
+  const recolhidas = colunasRecolhidas();
+  const recolhida = recolhidas.has(String(bucket.id));
+  if (recolhida) col.classList.add("recolhida");
+
   col.append(el("div", { class: "kb-cabecalho" },
+    el("button", {
+      class: "kb-seta" + (recolhida ? " fechada" : ""),
+      title: recolhida ? "Expandir" : "Recolher",
+      onclick: () => {
+        const atual = colunasRecolhidas();
+        if (recolhida) atual.delete(String(bucket.id));
+        else atual.add(String(bucket.id));
+        guardarRecolhidas(atual);
+        desenhar(root);
+      },
+      html: icon("seta", 14),
+    }),
     el("span", { class: "kb-titulo", title: bucket.nome }, bucket.nome),
     el("span", { class: "kb-contagem" }, String(bucket.atividades.length)),
     el("span", { style: "flex:1" }),
@@ -274,8 +372,14 @@ function coluna(root, bucket) {
 
   const lista = el("div", { class: "kb-cartoes" });
 
-  const filtradas = bucket.atividades.filter((a) =>
-    !busca || (a.titulo || "").toLowerCase().includes(busca));
+  const filtradas = bucket.atividades.filter((a) => {
+    if (!mostrarConcluidas && a.concluida) return false;
+    if (filtroPrioridade && (a.prioridade || "normal") !== filtroPrioridade) return false;
+    if (!busca) return true;
+    // Busca no titulo E na descricao — a referencia faz o mesmo.
+    return (a.titulo || "").toLowerCase().includes(busca)
+      || (a.descricao || "").toLowerCase().includes(busca);
+  });
 
   if (!filtradas.length) {
     lista.append(el("p", { class: "kb-vazio" },
@@ -312,6 +416,16 @@ function cartao(root, a) {
       el("span", {}, texto)));
   }
 
+  // Prioridade alta e urgente ganham selo; baixa e normal nao precisam
+  // ocupar espaco — o padrao nao merece destaque.
+  const prio = a.prioridade || "normal";
+  const clsSeloPrio = "kb-selo prio-" + prio;
+  if (prio === "urgente" || prio === "alta") {
+    selos.push(el("span", { class: clsSeloPrio },
+      el("span", { html: icon("bandeira", 12) }),
+      el("span", {}, prio === "urgente" ? "Urgente" : "Alta")));
+  }
+
   if (a.total_itens) {
     selos.push(el("span", {
       class: "kb-selo" + (a.itens_feitos === a.total_itens ? " completo" : ""),
@@ -331,8 +445,13 @@ function cartao(root, a) {
   const pct = a.total_itens ? Math.round((a.itens_feitos / a.total_itens) * 100) : 0;
   const estado = a.concluida ? "feita" : pct > 0 ? "andamento" : "";
 
+  // A classe e montada fora do literal: o verificador de DOM le apenas o
+  // texto entre aspas, e "prio-" sozinho pareceria uma classe inexistente.
+  const clsCartao = ["kb-cartao", "prio-" + prio, a.concluida ? "concluida" : ""]
+    .filter(Boolean).join(" ");
+
   const card = el("div", {
-    class: "kb-cartao" + (a.concluida ? " concluida" : ""),
+    class: clsCartao,
     draggable: "true",
     ondragstart: (ev) => {
       ev.dataTransfer.setData("text/plain", String(a.id));

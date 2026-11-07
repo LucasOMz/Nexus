@@ -3448,3 +3448,115 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   text-transform: uppercase;
   opacity: .8;
 }
+
+/* =====================================================================
+   Kanban — prioridade, filtros, coluna recolhível
+   ===================================================================== */
+
+/* --- filtro ------------------------------------------------------------ */
+
+.kb-filtro {
+  height: 40px;
+  padding: 0 34px 0 15px;
+  border: none;
+  border-radius: var(--shape-full);
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+  font-size: 13.5px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  /* Seta desenhada em CSS: o `select` nativo ignora o tema. */
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    calc(100% - 16px) 17px,
+    calc(100% - 11px) 17px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.kb-filtro:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--md-sys-color-primary);
+}
+
+/* --- prioridade no cartão ---------------------------------------------- */
+
+.kb-cartao.prio-baixa { border-left: 4px solid var(--md-sys-color-outline-variant); }
+.kb-cartao.prio-normal { border-left: 4px solid var(--md-sys-color-primary); }
+.kb-cartao.prio-alta { border-left: 4px solid #d9822b; }
+.kb-cartao.prio-urgente { border-left: 4px solid var(--md-sys-color-error); }
+
+.kb-selo.prio-alta {
+  background: #fdf1e3;
+  color: #8a4b00;
+}
+
+.kb-selo.prio-urgente {
+  background: var(--md-sys-color-error-container, #f9dedc);
+  color: var(--md-sys-color-error, #b3261e);
+  font-weight: 600;
+}
+
+:root[data-theme="dark"] .kb-selo.prio-alta {
+  background: #3d2c0b;
+  color: #f5d08a;
+}
+
+/* --- coluna recolhível -------------------------------------------------- */
+
+.kb-seta {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: transform .15s, background .12s;
+}
+
+.kb-seta:hover {
+  background: var(--md-sys-color-surface-container-highest);
+}
+
+.kb-seta.fechada {
+  transform: rotate(-90deg);
+}
+
+/* Recolhida: só o cabeçalho e a barra de progresso. */
+.kb-coluna.recolhida {
+  min-height: 0;
+}
+
+.kb-coluna.recolhida .kb-cartoes,
+.kb-coluna.recolhida .kb-add {
+  display: none;
+}
+
+/* --- progresso da coluna ------------------------------------------------ */
+
+.kb-progresso-coluna {
+  height: 4px;
+  margin: 2px 16px 10px;
+  border-radius: var(--shape-full);
+  background: var(--md-sys-color-surface-container-highest);
+  overflow: hidden;
+}
+
+.kb-progresso-coluna span {
+  display: block;
+  height: 100%;
+  border-radius: var(--shape-full);
+  background: var(--md-sys-color-primary);
+  transition: width .25s ease;
+}
+
+.kb-coluna.recolhida .kb-progresso-coluna {
+  margin-bottom: 12px;
+}

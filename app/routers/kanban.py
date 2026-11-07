@@ -17,6 +17,7 @@ técnico da planta A não veja o quadro da B — a mesma regra de ativos.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -62,6 +63,9 @@ class AtividadeOut(BaseModel):
     descricao: str | None = None
     ordem: int
     prazo: datetime | None = None
+    data_inicio: datetime | None = None
+    prioridade: str = "normal"
+    progresso: int = 0
     concluida_em: datetime | None = None
     concluida: bool = False
     atrasada: bool = False
@@ -87,6 +91,9 @@ def _serializar(atividade: Atividade, nomes: dict[int, tuple[str, str]]) -> Ativ
         descricao=atividade.descricao,
         ordem=atividade.ordem,
         prazo=atividade.prazo,
+        data_inicio=atividade.data_inicio,
+        prioridade=atividade.prioridade or "normal",
+        progresso=atividade.progresso or 0,
         concluida_em=atividade.concluida_em,
         concluida=atividade.concluida,
         atrasada=atividade.atrasada,
@@ -262,6 +269,11 @@ class AtividadeEntrada(BaseModel):
     titulo: str = Field(min_length=1, max_length=200)
     descricao: str | None = None
     prazo: datetime | None = None
+    data_inicio: datetime | None = None
+    # `Literal` barra valor inventado: sem isso, "urgentissimo" entraria e
+    # o filtro simplesmente nao o encontraria, sem erro nenhum.
+    prioridade: Literal["baixa", "normal", "alta", "urgente"] = "normal"
+    progresso: int = Field(default=0, ge=0, le=100)
 
 
 @router.post("/atividades", response_model=AtividadeOut)
@@ -283,6 +295,9 @@ def criar_atividade(
         titulo=entrada.titulo.strip(),
         descricao=entrada.descricao,
         prazo=entrada.prazo,
+        data_inicio=entrada.data_inicio,
+        prioridade=entrada.prioridade,
+        progresso=entrada.progresso,
         ordem=(ultimo[0] + 1) if ultimo else 0,
         criado_por_id=user.id,
     )
@@ -305,6 +320,9 @@ def editar_atividade(
     atividade.titulo = entrada.titulo.strip()
     atividade.descricao = entrada.descricao
     atividade.prazo = entrada.prazo
+    atividade.data_inicio = entrada.data_inicio
+    atividade.prioridade = entrada.prioridade
+    atividade.progresso = entrada.progresso
     db.commit()
     db.refresh(atividade)
     return _serializar(atividade, {})
