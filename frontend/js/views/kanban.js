@@ -763,6 +763,79 @@ function criarAtividade(root, bucketId) {
   setTimeout(() => entrada.focus(), 60);
 }
 
+/**
+ * Seletor próprio: botão que abre uma lista estilizada.
+ *
+ * Devolve `{ elemento, valor() }`. O `elemento` entra no lugar do `<select>`;
+ * `valor()` lê a escolha atual na hora de salvar.
+ *
+ * `opcoes` é `[{ valor, rotulo }]`.
+ */
+function seletor(inicial, opcoes, { icone = null, ponto = false, aoMudar = null } = {}) {
+  let atual = inicial;
+  let aberto = false;
+
+  const rotulo = el("span", { class: "kb-seletor-rotulo" });
+  const caixa = el("div", { class: "kb-seletor" });
+
+  const desenhar = () => {
+    rotulo.textContent = opcoes.find((o) => o.valor === atual)?.rotulo || "";
+  };
+
+  const botao = el("button", {
+    type: "button",
+    class: "kb-seletor-botao",
+    onclick: (ev) => {
+      ev.stopPropagation();
+      abrir();
+    },
+  },
+    icone ? el("span", { class: "kb-campo-icone-svg", html: icon(icone, 15) }) : null,
+    ponto ? el("span", { class: "kb-seletor-ponto" }) : null,
+    rotulo,
+    el("span", { class: "kb-seletor-seta" }));
+
+  caixa.append(botao);
+  desenhar();
+
+  function fechar() {
+    if (!aberto) return;
+    aberto = false;
+    caixa.querySelector(".kb-menu")?.remove();
+    document.removeEventListener("mousedown", fora);
+  }
+
+  function fora(ev) {
+    if (!caixa.contains(ev.target)) fechar();
+  }
+
+  function abrir() {
+    if (aberto) { fechar(); return; }
+    aberto = true;
+
+    const lista = el("div", { class: "kb-menu kb-lista" });
+    for (const o of opcoes) {
+      lista.append(el("button", {
+        type: "button",
+        class: "kb-menu-item" + (o.valor === atual ? " escolhido" : ""),
+        onclick: () => {
+          atual = o.valor;
+          desenhar();
+          if (aoMudar) aoMudar(atual);
+          fechar();
+        },
+      },
+        el("span", { class: "kb-lista-rotulo" }, o.rotulo),
+        o.valor === atual ? el("span", { class: "kb-lista-marca", html: icon("check", 14) }) : null));
+    }
+
+    caixa.append(lista);
+    setTimeout(() => document.addEventListener("mousedown", fora), 0);
+  }
+
+  return { elemento: caixa, valor: () => atual };
+}
+
 function abrirAtividade(root, a) {
   let itens = a.itens || [];
   const escolhidos = new Set((a.responsaveis || []).map((r) => r.usuario_id));
@@ -785,23 +858,38 @@ function abrirAtividade(root, a) {
   });
 
   // --- status e prioridade ---------------------------------------------
-  const seletorPrioridade = el("select", {},
-    el("option", { value: "baixa" }, "Baixa"),
-    el("option", { value: "normal" }, "Normal"),
-    el("option", { value: "alta" }, "Alta"),
-    el("option", { value: "urgente" }, "Urgente"));
-  seletorPrioridade.value = a.prioridade || "normal";
+  const corPrio = {
+    baixa: "var(--k-texto-fraco)",
+    normal: "var(--k-acento)",
+    alta: "#d9822b",
+    urgente: "#a4262c",
+  };
+  const seletorPrioridade = seletor(a.prioridade || "normal", [
+    { valor: "baixa", rotulo: "Baixa" },
+    { valor: "normal", rotulo: "Normal" },
+    { valor: "alta", rotulo: "Alta" },
+    { valor: "urgente", rotulo: "Urgente" },
+  ], {
+    icone: "bandeira",
+    ponto: true,
+    aoMudar: () => pintarPrioridade(),
+  });
+
+  function pintarPrioridade() {
+    const ponto = seletorPrioridade.elemento.querySelector(".kb-seletor-ponto");
+    if (ponto) ponto.style.background = corPrio[seletorPrioridade.valor()] || "";
+  }
 
   // O status é derivado do que já existe: concluída ou não. Criar um campo
   // novo no banco só para repetir a mesma informação seria duplicação.
-  const seletorStatus = el("select", {},
-    el("option", { value: "aberta" }, "Em aberto"),
-    el("option", { value: "concluida" }, "Concluída"));
-  seletorStatus.value = a.concluida ? "concluida" : "aberta";
+  const seletorStatus = seletor(a.concluida ? "concluida" : "aberta", [
+    { valor: "aberta", rotulo: "Em aberto" },
+    { valor: "concluida", rotulo: "Concluída" },
+  ], { icone: "check" });
 
-  const seletorBucket = el("select", {},
-    ...dados.map((b) => el("option", { value: String(b.id) }, b.nome)));
-  seletorBucket.value = String(a.bucket_id);
+  const seletorBucket = seletor(String(a.bucket_id),
+    dados.map((b) => ({ valor: String(b.id), rotulo: b.nome })),
+    { icone: "kanban" });
 
   // --- checklist --------------------------------------------------------
   const listaItens = el("div", {});
@@ -971,11 +1059,11 @@ function abrirAtividade(root, a) {
 
   // Campos em grelha.
   corpo.append(el("div", { class: "kb-grelha-campos" },
-    campoComIcone("check", "Status", seletorStatus),
-    campoComIcone("bandeira", "Prioridade", seletorPrioridade),
+    campoComIcone("check", "Status", seletorStatus.elemento),
+    campoComIcone("bandeira", "Prioridade", seletorPrioridade.elemento),
     campoComIcone("calendario", "Data de início", campoInicio),
     campoComIcone("calendario", "Data de conclusão", campoPrazo),
-    campoComIcone("kanban", "Bucket", seletorBucket, true)));
+    campoComIcone("kanban", "Bucket", seletorBucket.elemento, true)));
 
   corpo.append(el("div", { class: "kb-secao" },
     el("h3", { class: "kb-secao-titulo" }, "Descrição"),
@@ -986,6 +1074,8 @@ function abrirAtividade(root, a) {
       "Lista de verificação ", contador),
     listaItens,
     novoItem));
+
+  pintarPrioridade();
 
   // --- monta o modal ----------------------------------------------------
   fecharModal();
@@ -1010,7 +1100,9 @@ function abrirAtividade(root, a) {
             fecharModal();
           } catch (e) { mostrarErro(e); }
         },
-      }, a.concluida ? "Reabrir" : "Concluir"),
+      },
+        el("span", { html: icon("check", 15) }),
+        el("span", {}, a.concluida ? "Reabrir" : "Concluir")),
       el("button", {
         class: "kb-btn pequeno perigo",
         onclick: async () => {
@@ -1022,25 +1114,27 @@ function abrirAtividade(root, a) {
             await recarregar(root);
           } catch (e) { mostrarErro(e); }
         },
-      }, "Excluir"),
+      },
+        el("span", { html: icon("trash", 15) }),
+        el("span", {}, "Excluir")),
       el("span", { class: "kb-espaco" }),
       el("button", {
         class: "kb-btn pequeno cheio",
         onclick: async () => {
           try {
             await api.patch(`/kanban/atividades/${a.id}`, {
-              bucket_id: Number(seletorBucket.value),
+              bucket_id: Number(seletorBucket.valor()),
               titulo: (a._novoTitulo ?? a.titulo).trim() || a.titulo,
               descricao: entradaDesc.value.trim() || null,
               data_inicio: campoInicio.value ? `${campoInicio.value}T12:00:00` : null,
               prazo: campoPrazo.value ? `${campoPrazo.value}T12:00:00` : null,
-              prioridade: seletorPrioridade.value,
+              prioridade: seletorPrioridade.valor(),
               progresso: a.progresso || 0,
             });
 
             // Status "concluída" é aplicado depois, porque a rota de concluir
             // é alternada — comparar evita fechar uma tarefa já fechada.
-            const querConcluida = seletorStatus.value === "concluida";
+            const querConcluida = seletorStatus.valor() === "concluida";
             if (querConcluida !== a.concluida) {
               await api.post(`/kanban/atividades/${a.id}/concluir`);
             }
@@ -1049,7 +1143,9 @@ function abrirAtividade(root, a) {
             await recarregar(root);
           } catch (e) { mostrarErro(e); }
         },
-      }, "Salvar")));
+      },
+        el("span", { html: icon("check", 15) }),
+        el("span", {}, "Salvar"))));
 
   const fundo = el("div", {
     class: "kb kb-fundo",
@@ -1076,12 +1172,18 @@ function abrirAtividade(root, a) {
 
 /** Campo com ícone à esquerda, como os seletores do Planner. */
 function campoComIcone(nomeIcone, rotulo, entrada, larguraToda = false) {
+  // O seletor próprio já desenha a própria caixa e o próprio ícone; envolver
+  // de novo criaria borda dentro de borda e dois ícones.
+  const jaTemCaixa = entrada.classList?.contains("kb-seletor");
+
   return el("div", {
     class: "kb-campo-icone" + (larguraToda ? " largura-toda" : ""),
   },
     el("label", {}, rotulo),
-    el("div", { class: "kb-campo-caixa" },
-      el("span", { class: "kb-campo-icone-svg", html: icon(nomeIcone, 15) }),
-      entrada));
+    jaTemCaixa
+      ? entrada
+      : el("div", { class: "kb-campo-caixa" },
+          el("span", { class: "kb-campo-icone-svg", html: icon(nomeIcone, 15) }),
+          entrada));
 }
 

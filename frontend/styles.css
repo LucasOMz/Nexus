@@ -4229,3 +4229,209 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 .kb-detalhe {
   display: block;
 }
+
+/* =====================================================================
+   Seletor próprio
+   =====================================================================
+   Substitui o <select> nativo, cuja lista aberta é desenhada pelo sistema
+   operacional — branca com realce azul, mesmo em tema escuro. */
+
+.kb-seletor {
+  position: relative;
+}
+
+.kb-seletor-botao {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--k-linha);
+  border-radius: 4px;
+  background: var(--k-fundo);
+  color: var(--k-texto);
+  font-size: 13px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .13s, box-shadow .13s, background .13s;
+}
+
+:root[data-theme="dark"] .kb-seletor-botao {
+  background: #1f1f1f;
+  border-color: #474747;
+}
+
+.kb-seletor-botao:hover {
+  border-color: var(--k-texto-fraco);
+}
+
+.kb-seletor-botao:focus-visible {
+  outline: none;
+  border-color: var(--k-acento);
+  box-shadow: 0 0 0 1px var(--k-acento);
+}
+
+.kb-seletor-rotulo {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Seta desenhada em CSS: `::after` com borda rotacionada. */
+.kb-seletor-seta {
+  flex: 0 0 auto;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid currentColor;
+  opacity: .55;
+}
+
+/* Bolinha de cor da prioridade. */
+.kb-seletor-ponto {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--k-acento);
+}
+
+/* --- lista aberta ------------------------------------------------------ */
+
+.kb-lista {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 1400;
+  min-width: 160px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+  border-radius: 6px;
+  background: var(--k-cartao);
+  border: 1px solid var(--k-linha);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .3);
+}
+
+:root[data-theme="dark"] .kb-lista {
+  background: #2f2f2f;
+  border-color: #474747;
+}
+
+.kb-lista-rotulo {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-lista-marca {
+  flex: 0 0 auto;
+  display: inline-flex;
+  color: var(--k-acento);
+}
+
+.kb-menu-item.escolhido {
+  background: var(--k-acento-suave);
+  color: var(--k-acento);
+  font-weight: 600;
+}
+
+:root[data-theme="dark"] .kb-menu-item.escolhido {
+  background: #1d3d2a;
+  color: #8ee0b0;
+}
+
+/* O seletor precisa de sombra para destacar da caixa quando aberto. */
+.kb-seletor:has(.kb-lista) .kb-seletor-botao {
+  border-color: var(--k-acento);
+  box-shadow: 0 0 0 1px var(--k-acento);
+}
+
+/* =====================================================================
+   Rodapé do modal — botões com ícone e peso
+   ===================================================================== */
+
+.kb-modal-pe .kb-btn {
+  height: 34px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 600;
+  gap: 6px;
+  border-radius: 6px;
+}
+
+.kb-modal-pe .kb-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* Secundário: fundo suave, sem borda — não compete com o Salvar. */
+.kb-btn.tonal {
+  background: var(--k-acento-suave);
+  color: var(--k-acento);
+  border-color: transparent;
+}
+
+.kb-btn.tonal:hover {
+  filter: brightness(.96);
+}
+
+:root[data-theme="dark"] .kb-btn.tonal {
+  background: #1d3d2a;
+  color: #8ee0b0;
+}
+
+:root[data-theme="dark"] .kb-btn.tonal:hover {
+  background: #245034;
+}
+
+/* Destrutivo: só texto vermelho, sem fundo — some do caminho até precisar. */
+.kb-btn.perigo {
+  background: transparent;
+  color: var(--k-atraso);
+  border-color: transparent;
+}
+
+.kb-btn.perigo:hover {
+  background: var(--k-atraso-fundo);
+}
+
+:root[data-theme="dark"] .kb-btn.perigo {
+  color: #ff99a0;
+}
+
+:root[data-theme="dark"] .kb-btn.perigo:hover {
+  background: #44201d;
+}
+
+/* Principal: verde cheio, com sombra curta no hover. */
+.kb-btn.cheio {
+  background: var(--k-acento);
+  color: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .12);
+}
+
+.kb-btn.cheio:hover {
+  filter: brightness(1.06);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .18);
+}
+
+:root[data-theme="dark"] .kb-btn.cheio {
+  background: #7ee2a8;
+  color: #06210f;
+}
+
+/* Foco visível por teclado em todos os botões da tela. */
+.kb-btn:focus-visible {
+  outline: 2px solid var(--k-acento);
+  outline-offset: 2px;
+}
