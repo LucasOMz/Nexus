@@ -55,7 +55,7 @@ export async function renderKanban(root) {
   ctx.setFab(null);
 
   root.innerHTML = "";
-  const alvo = el("div", {}, skeleton(3));
+  const alvo = el("div", { class: "kanban-carregando" }, skeleton(3));
   root.append(alvo);
 
   try {
@@ -75,7 +75,11 @@ export async function renderKanban(root) {
 }
 
 function desenhar(root) {
+  // Remove o quadro anterior **e** o esqueleto de carregamento. Só o quadro
+  // era removido antes: o esqueleto ficava órfão no DOM e, a cada redesenho,
+  // empilhava mais barras cinzentas acima da barra de busca.
   root.querySelector(".kanban")?.remove();
+  root.querySelector(".kanban-carregando")?.remove();
 
   const wrap = el("div", { class: "kanban" });
 
@@ -190,9 +194,26 @@ function coluna(root, bucket) {
   return col;
 }
 
+/** Iniciais para o avatar: "Ana Paula Souza" → "AS". */
+function iniciais(nome) {
+  const partes = String(nome || "").trim().split(/\s+/).filter(Boolean);
+  if (!partes.length) return "?";
+  if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase();
+  return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase();
+}
+
+/** Cor estável por pessoa — o mesmo usuário sempre cai no mesmo tom. */
+function corDoAvatar(nome) {
+  const tons = ["#7c5cff", "#0a7ea4", "#0f9d58", "#d9822b", "#c43e6b", "#5b6abf"];
+  let soma = 0;
+  for (const ch of String(nome || "")) soma = (soma + ch.charCodeAt(0)) % 9973;
+  return tons[soma % tons.length];
+}
+
 function cartao(root, a) {
   const d = dias(a.prazo);
 
+  // --- selos ------------------------------------------------------------
   const selos = [];
 
   if (a.prazo) {
@@ -204,19 +225,34 @@ function cartao(root, a) {
         : d === 0
           ? "Hoje"
           : fmtPrazo(a.prazo);
-    selos.push(el("span", { class: "kanban-selo" + classe }, texto));
+    selos.push(el("span", { class: "kanban-selo" + classe },
+      el("span", { class: "kanban-selo-icone", html: icon("calendario", 12) }),
+      el("span", {}, texto)));
   }
 
   if (a.total_itens) {
-    selos.push(el("span", { class: "kanban-selo" },
-      `☑ ${a.itens_feitos}/${a.total_itens}`));
+    selos.push(el("span", {
+      class: "kanban-selo" + (a.itens_feitos === a.total_itens ? " completo" : ""),
+    },
+      el("span", { class: "kanban-selo-icone", html: icon("check", 12) }),
+      el("span", {}, `${a.itens_feitos}/${a.total_itens}`)));
   }
 
-  for (const r of (a.responsaveis || []).slice(0, 2)) {
-    selos.push(el("span", {
-      class: "kanban-selo responsavel", title: r.email,
-    }, r.nome.split(" ")[0]));
-  }
+  // --- avatares ---------------------------------------------------------
+  const avatares = (a.responsaveis || []).slice(0, 4).map((r) =>
+    el("span", {
+      class: "kanban-avatar",
+      title: r.nome,
+      style: `background:${corDoAvatar(r.nome)}`,
+    }, iniciais(r.nome)));
+
+  const extras = (a.responsaveis || []).length - avatares.length;
+
+  // --- progresso --------------------------------------------------------
+  // Barra fina no rodapé, como no Planner: cinza = não começou,
+  // âmbar = em andamento, verde = concluída.
+  const pct = a.total_itens ? Math.round((a.itens_feitos / a.total_itens) * 100) : 0;
+  const estado = a.concluida ? "feita" : pct > 0 ? "andamento" : "parada";
 
   const card = el("div", {
     class: "kanban-cartao" + (a.concluida ? " concluida" : ""),
@@ -224,9 +260,9 @@ function cartao(root, a) {
     ondragstart: (ev) => {
       ev.dataTransfer.setData("text/plain", String(a.id));
       ev.dataTransfer.effectAllowed = "move";
-      card.style.opacity = ".35";
+      card.classList.add("arrastando");
     },
-    ondragend: () => { card.style.opacity = ""; },
+    ondragend: () => card.classList.remove("arrastando"),
   },
     el("input", {
       class: "kanban-check",
@@ -241,14 +277,29 @@ function cartao(root, a) {
         } catch (e) { mostrarErro(e); }
       },
     }),
-    el("div", {
-      class: "kanban-corpo",
-      onclick: () => abrirAtividade(root, a),
-      style: "cursor:pointer",
-    },
-      el("div", { class: "kanban-cartao-titulo" }, a.titulo),
+
+    el("div", { class: "kanban-corpo" },
+      el("div", {
+        class: "kanban-cartao-titulo",
+        onclick: () => abrirAtividade(root, a),
+      }, a.titulo),
+
       a.descricao ? el("div", { class: "kanban-cartao-desc" }, a.descricao) : null,
-      selos.length ? el("div", { class: "kanban-rodape" }, ...selos) : null),
+
+      (selos.length || avatares.length)
+        ? el("div", { class: "kanban-rodape" },
+            ...selos,
+            el("span", { style: "flex:1" }),
+            ...avatares,
+            extras > 0 ? el("span", { class: "kanban-avatar extra" }, `+${extras}`) : null)
+        : null,
+
+      el("div", { class: "kanban-progresso" },
+        el("span", {
+          class: "kanban-progresso-barra " + estado,
+          style: `width:${a.concluida ? 100 : pct}%`,
+        }))),
+
     el("button", {
       class: "kanban-remover",
       title: "Excluir",

@@ -2883,3 +2883,111 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 .label-campo:first-child {
   margin-top: 0;
 }
+
+/* =====================================================================
+   Kanban — contraste entre coluna e cartão
+   =====================================================================
+   ## O erro que isto corrige
+
+   O cartão usava `surface-container-lowest`. No tema claro esse token é
+   BRANCO — o cartão se destaca da coluna cinza. No tema escuro ele é o mais
+   ESCURO de todos (#0C140E), e o cartão sumia dentro da coluna.
+
+   O mesmo token inverte de significado entre os temas. Por isso os dois
+   valores são nomeados aqui e invertidos explicitamente no escuro. */
+
+.kanban {
+  --kb-coluna: var(--md-sys-color-surface-container);
+  --kb-cartao: var(--md-sys-color-surface-container-lowest);
+  --kb-borda: var(--md-sys-color-outline-variant);
+}
+
+:root[data-theme="dark"] .kanban {
+  --kb-coluna: var(--md-sys-color-surface-container-low);
+  --kb-cartao: var(--md-sys-color-surface-container-high);
+  --kb-borda: var(--md-sys-color-surface-container-highest);
+}
+
+.kanban-coluna {
+  background: var(--kb-coluna);
+}
+
+.kanban-cartao {
+  background: var(--kb-cartao);
+  border: 1px solid var(--kb-borda);
+  border-left-width: 4px;
+}
+
+/* --- avatar ----------------------------------------------------------- */
+
+.kanban-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: .2px;
+  flex: 0 0 auto;
+  box-shadow: 0 0 0 2px var(--kb-cartao);
+}
+
+/* Avatares encostados, como no Planner: o anel separa um do outro. */
+.kanban-avatar + .kanban-avatar {
+  margin-left: -8px;
+}
+
+.kanban-avatar.extra {
+  background: var(--md-sys-color-surface-container-highest);
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+/* --- selos com ícone -------------------------------------------------- */
+
+.kanban-selo-icone {
+  display: inline-flex;
+  align-items: center;
+}
+
+.kanban-selo-icone svg {
+  width: 12px;
+  height: 12px;
+}
+
+.kanban-selo.completo {
+  background: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container, #21005d);
+}
+
+/* --- barra de progresso ----------------------------------------------- */
+
+.kanban-progresso {
+  height: 3px;
+  border-radius: var(--shape-full);
+  background: var(--md-sys-color-surface-container-highest);
+  margin-top: 10px;
+  overflow: hidden;
+}
+
+.kanban-progresso-barra {
+  display: block;
+  height: 100%;
+  border-radius: var(--shape-full);
+  transition: width .2s ease;
+}
+
+.kanban-progresso-barra.parada { background: transparent; }
+.kanban-progresso-barra.andamento { background: #d9822b; }
+.kanban-progresso-barra.feita { background: #0f9d58; }
+
+.kanban-cartao.arrastando {
+  opacity: .35;
+}
+
+/* --- esqueleto de carregamento ---------------------------------------- */
+
+.kanban-carregando {
+  display: block;
+}
