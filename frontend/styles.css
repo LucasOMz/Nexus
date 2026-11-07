@@ -2532,103 +2532,220 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 /* =====================================================================
    Kanban
    =====================================================================
-   Colunas em trilho horizontal. A cartão é arrastável (HTML5 nativo) e o
-   clique abre o detalhe — por isso `cursor: grab` só no cartão, não na
-   coluna. */
+   Segue a referência visual do Planner: trilho horizontal, coluna com
+   cabeçalho próprio, cartão com caixa de concluir à esquerda e selos no
+   rodapé.
 
-.kanban-wrap {
-  padding-bottom: 8px;
+   Os tokens `--md-sys-color-*` e `--shape-*` vêm do tema da aplicação —
+   nada de cor fixa aqui, senão o modo escuro quebra. */
+
+.kanban-topo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
 }
+
+.kanban-busca {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 260px;
+  max-width: 420px;
+  background: var(--md-sys-color-surface-container-high);
+  border-radius: var(--shape-full);
+  padding: 0 14px;
+  height: 40px;
+}
+
+.kanban-busca svg {
+  flex: 0 0 auto;
+  opacity: .6;
+}
+
+.kanban-busca input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--md-sys-color-on-surface);
+  font: var(--md-body-medium, 400 14px/20px inherit);
+  outline: none;
+}
+
+/* --- barra de números ------------------------------------------------- */
+
+.kanban-stats {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  padding: 8px 14px;
+  margin-bottom: 14px;
+  background: var(--md-sys-color-surface-container-low);
+  border-radius: var(--shape-md);
+  font-size: 12.5px;
+  color: var(--md-sys-color-on-surface-variant);
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+
+.kanban-stats b {
+  color: var(--md-sys-color-on-surface);
+  font-weight: 700;
+}
+
+.kanban-stats .ponto {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 4px;
+  vertical-align: 1px;
+}
+
+/* --- trilho ----------------------------------------------------------- */
 
 .kanban-trilho {
   display: flex;
   gap: 12px;
   align-items: flex-start;
   overflow-x: auto;
-  padding-bottom: 12px;
+  padding: 2px 2px 16px;
   scrollbar-width: thin;
 }
 
+/* --- coluna ----------------------------------------------------------- */
+
 .kanban-coluna {
-  flex: 0 0 280px;
-  width: 280px;
-  background: var(--md-sys-color-surface-container, #f2f5f3);
+  flex: 0 0 300px;
+  width: 300px;
+  background: var(--md-sys-color-surface-container-low);
   border-radius: var(--shape-lg);
-  padding: 10px;
-  transition: outline-color .12s ease;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 300px);
+  min-height: 140px;
+  transition: background .2s, outline-color .12s;
   outline: 2px dashed transparent;
   outline-offset: -2px;
 }
 
-/* Alvo do arraste: a coluna inteira aceita o cartão. */
+/* Alvo do arraste: a coluna aceita o cartão. */
 .kanban-coluna.alvo {
   outline-color: var(--md-sys-color-primary);
+  background: var(--md-sys-color-primary-container);
 }
 
 .kanban-cabecalho {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 2px 2px 8px;
+  padding: 12px 6px 4px 14px;
 }
 
 .kanban-titulo {
   font-weight: 600;
   font-size: 13.5px;
+  letter-spacing: .1px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.kanban-contagem {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--md-sys-color-on-surface-variant);
+  background: var(--md-sys-color-surface-container-high);
+  border-radius: var(--shape-full);
+  padding: 1px 7px;
+  flex: 0 0 auto;
+}
+
+/* --- cartões ---------------------------------------------------------- */
+
 .kanban-cartoes {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-height: 8px;
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 8px 6px;
+  min-height: 40px;
+  scrollbar-width: thin;
 }
 
 .kanban-cartao {
-  background: var(--md-sys-color-surface);
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  background: var(--md-sys-color-surface-container-lowest);
   border-radius: var(--shape-md);
-  padding: 10px;
+  padding: 12px;
+  margin-bottom: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .08), 0 1px 3px 1px rgba(0, 0, 0, .05);
   cursor: grab;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  transition: box-shadow .12s ease, transform .12s ease;
+  position: relative;
+  border-left: 4px solid var(--md-sys-color-outline-variant);
+  transition: box-shadow .15s, transform .1s, opacity .15s;
+  animation: cartaoEntra .18s cubic-bezier(.2, 0, 0, 1);
+}
+
+@keyframes cartaoEntra {
+  from { opacity: 0; transform: translateY(6px) scale(.98); }
+  to   { opacity: 1; transform: none; }
 }
 
 .kanban-cartao:hover {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, .08);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .1), 0 2px 6px 2px rgba(0, 0, 0, .07);
 }
 
 .kanban-cartao:active {
   cursor: grabbing;
-  transform: scale(.99);
 }
 
-/* Concluída continua visível, mas não compete com o que falta. */
 .kanban-cartao.concluida {
-  opacity: .55;
+  opacity: .62;
 }
 
 .kanban-cartao.concluida .kanban-cartao-titulo {
   text-decoration: line-through;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+/* Faixa de prioridade pela borda esquerda. */
+.kanban-cartao.prio-alta { border-left-color: var(--md-sys-color-tertiary, #7d5260); }
+.kanban-cartao.prio-urgente { border-left-color: var(--md-sys-color-error); }
+.kanban-cartao.prio-baixa { border-left-color: var(--md-sys-color-outline-variant); }
+
+.kanban-check {
+  margin-top: 2px;
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  accent-color: var(--md-sys-color-primary);
+  cursor: pointer;
+}
+
+.kanban-corpo {
+  flex: 1;
+  min-width: 0;
 }
 
 .kanban-cartao-titulo {
   font-size: 13.5px;
-  font-weight: 500;
-  line-height: 1.3;
+  line-height: 1.4;
   word-break: break-word;
 }
 
 .kanban-cartao-desc {
+  font-size: 12px;
+  color: var(--md-sys-color-on-surface-variant);
   margin-top: 4px;
-  font-size: 12.5px;
-  color: var(--md-sys-color-on-surface-variant, #5b665f);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  white-space: pre-wrap;
 }
 
 .kanban-rodape {
@@ -2638,23 +2755,131 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   margin-top: 8px;
 }
 
-.kanban-rodape .chip {
+/* --- selos ------------------------------------------------------------ */
+
+.kanban-selo {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   font-size: 11px;
-  padding: 2px 7px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: var(--shape-full);
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface-variant);
+  white-space: nowrap;
 }
 
-/* Prazo vencido e prazo próximo: dois tons, não um. */
-.chip.danger {
-  background: var(--md-sys-color-error-container, #fde7e7);
+.kanban-selo.atrasado {
+  background: var(--md-sys-color-error-container, #f9dedc);
   color: var(--md-sys-color-error, #b3261e);
 }
 
-.chip.aviso {
-  background: var(--md-sys-color-warning-container, #fff4e0);
-  color: var(--md-sys-color-warning, #8a5a00);
+.kanban-selo.hoje {
+  background: var(--md-sys-color-tertiary-container, #ffd8e4);
+  color: var(--md-sys-color-on-surface);
+}
+
+.kanban-selo.responsavel {
+  background: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container, #21005d);
+}
+
+/* Botão de excluir aparece só no hover — reduz ruído visual. */
+.kanban-remover {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: var(--shape-full);
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity .12s, background .12s;
+}
+
+.kanban-cartao:hover .kanban-remover {
+  opacity: 1;
+}
+
+.kanban-remover:hover {
+  background: var(--md-sys-color-error-container, #f9dedc);
+  color: var(--md-sys-color-error, #b3261e);
+}
+
+/* --- rodapé da coluna ------------------------------------------------- */
+
+.kanban-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: calc(100% - 16px);
+  margin: 0 8px 8px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--shape-sm);
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background .12s;
+}
+
+.kanban-add:hover {
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+}
+
+/* --- checklist no modal ----------------------------------------------- */
+
+.kanban-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 8px;
+  border-radius: var(--shape-sm);
+  font-size: 13px;
+  transition: background .12s;
 }
 
 .kanban-item:hover {
-  background: var(--md-sys-color-surface-container, #f2f5f3);
-  border-radius: var(--shape-sm);
+  background: var(--md-sys-color-surface-container);
+}
+
+.kanban-item input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--md-sys-color-primary);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.kanban-item .feito {
+  text-decoration: line-through;
+  opacity: .55;
+}
+
+/* Raiz da tela. Existe para o redesenho poder remover só este bloco sem
+   tocar no resto da página. */
+.kanban {
+  display: block;
+}
+
+/* Rótulo de campo dentro de diálogo. Discreto, acima do input — não é o
+   mesmo `.field` do formulário principal. */
+.label-campo {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--md-sys-color-on-surface-variant);
+  margin: 12px 0 4px;
+}
+
+.label-campo:first-child {
+  margin-top: 0;
 }

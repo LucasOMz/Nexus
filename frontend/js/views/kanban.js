@@ -1,20 +1,20 @@
 /**
  * Kanban — quadro de atividades em colunas.
  *
- * ## Por que arrastar com HTML5 nativo
+ * ## Estrutura visual
  *
- * `dragstart` / `dragover` / `drop` é API do navegador, sem biblioteca. Numa
- * tela que já carrega módulos ES sem bundler, trazer uma lib de drag só para
- * isso contradiz o resto do sistema.
+ * Topo com busca e criação de coluna, faixa de números (total, concluídas,
+ * atrasadas), e o trilho de colunas. Cada coluna tem cabeçalho próprio e
+ * rodapé "Adicionar atividade".
  *
- * A limitação é não haver arraste no toque (celular) — nesse caso os botões
- * ← → do cartão resolvem, e é por isso que eles existem além do arraste.
+ * O cartão tem a **caixa de concluir à esquerda**, o que faz o gesto mais
+ * comum custar um clique — em vez de abrir o detalhe para marcar.
  *
- * ## Ordem
+ * ## Arrastar
  *
- * A posição dentro da coluna é um inteiro. Arrastar envia a nova ordem; o
- * servidor reescreve. Não há "ordem parcial" nem data de modificação — a
- * sequência é explícita.
+ * `dragstart` / `dragover` / `drop` do navegador, sem biblioteca. Não há
+ * arraste no toque; por isso o cartão abre com um clique e tudo o que muda
+ * o cartão está no detalhe.
  *
  * @module views/kanban
  */
@@ -27,10 +27,13 @@ let dados = [];
 let busca = "";
 let usuarios = [];
 
+// ---------------------------------------------------------------------------
+// Datas
+// ---------------------------------------------------------------------------
+
 function fmtPrazo(iso) {
-  if (!iso) return null;
-  const d = new Date(iso);
-  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
+  if (!iso) return "";
+  return new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
 }
 
 /** Dias até o prazo. Negativo = vencido. */
@@ -43,12 +46,16 @@ function dias(iso) {
   return Math.round((d - hoje) / 86400000);
 }
 
+// ---------------------------------------------------------------------------
+// Tela
+// ---------------------------------------------------------------------------
+
 export async function renderKanban(root) {
   ctx.setTitle("Kanban");
   ctx.setFab(null);
 
   root.innerHTML = "";
-  const alvo = el("div", {}, skeleton(4));
+  const alvo = el("div", {}, skeleton(3));
   root.append(alvo);
 
   try {
@@ -68,47 +75,65 @@ export async function renderKanban(root) {
 }
 
 function desenhar(root) {
-  root.querySelector(".kanban-wrap")?.remove();
+  root.querySelector(".kanban")?.remove();
 
-  const wrap = el("div", { class: "kanban-wrap" });
+  const wrap = el("div", { class: "kanban" });
 
-  // --- barra de busca e ações -------------------------------------------
-  const campo = el("input", {
-    class: "field",
-    placeholder: "Buscar atividade…",
+  // --- topo -------------------------------------------------------------
+  const campoBusca = el("input", {
+    type: "search",
+    placeholder: "Buscar tarefas…",
     value: busca,
-    style: "max-width:320px",
     oninput: (e) => {
       busca = e.target.value.toLowerCase().trim();
       desenhar(root);
-      // Devolve o foco e o cursor ao campo depois de redesenhar.
-      const novo = root.querySelector(".kanban-wrap input.field");
-      if (novo) { novo.focus(); novo.setSelectionRange(novo.value.length, novo.value.length); }
+      const novo = root.querySelector(".kanban-busca input");
+      if (novo) {
+        novo.focus();
+        novo.setSelectionRange(novo.value.length, novo.value.length);
+      }
     },
   });
 
-  wrap.append(el("div", {
-    class: "row between wrap",
-    style: "gap:10px;align-items:center;margin-bottom:14px",
-  },
-    campo,
+  wrap.append(el("div", { class: "kanban-topo" },
+    el("div", { class: "kanban-busca" },
+      el("span", { html: icon("search", 18) }),
+      campoBusca),
+    el("span", { style: "flex:1" }),
     el("button", {
-      class: "btn tonal small",
+      class: "btn tonal",
       onclick: () => criarBucket(root),
-    }, "+ Nova coluna")));
+    }, "+ Coluna")));
 
-  // --- colunas ----------------------------------------------------------
+  // --- números ----------------------------------------------------------
+  const todas = dados.flatMap((b) => b.atividades);
+  const abertas = todas.filter((a) => !a.concluida).length;
+  const concluidas = todas.length - abertas;
+  const atrasadas = todas.filter((a) => a.atrasada).length;
+
+  wrap.append(el("div", { class: "kanban-stats" },
+    el("span", {}, el("b", {}, String(todas.length)), " atividades"),
+    el("span", {}, el("b", {}, String(abertas)), " abertas"),
+    el("span", {}, el("b", {}, String(concluidas)), " concluídas"),
+    atrasadas
+      ? el("span", {},
+          el("span", { class: "ponto", style: "background:var(--md-sys-color-error)" }),
+          el("b", {}, String(atrasadas)), " atrasadas")
+      : el("span", {}, "nenhuma atrasada")));
+
+  // --- trilho -----------------------------------------------------------
   const trilho = el("div", { class: "kanban-trilho" });
 
   if (!dados.length) {
-    trilho.append(el("div", { class: "card", style: "padding:24px;text-align:center" },
-      el("p", { class: "muted", style: "margin:0" },
-        "Nenhuma coluna ainda. Comece criando “A fazer”, “Em andamento” e “Concluído”.")));
+    trilho.append(el("div", {
+      style: "padding:32px 20px;text-align:center;color:var(--md-sys-color-on-surface-variant)",
+    },
+      el("p", { style: "margin:0 0 6px;font-weight:500" }, "Nenhuma coluna ainda"),
+      el("p", { style: "margin:0;font-size:13px" },
+        "Comece com “A fazer”, “Em andamento” e “Concluído”.")));
   }
 
-  for (const bucket of dados) {
-    trilho.append(coluna(root, bucket));
-  }
+  for (const bucket of dados) trilho.append(coluna(root, bucket));
 
   wrap.append(trilho);
   root.append(wrap);
@@ -117,63 +142,81 @@ function desenhar(root) {
 function coluna(root, bucket) {
   const col = el("div", {
     class: "kanban-coluna",
-    ondragover: (ev) => { ev.preventDefault(); ev.currentTarget.classList.add("alvo"); },
-    ondragleave: (ev) => ev.currentTarget.classList.remove("alvo"),
+    ondragover: (ev) => { ev.preventDefault(); col.classList.add("alvo"); },
+    ondragleave: () => col.classList.remove("alvo"),
     ondrop: async (ev) => {
       ev.preventDefault();
-      ev.currentTarget.classList.remove("alvo");
+      col.classList.remove("alvo");
       const id = Number(ev.dataTransfer.getData("text/plain"));
-      if (!id) return;
-      await mover(root, id, bucket.id);
+      if (id) await mover(root, id, bucket.id);
     },
   });
 
-  const titulo = el("div", { class: "kanban-cabecalho" },
-    el("span", { class: "kanban-titulo" }, bucket.nome),
-    el("span", { class: "muted", style: "font-size:12px" },
-      String(bucket.atividades.length)),
+  col.append(el("div", { class: "kanban-cabecalho" },
+    el("span", { class: "kanban-titulo", title: bucket.nome }, bucket.nome),
+    el("span", { class: "kanban-contagem" }, String(bucket.atividades.length)),
     el("span", { style: "flex:1" }),
-    el("button", {
-      class: "iconbtn", title: "Adicionar atividade",
-      onclick: () => criarAtividade(root, bucket.id),
-      html: icon("plus", 16),
-    }),
     el("button", {
       class: "iconbtn", title: "Renomear coluna",
       onclick: () => renomearBucket(root, bucket),
-      html: icon("edit", 16),
+      html: icon("edit", 15),
     }),
     el("button", {
-      class: "iconbtn danger", title: "Excluir coluna",
+      class: "iconbtn", title: "Excluir coluna",
       onclick: () => excluirBucket(root, bucket),
-      html: icon("trash", 16),
-    }),
-  );
+      html: icon("trash", 15),
+    })));
 
   const lista = el("div", { class: "kanban-cartoes" });
 
-  const filtradas = bucket.atividades.filter((a) => {
-    if (!busca) return true;
-    return (a.titulo || "").toLowerCase().includes(busca);
-  });
+  const filtradas = bucket.atividades.filter((a) =>
+    !busca || (a.titulo || "").toLowerCase().includes(busca));
 
   if (!filtradas.length) {
-    lista.append(el("p", { class: "muted", style: "font-size:12.5px;margin:8px 4px" },
-      busca ? "Nada encontrado." : "Nenhuma atividade."));
+    lista.append(el("p", {
+      style: "font-size:12.5px;color:var(--md-sys-color-on-surface-variant);margin:8px 6px",
+    }, busca ? "Nada encontrado." : "Vazia."));
   }
 
-  for (const a of filtradas) lista.append(cartao(root, bucket, a));
+  for (const a of filtradas) lista.append(cartao(root, a));
 
-  col.append(titulo, lista);
+  col.append(lista, el("button", {
+    class: "kanban-add",
+    onclick: () => criarAtividade(root, bucket.id),
+  },
+    el("span", { html: icon("plus", 15) }),
+    el("span", {}, "Adicionar atividade")));
+
   return col;
 }
 
-function cartao(root, bucket, a) {
-  const pct = a.total_itens ? Math.round((a.itens_feitos / a.total_itens) * 100) : null;
+function cartao(root, a) {
   const d = dias(a.prazo);
 
-  // Tom pelo prazo: vencido = erro, até 3 dias = aviso.
-  const tom = a.concluida ? "" : d === null ? "" : d < 0 ? " danger" : d <= 3 ? " aviso" : "";
+  const selos = [];
+
+  if (a.prazo) {
+    const classe = a.concluida ? "" : d < 0 ? " atrasado" : d === 0 ? " hoje" : "";
+    const texto = a.concluida
+      ? fmtPrazo(a.prazo)
+      : d < 0
+        ? `Atrasada · ${fmtPrazo(a.prazo)}`
+        : d === 0
+          ? "Hoje"
+          : fmtPrazo(a.prazo);
+    selos.push(el("span", { class: "kanban-selo" + classe }, texto));
+  }
+
+  if (a.total_itens) {
+    selos.push(el("span", { class: "kanban-selo" },
+      `☑ ${a.itens_feitos}/${a.total_itens}`));
+  }
+
+  for (const r of (a.responsaveis || []).slice(0, 2)) {
+    selos.push(el("span", {
+      class: "kanban-selo responsavel", title: r.email,
+    }, r.nome.split(" ")[0]));
+  }
 
   const card = el("div", {
     class: "kanban-cartao" + (a.concluida ? " concluida" : ""),
@@ -181,43 +224,51 @@ function cartao(root, bucket, a) {
     ondragstart: (ev) => {
       ev.dataTransfer.setData("text/plain", String(a.id));
       ev.dataTransfer.effectAllowed = "move";
+      card.style.opacity = ".35";
     },
-    onclick: (ev) => {
-      if (ev.target.closest("button")) return;
-      abrirAtividade(root, bucket, a);
-    },
+    ondragend: () => { card.style.opacity = ""; },
   },
-    el("div", { class: "kanban-cartao-titulo" }, a.titulo),
-    a.descricao ? el("div", { class: "kanban-cartao-desc" }, a.descricao) : null,
-
-    // Rodapé: prazo, checklist, responsáveis
-    el("div", { class: "kanban-rodape" },
-      a.prazo
-        ? el("span", { class: "chip" + tom, title: `Prazo: ${fmtPrazo(a.prazo)}` },
-            fmtPrazo(a.prazo))
-        : null,
-      pct !== null
-        ? el("span", {
-            class: "chip",
-            title: `${a.itens_feitos} de ${a.total_itens} itens`,
-          }, `☑ ${a.itens_feitos}/${a.total_itens}`)
-        : null,
-      ...(a.responsaveis || []).slice(0, 3).map((r) => el("span", {
-        class: "chip",
-        title: r.email,
-      }, r.nome.split(" ")[0]))),
-  );
+    el("input", {
+      class: "kanban-check",
+      type: "checkbox",
+      checked: a.concluida ? "checked" : null,
+      title: a.concluida ? "Reabrir" : "Concluir",
+      onclick: (ev) => ev.stopPropagation(),
+      onchange: async () => {
+        try {
+          await api.post(`/kanban/atividades/${a.id}/concluir`);
+          await recarregar(root);
+        } catch (e) { mostrarErro(e); }
+      },
+    }),
+    el("div", {
+      class: "kanban-corpo",
+      onclick: () => abrirAtividade(root, a),
+      style: "cursor:pointer",
+    },
+      el("div", { class: "kanban-cartao-titulo" }, a.titulo),
+      a.descricao ? el("div", { class: "kanban-cartao-desc" }, a.descricao) : null,
+      selos.length ? el("div", { class: "kanban-rodape" }, ...selos) : null),
+    el("button", {
+      class: "kanban-remover",
+      title: "Excluir",
+      onclick: async (ev) => {
+        ev.stopPropagation();
+        if (!confirm(`Excluir "${a.titulo}"?`)) return;
+        try {
+          await api.del(`/kanban/atividades/${a.id}`);
+          await recarregar(root);
+        } catch (e) { mostrarErro(e); }
+      },
+      html: icon("trash", 15),
+    }));
 
   return card;
 }
 
-async function mover(root, atividadeId, bucketId) {
-  try {
-    await api.post(`/kanban/atividades/${atividadeId}/mover`,
-      { bucket_id: bucketId, ordem: 0 });
-    recarregar(root);
-  } catch (e) { mostrarErro(e); }
-}
+// ---------------------------------------------------------------------------
+// Ações
+// ---------------------------------------------------------------------------
 
 async function recarregar(root) {
   try {
@@ -226,13 +277,21 @@ async function recarregar(root) {
   desenhar(root);
 }
 
+async function mover(root, atividadeId, bucketId) {
+  try {
+    await api.post(`/kanban/atividades/${atividadeId}/mover`,
+      { bucket_id: bucketId, ordem: 0 });
+    await recarregar(root);
+  } catch (e) { mostrarErro(e); }
+}
+
 // ---------------------------------------------------------------------------
-// Criação e edição
+// Colunas
 // ---------------------------------------------------------------------------
 
-async function criarBucket(root) {
-  const campo = el("input", { class: "field", placeholder: "Nome da coluna" });
-  const dlg = dialog({
+function criarBucket(root) {
+  const campo = el("input", { class: "field", placeholder: "Ex.: Em andamento" });
+  dialog({
     title: "Nova coluna",
     body: el("div", {}, campo),
     actions: [
@@ -246,16 +305,16 @@ async function criarBucket(root) {
           try {
             await api.post("/kanban/buckets", { nome });
             fechar();
-            recarregar(root);
+            await recarregar(root);
           } catch (e) { mostrarErro(e); }
         },
       },
     ],
   });
-  return dlg;
+  setTimeout(() => campo.focus(), 60);
 }
 
-async function renomearBucket(root, bucket) {
+function renomearBucket(root, bucket) {
   const campo = el("input", { class: "field", value: bucket.nome });
   dialog({
     title: "Renomear coluna",
@@ -271,7 +330,7 @@ async function renomearBucket(root, bucket) {
           try {
             await api.patch(`/kanban/buckets/${bucket.id}`, { nome });
             fechar();
-            recarregar(root);
+            await recarregar(root);
           } catch (e) { mostrarErro(e); }
         },
       },
@@ -282,26 +341,29 @@ async function renomearBucket(root, bucket) {
 async function excluirBucket(root, bucket) {
   const quantas = bucket.atividades.length;
   const aviso = quantas
-    ? `A coluna tem ${quantas} atividade(s). Elas serão excluídas junto.`
+    ? `A coluna tem ${quantas} atividade(s) e elas serão excluídas junto.`
     : "A coluna está vazia.";
   if (!confirm(`Excluir a coluna "${bucket.nome}"?\n\n${aviso}`)) return;
   try {
     await api.del(`/kanban/buckets/${bucket.id}`);
-    toast("Coluna excluída.");
-    recarregar(root);
+    await recarregar(root);
   } catch (e) { mostrarErro(e); }
 }
 
-async function criarAtividade(root, bucketId) {
+// ---------------------------------------------------------------------------
+// Atividades
+// ---------------------------------------------------------------------------
+
+function criarAtividade(root, bucketId) {
   const campoTitulo = el("input", { class: "field", placeholder: "O que precisa ser feito?" });
   const campoPrazo = el("input", { class: "field", type: "date" });
 
   dialog({
     title: "Nova atividade",
     body: el("div", {},
-      el("label", { class: "muted", style: "font-size:12.5px" }, "Título"),
+      el("label", { class: "label-campo" }, "Título"),
       campoTitulo,
-      el("label", { class: "muted", style: "font-size:12.5px;margin-top:10px" }, "Prazo (opcional)"),
+      el("label", { class: "label-campo" }, "Prazo"),
       campoPrazo),
     actions: [
       { label: "Cancelar", variant: "text", onClick: (fechar) => fechar() },
@@ -318,79 +380,75 @@ async function criarAtividade(root, bucketId) {
               prazo: campoPrazo.value ? `${campoPrazo.value}T12:00:00` : null,
             });
             fechar();
-            recarregar(root);
+            await recarregar(root);
           } catch (e) { mostrarErro(e); }
         },
       },
     ],
   });
+  setTimeout(() => campoTitulo.focus(), 60);
 }
 
-async function abrirAtividade(root, bucket, a) {
+function abrirAtividade(root, a) {
   const corpo = el("div", {});
 
-  // --- título e prazo ---------------------------------------------------
   const campoTitulo = el("input", { class: "field", value: a.titulo });
   const campoPrazo = el("input", {
-    class: "field", type: "date",
+    class: "field",
+    type: "date",
     value: a.prazo ? new Date(a.prazo).toISOString().slice(0, 10) : "",
   });
+  const campoDesc = el("textarea", {
+    class: "field",
+    rows: "3",
+    placeholder: "Detalhes (opcional)",
+  });
+  campoDesc.value = a.descricao || "";
 
   corpo.append(
-    el("label", { class: "muted", style: "font-size:12.5px" }, "Título"),
+    el("label", { class: "label-campo" }, "Título"),
     campoTitulo,
-    el("label", { class: "muted", style: "font-size:12.5px;margin-top:10px" }, "Prazo"),
+    el("label", { class: "label-campo" }, "Descrição"),
+    campoDesc,
+    el("label", { class: "label-campo" }, "Prazo"),
     campoPrazo);
 
   // --- checklist --------------------------------------------------------
-  const listaItens = el("div", { style: "margin-top:14px" });
+  const listaItens = el("div", {});
+  let itens = a.itens || [];
+
   const desenharItens = () => {
     listaItens.innerHTML = "";
-    if (!a.itens.length) {
-      listaItens.append(el("p", { class: "muted", style: "font-size:12.5px" },
-        "Nenhum item ainda."));
+    if (!itens.length) {
+      listaItens.append(el("p", {
+        style: "font-size:12.5px;color:var(--md-sys-color-on-surface-variant);margin:4px 8px",
+      }, "Nenhum item ainda."));
       return;
     }
-    for (const item of a.itens) {
-      listaItens.append(el("label", {
-        class: "kanban-item",
-        style: "display:flex;gap:8px;align-items:center;padding:6px 0;cursor:pointer",
-        onclick: async (ev) => {
-          if (ev.target.tagName === "BUTTON") return;
-          try {
-            const r = await api.post(`/kanban/itens/${item.id}/alternar`);
-            a.itens = r.itens;
-            a.itens_feitos = r.itens_feitos;
-            desenharItens();
-            recarregar(root);
-          } catch (e) { mostrarErro(e); }
-        },
-      },
+    for (const item of itens) {
+      listaItens.append(el("div", { class: "kanban-item" },
         el("input", {
           type: "checkbox",
           checked: item.feito ? "checked" : null,
           onchange: async () => {
             try {
               const r = await api.post(`/kanban/itens/${item.id}/alternar`);
-              a.itens = r.itens;
-              a.itens_feitos = r.itens_feitos;
+              itens = r.itens;
               desenharItens();
-              recarregar(root);
+              await recarregar(root);
             } catch (e) { mostrarErro(e); }
           },
         }),
-        el("span", {
-          style: item.feito ? "text-decoration:line-through;opacity:.6" : "",
-        }, item.texto),
+        el("span", { class: item.feito ? "feito" : "" }, item.texto),
         el("span", { style: "flex:1" }),
         el("button", {
           class: "iconbtn danger", title: "Remover",
           onclick: async () => {
             try {
               await api.del(`/kanban/itens/${item.id}`);
-              a.itens = a.itens.filter((x) => x.id !== item.id);
+              itens = itens.filter((x) => x.id !== item.id);
               desenharItens();
-              recarregar(root);
+              await recarregar(root);
             } catch (e) { mostrarErro(e); }
           },
           html: icon("trash", 14),
@@ -400,50 +458,61 @@ async function abrirAtividade(root, bucket, a) {
   desenharItens();
 
   const novoItem = el("input", {
-    class: "field", placeholder: "Novo item e Enter",
+    class: "field",
+    placeholder: "Adicionar item e pressionar Enter",
     style: "margin-top:8px",
     onkeydown: async (ev) => {
       if (ev.key !== "Enter") return;
+      ev.preventDefault();
       const texto = ev.target.value.trim();
       if (!texto) return;
       try {
         const r = await api.post(`/kanban/atividades/${a.id}/itens`, { texto });
-        a.itens = r.itens;
+        itens = r.itens;
         ev.target.value = "";
         desenharItens();
-        recarregar(root);
+        await recarregar(root);
       } catch (e) { mostrarErro(e); }
     },
   });
 
   corpo.append(
-    el("h3", { class: "secao-titulo", style: "margin:16px 0 6px" }, "Checklist"),
-    listaItens, novoItem);
+    el("h3", { class: "secao-titulo" }, "Checklist"),
+    listaItens,
+    novoItem);
 
-  // --- responsáveis (só admin) -----------------------------------------
-  if (state.papel === "admin" || state.canDelete) {
-    const selecionados = new Set((a.responsaveis || []).map((r) => r.usuario_id));
-    const caixas = el("div", { style: "max-height:140px;overflow:auto;margin-top:6px" });
+  // --- responsáveis (só administrador) ----------------------------------
+  const podeAtribuir = state.papel === "admin";
+  const escolhidos = new Set((a.responsaveis || []).map((r) => r.usuario_id));
+
+  if (podeAtribuir) {
+    const nomes = new Map();
+    const caixas = el("div", { style: "max-height:150px;overflow:auto" });
     for (const u of usuarios) {
+      nomes.set(u.id, u.nome);
       caixas.append(el("label", {
-        style: "display:flex;gap:8px;align-items:center;padding:4px 0;font-size:13px",
+        class: "kanban-item",
+        style: "cursor:pointer",
       },
         el("input", {
           type: "checkbox",
-          checked: selecionados.has(u.id) ? "checked" : null,
+          checked: escolhidos.has(u.id) ? "checked" : null,
+          "data-usuario": String(u.id),
           onchange: (ev) => {
-            if (ev.target.checked) selecionados.add(u.id);
-            else selecionados.delete(u.id);
+            if (ev.target.checked) escolhidos.add(u.id);
+            else escolhidos.delete(u.id);
           },
         }),
-        el("span", {}, u.nome)));
+        el("span", {}, u.nome),
+        el("span", { style: "flex:1" }),
+        el("span", {
+          style: "font-size:11px;color:var(--md-sys-color-on-surface-variant)",
+        }, u.email || "")));
     }
-    corpo.append(
-      el("h3", { class: "secao-titulo", style: "margin:16px 0 0" }, "Responsáveis"),
-      caixas);
+    corpo.append(el("h3", { class: "secao-titulo" }, "Responsáveis"), caixas);
+    corpo._nomes = nomes;
   }
 
-  // --- ações ------------------------------------------------------------
   const acoes = [
     {
       label: a.concluida ? "Reabrir" : "Concluir",
@@ -451,7 +520,7 @@ async function abrirAtividade(root, bucket, a) {
       onClick: async () => {
         try {
           await api.post(`/kanban/atividades/${a.id}/concluir`);
-          recarregar(root);
+          await recarregar(root);
         } catch (e) { mostrarErro(e); }
       },
     },
@@ -463,40 +532,17 @@ async function abrirAtividade(root, bucket, a) {
           await api.patch(`/kanban/atividades/${a.id}`, {
             bucket_id: a.bucket_id,
             titulo: campoTitulo.value.trim(),
-            descricao: a.descricao,
+            descricao: campoDesc.value.trim() || null,
             prazo: campoPrazo.value ? `${campoPrazo.value}T12:00:00` : null,
           });
 
-          // Responsáveis só se a seção foi renderizada (admin).
-          const extras = corpo.querySelectorAll("input[type=checkbox]");
-          if (extras.length) {
-            const ids = [];
-            // As primeiras caixas são do checklist; as últimas, dos usuários.
-            const totalItens = a.itens.length;
-            for (let i = totalItens; i < extras.length; i++) {
-              if (extras[i].checked) {
-                const rotulo = extras[i].parentElement.textContent.trim();
-                const achado = usuarios.find((u) => u.nome === rotulo);
-                if (achado) ids.push(achado.id);
-              }
-            }
+          if (podeAtribuir) {
             await api.post(`/kanban/atividades/${a.id}/responsaveis`,
-              { usuario_ids: ids });
+              { usuario_ids: [...escolhidos] });
           }
+
           fechar();
-          recarregar(root);
-        } catch (e) { mostrarErro(e); }
-      },
-    },
-    {
-      label: "Excluir",
-      variant: "danger",
-      onClick: async (fechar) => {
-        if (!confirm(`Excluir "${a.titulo}"?`)) return;
-        try {
-          await api.del(`/kanban/atividades/${a.id}`);
-          fechar();
-          recarregar(root);
+          await recarregar(root);
         } catch (e) { mostrarErro(e); }
       },
     },
