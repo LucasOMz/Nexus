@@ -2530,69 +2530,67 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 }
 
 /* =====================================================================
-   KANBAN — tela própria
+   KANBAN — estilo Microsoft Planner
    =====================================================================
-   Esta tela NÃO segue o layout do resto do sistema. Ela tem paleta,
-   tipografia, densidade e comportamento de rolagem próprios, porque um
-   quadro de tarefas precisa de área útil — e o layout padrão (com cartões
-   de largura limitada e margens generosas) não dá isso.
+   ## A diferença que define o desenho
 
-   A inspiração é o Microsoft Planner: fundo neutro, colunas claras, cartões
-   brancos com sombra mínima e uma barra de progresso no rodapé.
+   No Planner **as colunas não são caixas**. Não têm fundo, borda nem
+   sombra: são apenas um título sobre uma pilha de cartões, todos apoiados
+   no mesmo fundo da página.
 
-   ## Tokens
+   Isso muda tudo. Coluna com caixa vira "três painéis lado a lado"; coluna
+   sem caixa vira "um quadro de tarefas". Foi o erro das versões anteriores.
 
-   `--k-*` são locais desta tela. O modo escuro redefine todos. Nada aqui
-   usa `--md-sys-color-*` para superfície: aqueles tokens invertem de
-   significado entre os temas, e foi isso que deixou o cartão invisível na
-   primeira versão. */
+   ## Medidas tiradas da referência
+
+   Fundo escuro #1b1b1b, cartão #2b2b2b com raio 6px, círculo de status de
+   20px, avatar de 20px, chip de atraso vermelho com raio 4px. */
 
 .kb {
-  /* claro — cinza frio, como o Planner */
-  --k-fundo: #f3f2f1;
-  --k-coluna: #ffffff;
-  --k-coluna-borda: #e8e6e4;
+  --k-fundo: #ffffff;
   --k-cartao: #ffffff;
-  --k-cartao-borda: #e6e4e2;
+  --k-cartao-hover: #fafafa;
+  --k-cartao-borda: #e1dfdd;
   --k-texto: #242424;
-  --k-texto-fraco: #616161;
+  --k-texto-fraco: #605e5c;
+  --k-titulo-coluna: #242424;
   --k-linha: #edebe9;
-  --k-hover: #f5f4f3;
   --k-acento: #0f7b3f;
   --k-acento-suave: #e6f4ec;
-  --k-sombra-1: 0 1px 2px rgba(0, 0, 0, .06), 0 1px 1px rgba(0, 0, 0, .04);
-  --k-sombra-2: 0 2px 8px rgba(0, 0, 0, .1), 0 1px 3px rgba(0, 0, 0, .06);
-  --k-sombra-3: 0 8px 28px rgba(0, 0, 0, .16);
-  --k-raio: 10px;
-  --k-raio-peq: 6px;
+  --k-atraso: #a4262c;
+  --k-atraso-fundo: #fde7e9;
+  --k-avatar-borda: #ffffff;
+  --k-sombra: 0 1px 3px rgba(0, 0, 0, .1), 0 0 1px rgba(0, 0, 0, .08);
+  --k-sombra-alta: 0 4px 12px rgba(0, 0, 0, .15);
+  --k-raio: 6px;
 
   display: flex;
   flex-direction: column;
-  /* Ocupa a altura da área de conteúdo e rola por dentro. */
-  height: calc(100vh - 108px);
-  margin: -8px -4px 0;
-  padding: 18px 20px 0;
+  height: calc(100vh - 96px);
+  margin: -6px -4px 0;
+  padding: 14px 18px 0;
   background: var(--k-fundo);
-  border-radius: 14px;
+  border-radius: 12px;
   color: var(--k-texto);
   overflow: hidden;
 }
 
 :root[data-theme="dark"] .kb {
-  --k-fundo: #16191c;
-  --k-coluna: #202428;
-  --k-coluna-borda: #2b3035;
-  --k-cartao: #272c31;
-  --k-cartao-borda: #343a3f;
-  --k-texto: #e8eaed;
-  --k-texto-fraco: #9aa0a6;
-  --k-linha: #30363b;
-  --k-hover: #2c3237;
-  --k-acento: #3ddc84;
-  --k-acento-suave: #14361f;
-  --k-sombra-1: 0 1px 2px rgba(0, 0, 0, .4);
-  --k-sombra-2: 0 2px 8px rgba(0, 0, 0, .5);
-  --k-sombra-3: 0 8px 28px rgba(0, 0, 0, .6);
+  --k-fundo: #1b1b1b;
+  --k-cartao: #2b2b2b;
+  --k-cartao-hover: #323232;
+  --k-cartao-borda: transparent;
+  --k-texto: #ffffff;
+  --k-texto-fraco: #c8c6c4;
+  --k-titulo-coluna: #ffffff;
+  --k-linha: #3a3a3a;
+  --k-acento: #8ee0b0;
+  --k-acento-suave: #1d3d2a;
+  --k-atraso: #ff99a0;
+  --k-atraso-fundo: #44201d;
+  --k-avatar-borda: #2b2b2b;
+  --k-sombra: none;
+  --k-sombra-alta: 0 6px 20px rgba(0, 0, 0, .55);
 }
 
 /* =====================================================================
@@ -2604,41 +2602,43 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  padding-bottom: 14px;
+  padding-bottom: 10px;
   flex: 0 0 auto;
 }
 
 .kb-titulo-quadro {
-  font-size: 20px;
+  margin: 0;
+  font-size: 17px;
   font-weight: 700;
-  letter-spacing: -.2px;
-  margin: 0 14px 0 0;
+  letter-spacing: -.1px;
   white-space: nowrap;
 }
 
 .kb-subtitulo {
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--k-texto-fraco);
-  margin-top: 1px;
 }
 
 .kb-busca {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex: 1 1 220px;
-  max-width: 360px;
-  height: 38px;
-  padding: 0 14px;
-  border-radius: var(--k-raio-peq);
-  background: var(--k-coluna);
-  border: 1px solid var(--k-coluna-borda);
-  transition: border-color .14s, box-shadow .14s;
+  gap: 7px;
+  flex: 1 1 200px;
+  max-width: 340px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: var(--k-raio);
+  background: var(--k-cartao);
+  border: 1px solid var(--k-linha);
+  transition: border-color .14s;
+}
+
+:root[data-theme="dark"] .kb-busca {
+  background: #262626;
 }
 
 .kb-busca:focus-within {
   border-color: var(--k-acento);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--k-acento) 22%, transparent);
 }
 
 .kb-busca svg {
@@ -2653,7 +2653,7 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   outline: none;
   background: transparent;
   color: var(--k-texto);
-  font-size: 13.5px;
+  font-size: 13px;
 }
 
 .kb-busca input::placeholder {
@@ -2666,36 +2666,40 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  height: 38px;
-  padding: 0 18px;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
   border: 1px solid transparent;
-  border-radius: var(--k-raio-peq);
+  border-radius: var(--k-raio);
   background: transparent;
   color: var(--k-texto);
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
-  transition: background .14s, border-color .14s, box-shadow .14s;
+  transition: background .13s, border-color .13s;
 }
 
 .kb-btn:hover {
-  background: var(--k-hover);
+  background: var(--k-cartao-hover);
+}
+
+:root[data-theme="dark"] .kb-btn:hover {
+  background: #2b2b2b;
 }
 
 .kb-btn.cheio {
   background: var(--k-acento);
   color: #fff;
+  border-color: transparent;
 }
 
 .kb-btn.cheio:hover {
-  box-shadow: var(--k-sombra-2);
-  filter: brightness(1.05);
+  filter: brightness(1.08);
 }
 
 :root[data-theme="dark"] .kb-btn.cheio {
-  color: #06210f;
+  color: #0b1f12;
 }
 
 .kb-btn.tonal {
@@ -2704,81 +2708,69 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 }
 
 .kb-btn.perigo {
-  color: #b3261e;
+  color: var(--k-atraso);
 }
 
 .kb-btn.perigo:hover {
-  background: #fdecea;
-}
-
-:root[data-theme="dark"] .kb-btn.perigo {
-  color: #f2b8b5;
-}
-
-:root[data-theme="dark"] .kb-btn.perigo:hover {
-  background: #44201d;
+  background: var(--k-atraso-fundo);
 }
 
 .kb-btn.pequeno {
-  height: 32px;
-  padding: 0 13px;
+  height: 30px;
+  padding: 0 11px;
   font-size: 12.5px;
 }
 
 .kb-btn.ativo {
   background: var(--k-acento-suave);
   color: var(--k-acento);
-  border-color: color-mix(in srgb, var(--k-acento) 30%, transparent);
+  border-color: transparent;
 }
 
 /* --- filtro ------------------------------------------------------------ */
 
 .kb-filtro {
-  height: 38px;
-  padding: 0 32px 0 13px;
-  border: 1px solid var(--k-coluna-borda);
-  border-radius: var(--k-raio-peq);
-  background-color: var(--k-coluna);
+  height: 34px;
+  padding: 0 30px 0 11px;
+  border: 1px solid var(--k-linha);
+  border-radius: var(--k-raio);
+  background-color: var(--k-cartao);
   color: var(--k-texto);
-  font-size: 13px;
+  font-size: 12.5px;
   cursor: pointer;
   appearance: none;
   -webkit-appearance: none;
   background-image:
     linear-gradient(45deg, transparent 50%, currentColor 50%),
     linear-gradient(135deg, currentColor 50%, transparent 50%);
-  background-position: calc(100% - 15px) 16px, calc(100% - 10px) 16px;
+  background-position: calc(100% - 14px) 15px, calc(100% - 9px) 15px;
   background-size: 5px 5px, 5px 5px;
   background-repeat: no-repeat;
 }
 
-.kb-filtro:hover {
-  border-color: var(--k-texto-fraco);
+:root[data-theme="dark"] .kb-filtro {
+  background-color: #262626;
 }
 
-/* --- barra de números -------------------------------------------------- */
+/* --- números ----------------------------------------------------------- */
 
 .kb-stats {
   display: flex;
-  gap: 6px;
+  gap: 18px;
   align-items: center;
   flex: 0 0 auto;
-  padding: 0 0 14px;
+  padding: 0 2px 12px;
+  font-size: 12.5px;
+  color: var(--k-texto-fraco);
   overflow-x: auto;
   scrollbar-width: none;
+  white-space: nowrap;
 }
 
 .kb-stat {
   display: inline-flex;
   align-items: baseline;
-  gap: 6px;
-  padding: 5px 12px;
-  border-radius: var(--shape-full);
-  background: var(--k-coluna);
-  border: 1px solid var(--k-coluna-borda);
-  font-size: 12px;
-  color: var(--k-texto-fraco);
-  white-space: nowrap;
+  gap: 5px;
 }
 
 .kb-stat b {
@@ -2787,114 +2779,83 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   color: var(--k-texto);
 }
 
-.kb-stat.alerta {
-  background: #fdecea;
-  border-color: #f5c6c2;
-  color: #8c1d18;
-}
-
 .kb-stat.alerta b {
-  color: #b3261e;
+  color: var(--k-atraso);
 }
 
-:root[data-theme="dark"] .kb-stat.alerta {
-  background: #3a1a17;
-  border-color: #4d211d;
-  color: #f2b8b5;
-}
-
-:root[data-theme="dark"] .kb-stat.alerta b {
-  color: #f2b8b5;
+.kb-stat.alerta {
+  color: var(--k-atraso);
 }
 
 /* =====================================================================
-   Trilho de colunas
+   Trilho
    ===================================================================== */
 
 .kb-trilho {
   display: flex;
-  gap: 14px;
+  gap: 22px;
   align-items: flex-start;
   flex: 1;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 0 0 16px;
+  padding: 0 0 14px;
   scrollbar-width: thin;
 }
 
-/* --- coluna ------------------------------------------------------------ */
+/* =====================================================================
+   Coluna — SEM caixa. Só título e cartões.
+   ===================================================================== */
 
 .kb-coluna {
   display: flex;
   flex-direction: column;
-  flex: 0 0 290px;
-  width: 290px;
+  flex: 0 0 300px;
+  width: 300px;
   max-height: 100%;
-  padding: 0;
-  border-radius: var(--k-raio);
-  background: var(--k-coluna);
-  border: 1px solid var(--k-coluna-borda);
-  box-shadow: var(--k-sombra-1);
-  transition: box-shadow .16s, border-color .16s;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+  transition: background .16s;
 }
 
+/* Alvo do arraste: o único momento em que a coluna ganha corpo. */
 .kb-coluna.alvo {
-  border-color: var(--k-acento);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--k-acento) 25%, transparent);
-}
-
-/* A cor escolhida vira uma faixa no topo da coluna — mais discreta que
-   contornar tudo, que ficou pesado. */
-.kb-coluna[data-cor] {
-  border-top: 3px solid var(--k-cor);
+  background: var(--k-acento-suave);
+  border-radius: var(--k-raio);
+  outline: 1px dashed var(--k-acento);
+  outline-offset: 3px;
 }
 
 .kb-cabecalho {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 13px 10px 9px 14px;
+  gap: 6px;
+  padding: 0 2px 2px;
   flex: 0 0 auto;
 }
 
 .kb-titulo {
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 700;
-  letter-spacing: -.1px;
+  letter-spacing: .2px;
+  color: var(--k-titulo-coluna);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* Contagem entre parênteses, colada ao nome — como no Planner. */
 .kb-contagem {
   flex: 0 0 auto;
-  min-width: 20px;
-  padding: 1px 7px;
-  border-radius: var(--shape-full);
-  background: var(--k-hover);
-  color: var(--k-texto-fraco);
-  font-size: 11.5px;
-  font-weight: 600;
-  text-align: center;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--k-titulo-coluna);
+  opacity: .65;
 }
-
-/* --- progresso da coluna --------------------------------------------- */
 
 .kb-progresso-coluna {
-  height: 3px;
-  margin: 0 14px 8px;
-  border-radius: var(--shape-full);
-  background: var(--k-linha);
-  overflow: hidden;
-  flex: 0 0 auto;
-}
-
-.kb-progresso-coluna span {
-  display: block;
-  height: 100%;
-  border-radius: var(--shape-full);
-  background: var(--k-acento);
-  transition: width .3s ease;
+  display: none;
 }
 
 /* --- cartões ---------------------------------------------------------- */
@@ -2902,32 +2863,102 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 .kb-cartoes {
   flex: 1;
   overflow-y: auto;
-  padding: 0 8px 4px;
-  min-height: 44px;
+  padding: 6px 2px 2px;
+  min-height: 20px;
   scrollbar-width: thin;
 }
+
+/* --- "Adicionar tarefa" logo abaixo do título ------------------------- */
+
+.kb-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 6px 0 0;
+  padding: 7px 5px;
+  border: none;
+  border-radius: var(--k-raio);
+  background: transparent;
+  color: var(--k-texto-fraco);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .12s, color .12s;
+  flex: 0 0 auto;
+  justify-content: center;
+}
+
+.kb-add:hover {
+  background: var(--k-cartao-hover);
+  color: var(--k-texto);
+}
+
+:root[data-theme="dark"] .kb-add:hover {
+  background: #2b2b2b;
+}
+
+/* --- seta de recolher ------------------------------------------------- */
+
+.kb-seta {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: var(--k-raio);
+  background: transparent;
+  color: var(--k-texto-fraco);
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: transform .15s, background .12s;
+}
+
+.kb-seta:hover {
+  background: var(--k-cartao-hover);
+}
+
+:root[data-theme="dark"] .kb-seta:hover {
+  background: #2b2b2b;
+}
+
+.kb-seta.fechada {
+  transform: rotate(-90deg);
+}
+
+.kb-coluna.recolhida .kb-cartoes,
+.kb-coluna.recolhida .kb-add {
+  display: none;
+}
+
+/* =====================================================================
+   Cartão
+   ===================================================================== */
 
 .kb-cartao {
   position: relative;
   margin-bottom: 8px;
-  padding: 11px 12px 9px;
+  padding: 12px 12px 10px;
   border-radius: var(--k-raio);
   background: var(--k-cartao);
   border: 1px solid var(--k-cartao-borda);
-  box-shadow: var(--k-sombra-1);
+  box-shadow: var(--k-sombra);
   cursor: grab;
-  transition: box-shadow .16s, border-color .16s, transform .1s;
-  animation: kbEntra .16s cubic-bezier(.2, 0, 0, 1);
+  transition: background .13s, box-shadow .13s, transform .1s;
+  animation: kbEntra .15s cubic-bezier(.2, 0, 0, 1);
+}
+
+:root[data-theme="dark"] .kb-cartao:hover {
+  background: var(--k-cartao-hover);
 }
 
 @keyframes kbEntra {
-  from { opacity: 0; transform: translateY(5px); }
+  from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: none; }
 }
 
 .kb-cartao:hover {
-  box-shadow: var(--k-sombra-2);
-  border-color: color-mix(in srgb, var(--k-texto-fraco) 35%, transparent);
+  box-shadow: var(--k-sombra-alta);
 }
 
 .kb-cartao.arrastando {
@@ -2936,7 +2967,7 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 }
 
 .kb-cartao.concluida {
-  background: var(--k-hover);
+  opacity: .62;
 }
 
 .kb-cartao.concluida .kb-titulo-cartao {
@@ -2944,7 +2975,7 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   color: var(--k-texto-fraco);
 }
 
-/* --- linha do título --------------------------------------------------- */
+/* --- linha do título: círculo + texto --------------------------------- */
 
 .kb-linha-titulo {
   display: flex;
@@ -2952,15 +2983,17 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   align-items: flex-start;
 }
 
+/* Círculo de status, não checkbox: no Planner a caixa é redonda e vazia
+   até a tarefa ser concluída. */
 .kb-check {
   appearance: none;
   -webkit-appearance: none;
   position: relative;
   flex: 0 0 auto;
-  width: 18px;
-  height: 18px;
-  margin-top: 1px;
-  border: 2px solid var(--k-texto-fraco);
+  width: 20px;
+  height: 20px;
+  margin-top: 0;
+  border: 1.5px solid var(--k-texto-fraco);
   border-radius: 50%;
   background: transparent;
   cursor: pointer;
@@ -2969,6 +3002,7 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 
 .kb-check:hover {
   border-color: var(--k-acento);
+  background: color-mix(in srgb, var(--k-acento) 14%, transparent);
 }
 
 .kb-check:active {
@@ -2983,8 +3017,8 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 .kb-check:checked::after {
   content: "";
   position: absolute;
-  left: 4px;
-  top: 1px;
+  left: 5px;
+  top: 2px;
   width: 5px;
   height: 9px;
   border: solid #fff;
@@ -2993,20 +3027,20 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 }
 
 :root[data-theme="dark"] .kb-check:checked::after {
-  border-color: #06210f;
+  border-color: #0b1f12;
 }
 
 .kb-titulo-cartao {
   flex: 1;
   min-width: 0;
   font-size: 13.5px;
-  line-height: 1.42;
+  line-height: 1.4;
   word-break: break-word;
   cursor: pointer;
 }
 
 .kb-desc {
-  margin: 5px 0 0 27px;
+  margin: 6px 0 0 29px;
   font-size: 12px;
   line-height: 1.45;
   color: var(--k-texto-fraco);
@@ -3017,22 +3051,22 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   white-space: pre-wrap;
 }
 
-/* --- rodapé com ícones ------------------------------------------------- */
+/* --- rodapé ----------------------------------------------------------- */
 
-/* Uma linha só, como no Planner: ícones à esquerda, avatares à direita. */
 .kb-rodape {
   display: flex;
   align-items: center;
-  gap: 9px;
-  margin: 9px 0 0 27px;
-  min-height: 22px;
+  gap: 10px;
+  margin: 10px 0 0 29px;
+  min-height: 20px;
+  flex-wrap: wrap;
 }
 
-.kb-rodape .kb-espaco {
+.kb-espaco {
   flex: 1;
 }
 
-/* Ícone + número, sem pílula: cinza discreto. */
+/* Ícone + valor, cinza. Sem pílula. */
 .kb-selo {
   display: inline-flex;
   align-items: center;
@@ -3046,75 +3080,85 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 .kb-selo svg {
   width: 13px;
   height: 13px;
-  opacity: .85;
+  opacity: .9;
 }
 
+/* Atraso ganha cápsula vermelha — é o único selo que muda de forma, porque
+   é o único que exige ação. */
 .kb-selo.atrasado {
-  color: #b3261e;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--k-atraso-fundo);
+  color: var(--k-atraso);
   font-weight: 600;
-}
-
-:root[data-theme="dark"] .kb-selo.atrasado {
-  color: #f2b8b5;
+  margin-left: -6px;
 }
 
 .kb-selo.hoje {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--k-acento-suave);
   color: var(--k-acento);
   font-weight: 600;
+  margin-left: -6px;
 }
 
 .kb-selo.completo {
   color: var(--k-acento);
 }
 
-/* Prioridade: uma faixa curta e colorida acima do título. */
+/* --- prioridade ------------------------------------------------------- */
+
+/* Faixa curta acima do título, só para alta e urgente. */
 .kb-prio {
   display: inline-block;
   width: 26px;
   height: 3px;
-  border-radius: var(--shape-full);
-  margin-bottom: 6px;
+  border-radius: 2px;
+  margin-bottom: 7px;
 }
 
 .kb-prio.alta { background: #d9822b; }
-.kb-prio.urgente { background: #b3261e; }
+.kb-prio.urgente { background: #a4262c; }
 
-/* --- avatares ---------------------------------------------------------- */
+:root[data-theme="dark"] .kb-prio.urgente { background: #ff99a0; }
+
+/* --- avatares --------------------------------------------------------- */
 
 .kb-avatar {
   display: inline-grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   color: #fff;
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 700;
   flex: 0 0 auto;
-  box-shadow: 0 0 0 2px var(--k-cartao);
+  box-shadow: 0 0 0 2px var(--k-avatar-borda);
 }
 
 .kb-avatar + .kb-avatar {
-  margin-left: -8px;
+  margin-left: -7px;
 }
 
 .kb-avatar.extra {
-  background: var(--k-hover);
+  background: var(--k-linha);
   color: var(--k-texto-fraco);
 }
 
-/* --- remover no hover -------------------------------------------------- */
+/* --- remover no hover ------------------------------------------------- */
 
 .kb-remover {
   position: absolute;
-  top: 7px;
-  right: 7px;
+  top: 6px;
+  right: 6px;
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   border: none;
-  border-radius: 50%;
+  border-radius: 4px;
   background: transparent;
   color: var(--k-texto-fraco);
   cursor: pointer;
@@ -3127,103 +3171,45 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 }
 
 .kb-remover:hover {
-  background: #fdecea;
-  color: #b3261e;
-}
-
-:root[data-theme="dark"] .kb-remover:hover {
-  background: #44201d;
-  color: #f2b8b5;
-}
-
-/* --- adicionar --------------------------------------------------------- */
-
-.kb-add {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: calc(100% - 16px);
-  margin: 2px 8px 9px;
-  padding: 9px 11px;
-  border: none;
-  border-radius: var(--k-raio-peq);
-  background: transparent;
-  color: var(--k-texto-fraco);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background .12s, color .12s;
-  flex: 0 0 auto;
-}
-
-.kb-add:hover {
-  background: var(--k-hover);
-  color: var(--k-texto);
+  background: var(--k-atraso-fundo);
+  color: var(--k-atraso);
 }
 
 .kb-vazio {
-  padding: 12px 10px;
+  padding: 2px 4px 6px;
   font-size: 12.5px;
   color: var(--k-texto-fraco);
 }
 
-/* --- seta de recolher -------------------------------------------------- */
-
-.kb-seta {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  border: none;
-  border-radius: var(--k-raio-peq);
-  background: transparent;
-  color: var(--k-texto-fraco);
-  cursor: pointer;
-  flex: 0 0 auto;
-  transition: transform .15s, background .12s;
-}
-
-.kb-seta:hover {
-  background: var(--k-hover);
-}
-
-.kb-seta.fechada {
-  transform: rotate(-90deg);
-}
-
-.kb-coluna.recolhida .kb-cartoes,
-.kb-coluna.recolhida .kb-add,
-.kb-coluna.recolhida .kb-progresso-coluna {
-  display: none;
-}
-
-/* --- menu de contexto -------------------------------------------------- */
+/* =====================================================================
+   Menu de contexto
+   ===================================================================== */
 
 .kb-menu {
   position: fixed;
   z-index: 1300;
-  min-width: 186px;
+  min-width: 184px;
   padding: 5px;
   border-radius: var(--k-raio);
-  background: var(--k-coluna);
-  border: 1px solid var(--k-coluna-borda);
-  box-shadow: var(--k-sombra-3);
-  animation: kbMenu .11s ease-out;
+  background: var(--k-cartao);
+  border: 1px solid var(--k-linha);
+  box-shadow: var(--k-sombra-alta);
+  animation: kbMenu .1s ease-out;
 }
 
 @keyframes kbMenu {
-  from { opacity: 0; transform: translateY(-4px); }
+  from { opacity: 0; transform: translateY(-3px); }
   to   { opacity: 1; transform: none; }
 }
 
 .kb-menu-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
   width: 100%;
-  padding: 9px 10px;
+  padding: 8px 10px;
   border: none;
-  border-radius: var(--k-raio-peq);
+  border-radius: 4px;
   background: transparent;
   color: var(--k-texto);
   font-size: 13px;
@@ -3233,20 +3219,20 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 }
 
 .kb-menu-item:hover {
-  background: var(--k-hover);
+  background: var(--k-cartao-hover);
+}
+
+:root[data-theme="dark"] .kb-menu-item:hover {
+  background: #3a3a3a;
 }
 
 .kb-menu-item.perigo {
-  color: #b3261e;
-}
-
-:root[data-theme="dark"] .kb-menu-item.perigo {
-  color: #f2b8b5;
+  color: var(--k-atraso);
 }
 
 .kb-menu-item svg {
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
   flex: 0 0 auto;
   opacity: .8;
 }
@@ -3257,18 +3243,17 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 
 .kb-cores {
   display: flex;
-  gap: 12px;
+  gap: 11px;
   flex-wrap: wrap;
   padding: 4px 2px;
 }
 
 .kb-cor-opcao {
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   border: none;
   border-radius: 50%;
   cursor: pointer;
-  position: relative;
   box-shadow: 0 0 0 2px transparent;
   transition: box-shadow .12s, transform .12s;
 }
@@ -3282,7 +3267,7 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 }
 
 .kb-cor-opcao.sem-cor {
-  background: var(--k-hover);
+  background: var(--k-linha);
   color: var(--k-texto-fraco);
   font-size: 11px;
   display: grid;
@@ -3290,7 +3275,7 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 }
 
 /* =====================================================================
-   Modal
+   Modal — duas colunas de campos, como o Planner
    ===================================================================== */
 
 .kb-fundo {
@@ -3300,8 +3285,8 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 18px;
-  background: rgba(0, 0, 0, .45);
+  padding: 20px;
+  background: rgba(0, 0, 0, .55);
   animation: kbFade .14s;
 }
 
@@ -3314,43 +3299,42 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: 620px;
+  max-width: 640px;
   max-height: 88vh;
   overflow: hidden;
-  border-radius: 14px;
-  background: var(--k-coluna);
-  border: 1px solid var(--k-coluna-borda);
-  box-shadow: var(--k-sombra-3);
-  animation: kbModal .18s cubic-bezier(.2, 0, 0, 1);
+  border-radius: 8px;
+  background: var(--k-cartao);
+  border: 1px solid var(--k-linha);
+  box-shadow: var(--k-sombra-alta);
+  animation: kbModal .17s cubic-bezier(.2, 0, 0, 1);
 }
 
 @keyframes kbModal {
-  from { transform: scale(.96); opacity: 0; }
+  from { transform: scale(.97); opacity: 0; }
   to   { transform: scale(1); opacity: 1; }
 }
 
 .kb-modal-topo {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
-  padding: 20px 20px 10px;
+  gap: 10px;
+  padding: 16px 16px 4px;
 }
 
 .kb-modal-topo h2 {
   flex: 1;
   margin: 0;
-  font-size: 19px;
+  font-size: 15px;
   font-weight: 700;
-  letter-spacing: -.2px;
 }
 
 .kb-fechar {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   border: none;
-  border-radius: var(--k-raio-peq);
+  border-radius: 4px;
   background: transparent;
   color: var(--k-texto-fraco);
   cursor: pointer;
@@ -3359,8 +3343,12 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 }
 
 .kb-fechar:hover {
-  background: var(--k-hover);
+  background: var(--k-cartao-hover);
   color: var(--k-texto);
+}
+
+:root[data-theme="dark"] .kb-fechar:hover {
+  background: #3a3a3a;
 }
 
 /* --- abas -------------------------------------------------------------- */
@@ -3368,7 +3356,7 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 .kb-tabs {
   display: flex;
   gap: 2px;
-  padding: 0 16px;
+  padding: 0 12px;
   border-bottom: 1px solid var(--k-linha);
   overflow-x: auto;
   scrollbar-width: none;
@@ -3376,16 +3364,16 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 }
 
 .kb-tab {
-  padding: 11px 14px;
+  padding: 10px 12px;
   border: none;
   border-bottom: 2px solid transparent;
   background: transparent;
   color: var(--k-texto-fraco);
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: color .14s, border-color .14s;
+  transition: color .13s, border-color .13s;
 }
 
 .kb-tab:hover {
@@ -3402,7 +3390,7 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 .kb-modal-corpo {
   flex: 1;
   overflow-y: auto;
-  padding: 20px;
+  padding: 16px;
   scrollbar-width: thin;
 }
 
@@ -3410,13 +3398,9 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 14px 20px;
+  padding: 12px 16px;
   border-top: 1px solid var(--k-linha);
   flex: 0 0 auto;
-}
-
-.kb-espaco {
-  flex: 1;
 }
 
 /* --- campos ------------------------------------------------------------ */
@@ -3424,15 +3408,14 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 .kb-campo {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-bottom: 18px;
+  gap: 5px;
+  margin-bottom: 14px;
 }
 
 .kb-campo > label {
   font-size: 11.5px;
-  font-weight: 700;
-  letter-spacing: .4px;
-  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: .2px;
   color: var(--k-texto-fraco);
 }
 
@@ -3440,16 +3423,22 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 .kb-campo textarea,
 .kb-campo select {
   width: 100%;
-  height: 42px;
-  padding: 0 13px;
-  border: 1px solid var(--k-cartao-borda);
-  border-radius: var(--k-raio-peq);
-  background: var(--k-cartao);
+  height: 38px;
+  padding: 0 11px;
+  border: 1px solid var(--k-linha);
+  border-radius: 4px;
+  background: var(--k-fundo);
   color: var(--k-texto);
-  font-size: 14px;
+  font-size: 13.5px;
   font-family: inherit;
   outline: none;
-  transition: border-color .14s, box-shadow .14s;
+  transition: border-color .13s, box-shadow .13s;
+}
+
+:root[data-theme="dark"] .kb-campo input,
+:root[data-theme="dark"] .kb-campo textarea,
+:root[data-theme="dark"] .kb-campo select {
+  background: #1f1f1f;
 }
 
 .kb-campo input:hover,
@@ -3462,13 +3451,13 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 .kb-campo textarea:focus,
 .kb-campo select:focus {
   border-color: var(--k-acento);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--k-acento) 18%, transparent);
+  box-shadow: 0 0 0 1px var(--k-acento);
 }
 
 .kb-campo textarea {
   height: auto;
-  min-height: 92px;
-  padding: 11px 13px;
+  min-height: 88px;
+  padding: 10px 11px;
   line-height: 1.55;
   resize: vertical;
 }
@@ -3480,7 +3469,7 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   background-image:
     linear-gradient(45deg, transparent 50%, currentColor 50%),
     linear-gradient(135deg, currentColor 50%, transparent 50%);
-  background-position: calc(100% - 17px) 19px, calc(100% - 12px) 19px;
+  background-position: calc(100% - 16px) 17px, calc(100% - 11px) 17px;
   background-size: 5px 5px, 5px 5px;
   background-repeat: no-repeat;
 }
@@ -3488,50 +3477,53 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 .kb-campo input::placeholder,
 .kb-campo textarea::placeholder {
   color: var(--k-texto-fraco);
-  opacity: .8;
+  opacity: .85;
 }
 
 .kb-campo input[type="date"] {
-  max-width: 190px;
+  max-width: 175px;
 }
 
+/* Grelha de duas colunas — Status | Prioridade, Início | Conclusão. */
 .kb-duas {
-  display: flex;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 16px;
 }
 
-.kb-duas > .kb-campo {
-  flex: 1;
-}
-
-/* --- itens do checklist ------------------------------------------------ */
+/* --- checklist --------------------------------------------------------- */
 
 .kb-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 9px;
-  border-radius: var(--k-raio-peq);
-  font-size: 13.5px;
+  gap: 9px;
+  padding: 7px 4px;
+  font-size: 13px;
+  border-radius: 4px;
   transition: background .12s;
 }
 
 .kb-item:hover {
-  background: var(--k-hover);
+  background: var(--k-cartao-hover);
 }
 
-.kb-item input[type="checkbox"] {
+:root[data-theme="dark"] .kb-item:hover {
+  background: #333;
+}
+
+.kb-item input[type="checkbox"],
+.kb-pessoa input[type="checkbox"] {
   appearance: none;
   -webkit-appearance: none;
   position: relative;
-  width: 17px;
-  height: 17px;
+  width: 18px;
+  height: 18px;
   flex: 0 0 auto;
-  border: 2px solid var(--k-texto-fraco);
+  border: 1.5px solid var(--k-texto-fraco);
   border-radius: 50%;
   background: transparent;
   cursor: pointer;
-  transition: background .14s, border-color .14s;
+  transition: background .13s, border-color .13s;
 }
 
 .kb-item input[type="checkbox"]:hover,
@@ -3549,8 +3541,8 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 .kb-pessoa input[type="checkbox"]:checked::after {
   content: "";
   position: absolute;
-  left: 3px;
-  top: 0;
+  left: 4px;
+  top: 1px;
   width: 5px;
   height: 9px;
   border: solid #fff;
@@ -3560,7 +3552,7 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 
 :root[data-theme="dark"] .kb-item input[type="checkbox"]:checked::after,
 :root[data-theme="dark"] .kb-pessoa input[type="checkbox"]:checked::after {
-  border-color: #06210f;
+  border-color: #0b1f12;
 }
 
 .kb-item .riscado {
@@ -3580,41 +3572,31 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 9px;
-  border-radius: var(--k-raio-peq);
+  padding: 7px 4px;
+  border-radius: 4px;
   cursor: pointer;
   transition: background .12s;
 }
 
 .kb-pessoa:hover {
-  background: var(--k-hover);
+  background: var(--k-cartao-hover);
 }
 
-.kb-pessoa input[type="checkbox"] {
-  appearance: none;
-  -webkit-appearance: none;
-  position: relative;
-  width: 17px;
-  height: 17px;
-  flex: 0 0 auto;
-  border: 2px solid var(--k-texto-fraco);
-  border-radius: 50%;
-  background: transparent;
-  cursor: pointer;
-  transition: background .14s, border-color .14s;
+:root[data-theme="dark"] .kb-pessoa:hover {
+  background: #333;
 }
 
 .kb-pessoa-nome {
   flex: 1;
   min-width: 0;
-  font-size: 13.5px;
+  font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .kb-pessoa-email {
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--k-texto-fraco);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3627,16 +3609,13 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 .kb-nada {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 56px 24px;
-  text-align: center;
+  gap: 4px;
+  padding: 40px 20px;
   color: var(--k-texto-fraco);
 }
 
 .kb-nada-titulo {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--k-texto);
 }
@@ -3646,8 +3625,6 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   max-width: 380px;
   line-height: 1.5;
 }
-
-/* --- carregando -------------------------------------------------------- */
 
 .kb-carregando {
   display: block;
@@ -3659,21 +3636,21 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   .kb {
     height: auto;
     min-height: calc(100vh - 120px);
-    padding: 14px 12px 0;
+    padding: 12px 12px 0;
   }
 
   .kb-coluna {
-    flex: 0 0 84vw;
-    width: 84vw;
-  }
-
-  .kb-titulo-quadro {
-    font-size: 17px;
+    flex: 0 0 82vw;
+    width: 82vw;
   }
 
   .kb-busca {
     max-width: none;
-    order: 5;
     flex: 1 0 100%;
+    order: 5;
+  }
+
+  .kb-duas {
+    grid-template-columns: 1fr;
   }
 }

@@ -365,7 +365,7 @@ function coluna(root, bucket) {
       html: icon("seta", 14),
     }),
     el("span", { class: "kb-titulo", title: bucket.nome }, bucket.nome),
-    el("span", { class: "kb-contagem" }, String(bucket.atividades.length)),
+    el("span", { class: "kb-contagem" }, "(" + bucket.atividades.length + ")"),
     el("span", { style: "flex:1" }),
     el("button", {
       class: "kb-fechar", title: "Mais opções",
@@ -403,12 +403,14 @@ function coluna(root, bucket) {
 
   for (const a of filtradas) lista.append(cartao(root, a));
 
-  col.append(lista, el("button", {
+  // No Planner o botão fica logo abaixo do título, não no rodapé da
+  // coluna — é o que permite adicionar sem rolar até o fim.
+  col.append(el("button", {
     class: "kb-add",
     onclick: () => criarAtividade(root, bucket.id),
   },
-    el("span", { html: icon("plus", 16) }),
-    el("span", {}, "Adicionar atividade")));
+    el("span", { html: icon("plus", 15) }),
+    el("span", {}, "Adicionar tarefa")), lista);
 
   return col;
 }
