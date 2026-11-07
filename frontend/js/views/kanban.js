@@ -246,13 +246,13 @@ function desenhar(root) {
 
   const wrap = el("div", { class: "kb" });
 
-  const seletorPrioridade = filtroPrioridade;
+  // --- cabeçalho --------------------------------------------------------
   const campoBusca = el("input", {
     type: "search",
     placeholder: "Buscar tarefas…",
     value: busca,
-    oninput: (e) => {
-      busca = e.target.value.toLowerCase().trim();
+    oninput: (ev) => {
+      busca = ev.target.value.toLowerCase().trim();
       desenhar(root);
       const novo = root.querySelector(".kb-busca input");
       if (novo) {
@@ -262,61 +262,64 @@ function desenhar(root) {
     },
   });
 
-  wrap.append(el("div", { class: "kb-topo" },
-    el("div", { class: "kb-busca" },
-      el("span", { html: icon("search", 18) }),
-      campoBusca),
-    el("select", {
-      class: "kb-filtro",
-      onchange: (ev) => {
-        filtroPrioridade = ev.target.value;
-        desenhar(root);
-      },
+  const filtro = el("select", {
+    class: "kb-filtro",
+    onchange: (ev) => {
+      filtroPrioridade = ev.target.value;
+      desenhar(root);
     },
-      el("option", { value: "" }, "Prioridade: todas"),
-      el("option", { value: "urgente" }, "Urgente"),
-      el("option", { value: "alta" }, "Alta"),
-      el("option", { value: "normal" }, "Normal"),
-      el("option", { value: "baixa" }, "Baixa")),
+  },
+    el("option", { value: "" }, "Todas as prioridades"),
+    el("option", { value: "urgente" }, "Urgente"),
+    el("option", { value: "alta" }, "Alta"),
+    el("option", { value: "normal" }, "Normal"),
+    el("option", { value: "baixa" }, "Baixa"));
+  filtro.value = filtroPrioridade;
 
+  wrap.append(el("div", { class: "kb-topo" },
+    el("div", {},
+      el("h1", { class: "kb-titulo-quadro" }, "Kanban"),
+      el("div", { class: "kb-subtitulo" }, "Atividades da equipe")),
+    el("span", { style: "flex:1" }),
+    el("div", { class: "kb-busca" },
+      el("span", { html: icon("search", 17) }),
+      campoBusca),
+    filtro,
     el("button", {
-      class: "kb-btn pequeno tonal",
-      title: "Mostrar ou ocultar concluídas",
+      class: "kb-btn pequeno" + (mostrarConcluidas ? " ativo" : ""),
+      title: mostrarConcluidas ? "Ocultar concluídas" : "Mostrar concluídas",
       onclick: () => {
         mostrarConcluidas = !mostrarConcluidas;
         desenhar(root);
       },
-    }, mostrarConcluidas ? "Ocultar concluídas" : "Mostrar concluídas"),
-
-    el("span", { style: "flex:1" }),
+    }, mostrarConcluidas ? "Concluídas: visíveis" : "Concluídas: ocultas"),
     el("button", { class: "kb-btn cheio", onclick: () => criarBucket(root) },
-      el("span", { html: icon("plus", 18) }),
+      el("span", { html: icon("plus", 17) }),
       el("span", {}, "Nova coluna"))));
 
+  // --- números ----------------------------------------------------------
   const todas = dados.flatMap((b) => b.atividades);
-  const abertas = todas.filter((a) => !a.concluida).length;
+  const concluidas = todas.filter((a) => a.concluida).length;
   const atrasadas = todas.filter((a) => a.atrasada).length;
+  const pct = todas.length ? Math.round((concluidas / todas.length) * 100) : 0;
 
   wrap.append(el("div", { class: "kb-stats" },
-    el("span", {}, el("b", {}, String(todas.length)), " atividades"),
-    el("span", {}, el("b", {}, String(abertas)), " abertas"),
-    el("span", {}, el("b", {}, String(todas.length - abertas)), " concluídas"),
-    atrasadas
-      ? el("span", {},
-          el("span", { class: "kb-ponto", style: "background:var(--md-sys-color-error)" }),
-          el("b", {}, String(atrasadas)), " atrasadas")
-      : el("span", {}, "nenhuma atrasada")));
+    el("span", { class: "kb-stat" }, el("b", {}, String(todas.length)), "atividades"),
+    el("span", { class: "kb-stat" }, el("b", {}, String(dados.length)), "colunas"),
+    el("span", { class: "kb-stat" }, el("b", {}, `${concluidas}`), "concluídas"),
+    el("span", { class: "kb-stat" }, el("b", {}, `${pct}%`), "feito"),
+    el("span", { class: "kb-stat" + (atrasadas ? " alerta" : "") },
+      el("b", {}, String(atrasadas)), "atrasadas")));
 
+  // --- trilho -----------------------------------------------------------
   const trilho = el("div", { class: "kb-trilho" });
 
   if (!dados.length) {
-    trilho.append(el("div", {
-      style: "padding:40px 24px;text-align:center;color:var(--md-sys-color-on-surface-variant)",
-    },
-      el("p", { style: "margin:0 0 6px;font-weight:500;font-size:15px" },
-        "Nenhuma coluna ainda"),
-      el("p", { style: "margin:0;font-size:13px" },
-        "Comece com “A fazer”, “Em andamento” e “Concluído”.")));
+    trilho.append(el("div", { class: "kb-nada" },
+      el("div", { class: "kb-nada-titulo" }, "Seu quadro está vazio"),
+      el("div", { class: "kb-nada-texto" },
+        "Crie a primeira coluna — “A fazer”, “Em andamento” e “Concluído” é "
+        + "um bom começo.")));
   }
 
   for (const bucket of dados) trilho.append(coluna(root, bucket));
@@ -326,8 +329,11 @@ function desenhar(root) {
 }
 
 function coluna(root, bucket) {
+  const recolhidas = colunasRecolhidas();
+  const recolhida = recolhidas.has(String(bucket.id));
+
   const col = el("div", {
-    class: "kb-coluna",
+    class: "kb-coluna" + (recolhida ? " recolhida" : ""),
     ondragover: (ev) => { ev.preventDefault(); col.classList.add("alvo"); },
     ondragleave: () => col.classList.remove("alvo"),
     ondrop: async (ev) => {
@@ -338,12 +344,12 @@ function coluna(root, bucket) {
     },
   });
 
-  // Cor da coluna: vira o contorno da coluna inteira. Sem cor, transparente.
-  col.style.setProperty("--kb-cor", bucket.cor || "transparent");
-
-  const recolhidas = colunasRecolhidas();
-  const recolhida = recolhidas.has(String(bucket.id));
-  if (recolhida) col.classList.add("recolhida");
+  // A cor escolhida vira a faixa do topo, não o contorno inteiro: contornar
+  // tudo pesava e competia com a borda dos cartões.
+  if (bucket.cor) {
+    col.setAttribute("data-cor", "1");
+    col.style.setProperty("--k-cor", bucket.cor);
+  }
 
   col.append(el("div", { class: "kb-cabecalho" },
     el("button", {
@@ -363,12 +369,22 @@ function coluna(root, bucket) {
     el("span", { style: "flex:1" }),
     el("button", {
       class: "kb-fechar", title: "Mais opções",
+      style: "width:26px;height:26px",
       onclick: (ev) => {
         ev.stopPropagation();
         abrirMenuBucket(root, bucket, ev.currentTarget);
       },
-      html: icon("mais", 18),
+      html: icon("mais", 17),
     })));
+
+  // Progresso da coluna: quantas daqui estão concluídas.
+  const feitas = bucket.atividades.filter((a) => a.concluida).length;
+  const pctCol = bucket.atividades.length
+    ? Math.round((feitas / bucket.atividades.length) * 100)
+    : 0;
+
+  col.append(el("div", { class: "kb-progresso-coluna" },
+    el("span", { style: `width:${pctCol}%` })));
 
   const lista = el("div", { class: "kb-cartoes" });
 
@@ -376,14 +392,13 @@ function coluna(root, bucket) {
     if (!mostrarConcluidas && a.concluida) return false;
     if (filtroPrioridade && (a.prioridade || "normal") !== filtroPrioridade) return false;
     if (!busca) return true;
-    // Busca no titulo E na descricao — a referencia faz o mesmo.
     return (a.titulo || "").toLowerCase().includes(busca)
       || (a.descricao || "").toLowerCase().includes(busca);
   });
 
   if (!filtradas.length) {
     lista.append(el("p", { class: "kb-vazio" },
-      busca ? "Nada encontrado." : "Nenhuma atividade."));
+      busca || filtroPrioridade ? "Nada encontrado." : "Nenhuma atividade."));
   }
 
   for (const a of filtradas) lista.append(cartao(root, a));
@@ -400,37 +415,32 @@ function coluna(root, bucket) {
 
 function cartao(root, a) {
   const d = dias(a.prazo);
-  const selos = [];
+  const prio = a.prioridade || "normal";
+  const clsCartao = ["kb-cartao", a.concluida ? "concluida" : ""].filter(Boolean).join(" ");
+
+  // --- linha de ícones --------------------------------------------------
+  const icones = [];
 
   if (a.prazo) {
     const classe = a.concluida ? "" : d < 0 ? " atrasado" : d === 0 ? " hoje" : "";
     const texto = a.concluida
       ? fmtPrazo(a.prazo)
       : d < 0
-        ? `Atrasada · ${fmtPrazo(a.prazo)}`
+        ? fmtPrazo(a.prazo)
         : d === 0
           ? "Hoje"
           : fmtPrazo(a.prazo);
-    selos.push(el("span", { class: "kb-selo" + classe },
-      el("span", { html: icon("calendario", 12) }),
+    icones.push(el("span", { class: "kb-selo" + classe, title: "Vencimento" },
+      el("span", { html: icon("calendario", 13) }),
       el("span", {}, texto)));
   }
 
-  // Prioridade alta e urgente ganham selo; baixa e normal nao precisam
-  // ocupar espaco — o padrao nao merece destaque.
-  const prio = a.prioridade || "normal";
-  const clsSeloPrio = "kb-selo prio-" + prio;
-  if (prio === "urgente" || prio === "alta") {
-    selos.push(el("span", { class: clsSeloPrio },
-      el("span", { html: icon("bandeira", 12) }),
-      el("span", {}, prio === "urgente" ? "Urgente" : "Alta")));
-  }
-
   if (a.total_itens) {
-    selos.push(el("span", {
+    icones.push(el("span", {
       class: "kb-selo" + (a.itens_feitos === a.total_itens ? " completo" : ""),
+      title: "Checklist",
     },
-      el("span", { html: icon("check", 12) }),
+      el("span", { html: icon("check", 13) }),
       el("span", {}, `${a.itens_feitos}/${a.total_itens}`)));
   }
 
@@ -442,13 +452,6 @@ function cartao(root, a) {
     }, iniciais(r.nome)));
 
   const extras = (a.responsaveis || []).length - avatares.length;
-  const pct = a.total_itens ? Math.round((a.itens_feitos / a.total_itens) * 100) : 0;
-  const estado = a.concluida ? "feita" : pct > 0 ? "andamento" : "";
-
-  // A classe e montada fora do literal: o verificador de DOM le apenas o
-  // texto entre aspas, e "prio-" sozinho pareceria uma classe inexistente.
-  const clsCartao = ["kb-cartao", "prio-" + prio, a.concluida ? "concluida" : ""]
-    .filter(Boolean).join(" ");
 
   const card = el("div", {
     class: clsCartao,
@@ -459,13 +462,22 @@ function cartao(root, a) {
       card.classList.add("arrastando");
     },
     ondragend: () => card.classList.remove("arrastando"),
-  },
+  });
+
+  // Faixa de prioridade: só alta e urgente ganham, e é curta.
+  if (prio === "alta" || prio === "urgente") {
+    card.append(el("div", {
+      class: "kb-prio " + prio,
+      title: prio === "urgente" ? "Urgente" : "Prioridade alta",
+    }));
+  }
+
+  card.append(el("div", { class: "kb-linha-titulo" },
     el("input", {
       class: "kb-check",
       type: "checkbox",
       checked: a.concluida ? "checked" : null,
       title: a.concluida ? "Reabrir" : "Concluir",
-      onclick: (ev) => ev.stopPropagation(),
       onchange: async () => {
         try {
           await api.post(`/kanban/atividades/${a.id}/concluir`);
@@ -473,37 +485,33 @@ function cartao(root, a) {
         } catch (e) { mostrarErro(e); }
       },
     }),
-    el("div", { class: "kb-corpo" },
-      el("div", {
-        class: "kb-titulo-cartao",
-        onclick: () => abrirAtividade(root, a),
-      }, a.titulo),
-      a.descricao ? el("div", { class: "kb-desc" }, a.descricao) : null,
-      (selos.length || avatares.length)
-        ? el("div", { class: "kb-rodape" },
-            ...selos,
-            el("span", { style: "flex:1" }),
-            ...avatares,
-            extras > 0 ? el("span", { class: "kb-avatar extra" }, `+${extras}`) : null)
-        : null,
-      el("div", { class: "kb-progresso" },
-        el("span", {
-          class: estado,
-          style: `width:${a.concluida ? 100 : pct}%`,
-        }))),
-    el("button", {
-      class: "kb-remover",
-      title: "Excluir",
-      onclick: async (ev) => {
-        ev.stopPropagation();
-        if (!confirm(`Excluir "${a.titulo}"?`)) return;
-        try {
-          await api.del(`/kanban/atividades/${a.id}`);
-          await recarregar(root);
-        } catch (e) { mostrarErro(e); }
-      },
-      html: icon("trash", 15),
-    }));
+    el("div", {
+      class: "kb-titulo-cartao",
+      onclick: () => abrirAtividade(root, a),
+    }, a.titulo)));
+
+  if (a.descricao) card.append(el("div", { class: "kb-desc" }, a.descricao));
+
+  card.append(el("div", { class: "kb-rodape" },
+    ...icones,
+    el("span", { class: "kb-espaco" }),
+    ...avatares,
+    extras > 0 ? el("span", { class: "kb-avatar extra" }, `+${extras}`) : null));
+
+  card.append(el("button", {
+    class: "kb-remover",
+    title: "Excluir",
+    onclick: async (ev) => {
+      ev.stopPropagation();
+      if (!(await confirmar("Excluir atividade",
+        `"${a.titulo}" será removida do quadro.`, { rotulo: "Excluir" }))) return;
+      try {
+        await api.del(`/kanban/atividades/${a.id}`);
+        await recarregar(root);
+      } catch (e) { mostrarErro(e); }
+    },
+    html: icon("trash", 15),
+  }));
 
   return card;
 }
@@ -703,7 +711,9 @@ async function excluirBucket(root, bucket) {
   const aviso = quantas
     ? `A coluna tem ${quantas} atividade(s) e elas serão excluídas junto.`
     : "A coluna está vazia.";
-  if (!confirm(`Excluir a coluna "${bucket.nome}"?\n\n${aviso}`)) return;
+  if (!(await confirmar("Excluir coluna",
+    `A coluna "${bucket.nome}" será removida.\n\n${aviso}`,
+    { rotulo: "Excluir" }))) return;
   try {
     await api.del(`/kanban/buckets/${bucket.id}`);
     await recarregar(root);

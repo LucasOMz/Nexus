@@ -2530,58 +2530,120 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 }
 
 /* =====================================================================
-   Kanban — camada visual própria
+   KANBAN — tela própria
    =====================================================================
-   Estas classes NÃO reutilizam `.field` nem o `dialog()` do sistema: a tela
-   do quadro precisa de modal com abas, campos com borda por sombra e botões
-   em pílula, e nada disso existe no formulário padrão.
+   Esta tela NÃO segue o layout do resto do sistema. Ela tem paleta,
+   tipografia, densidade e comportamento de rolagem próprios, porque um
+   quadro de tarefas precisa de área útil — e o layout padrão (com cartões
+   de largura limitada e margens generosas) não dá isso.
 
-   Tudo parte dos tokens do tema (`--md-sys-color-*`, `--shape-*`), então o
-   modo escuro e a paleta continuam valendo. */
+   A inspiração é o Microsoft Planner: fundo neutro, colunas claras, cartões
+   brancos com sombra mínima e uma barra de progresso no rodapé.
+
+   ## Tokens
+
+   `--k-*` são locais desta tela. O modo escuro redefine todos. Nada aqui
+   usa `--md-sys-color-*` para superfície: aqueles tokens invertem de
+   significado entre os temas, e foi isso que deixou o cartão invisível na
+   primeira versão. */
 
 .kb {
-  --kb-coluna: var(--md-sys-color-surface-container);
-  --kb-cartao: var(--md-sys-color-surface-container-lowest);
-  --kb-borda: var(--md-sys-color-outline-variant);
-  display: block;
+  /* claro — cinza frio, como o Planner */
+  --k-fundo: #f3f2f1;
+  --k-coluna: #ffffff;
+  --k-coluna-borda: #e8e6e4;
+  --k-cartao: #ffffff;
+  --k-cartao-borda: #e6e4e2;
+  --k-texto: #242424;
+  --k-texto-fraco: #616161;
+  --k-linha: #edebe9;
+  --k-hover: #f5f4f3;
+  --k-acento: #0f7b3f;
+  --k-acento-suave: #e6f4ec;
+  --k-sombra-1: 0 1px 2px rgba(0, 0, 0, .06), 0 1px 1px rgba(0, 0, 0, .04);
+  --k-sombra-2: 0 2px 8px rgba(0, 0, 0, .1), 0 1px 3px rgba(0, 0, 0, .06);
+  --k-sombra-3: 0 8px 28px rgba(0, 0, 0, .16);
+  --k-raio: 10px;
+  --k-raio-peq: 6px;
+
+  display: flex;
+  flex-direction: column;
+  /* Ocupa a altura da área de conteúdo e rola por dentro. */
+  height: calc(100vh - 108px);
+  margin: -8px -4px 0;
+  padding: 18px 20px 0;
+  background: var(--k-fundo);
+  border-radius: 14px;
+  color: var(--k-texto);
+  overflow: hidden;
 }
 
 :root[data-theme="dark"] .kb {
-  --kb-coluna: var(--md-sys-color-surface-container-low);
-  --kb-cartao: var(--md-sys-color-surface-container-high);
-  --kb-borda: var(--md-sys-color-surface-container-highest);
+  --k-fundo: #16191c;
+  --k-coluna: #202428;
+  --k-coluna-borda: #2b3035;
+  --k-cartao: #272c31;
+  --k-cartao-borda: #343a3f;
+  --k-texto: #e8eaed;
+  --k-texto-fraco: #9aa0a6;
+  --k-linha: #30363b;
+  --k-hover: #2c3237;
+  --k-acento: #3ddc84;
+  --k-acento-suave: #14361f;
+  --k-sombra-1: 0 1px 2px rgba(0, 0, 0, .4);
+  --k-sombra-2: 0 2px 8px rgba(0, 0, 0, .5);
+  --k-sombra-3: 0 8px 28px rgba(0, 0, 0, .6);
 }
 
-/* --- topo -------------------------------------------------------------- */
+/* =====================================================================
+   Cabeçalho do quadro
+   ===================================================================== */
 
 .kb-topo {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  margin-bottom: 12px;
+  padding-bottom: 14px;
+  flex: 0 0 auto;
+}
+
+.kb-titulo-quadro {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -.2px;
+  margin: 0 14px 0 0;
+  white-space: nowrap;
+}
+
+.kb-subtitulo {
+  font-size: 12.5px;
+  color: var(--k-texto-fraco);
+  margin-top: 1px;
 }
 
 .kb-busca {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: 1 1 240px;
-  max-width: 440px;
-  height: 42px;
-  padding: 0 16px;
-  border-radius: var(--shape-full);
-  background: var(--md-sys-color-surface-container-high);
-  transition: box-shadow .15s;
+  flex: 1 1 220px;
+  max-width: 360px;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: var(--k-raio-peq);
+  background: var(--k-coluna);
+  border: 1px solid var(--k-coluna-borda);
+  transition: border-color .14s, box-shadow .14s;
 }
 
 .kb-busca:focus-within {
-  box-shadow: 0 0 0 2px var(--md-sys-color-primary);
+  border-color: var(--k-acento);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--k-acento) 22%, transparent);
 }
 
 .kb-busca svg {
   flex: 0 0 auto;
-  opacity: .55;
+  opacity: .5;
 }
 
 .kb-busca input {
@@ -2590,12 +2652,12 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   border: none;
   outline: none;
   background: transparent;
-  color: var(--md-sys-color-on-surface);
-  font-size: 14px;
+  color: var(--k-texto);
+  font-size: 13.5px;
 }
 
 .kb-busca input::placeholder {
-  color: var(--md-sys-color-on-surface-variant);
+  color: var(--k-texto-fraco);
 }
 
 /* --- botões ------------------------------------------------------------ */
@@ -2604,126 +2666,201 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  height: 40px;
-  padding: 0 20px;
-  border: none;
-  border-radius: var(--shape-full);
+  gap: 7px;
+  height: 38px;
+  padding: 0 18px;
+  border: 1px solid transparent;
+  border-radius: var(--k-raio-peq);
   background: transparent;
-  color: var(--md-sys-color-primary);
-  font-size: 14px;
+  color: var(--k-texto);
+  font-size: 13.5px;
   font-weight: 500;
   cursor: pointer;
-  transition: background .15s, box-shadow .15s;
   white-space: nowrap;
+  transition: background .14s, border-color .14s, box-shadow .14s;
 }
 
 .kb-btn:hover {
-  background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent);
+  background: var(--k-hover);
 }
 
 .kb-btn.cheio {
-  background: var(--md-sys-color-primary);
-  color: var(--md-sys-color-on-primary);
+  background: var(--k-acento);
+  color: #fff;
 }
 
 .kb-btn.cheio:hover {
-  box-shadow: 0 2px 6px rgba(0, 0, 0, .18);
+  box-shadow: var(--k-sombra-2);
+  filter: brightness(1.05);
+}
+
+:root[data-theme="dark"] .kb-btn.cheio {
+  color: #06210f;
 }
 
 .kb-btn.tonal {
-  background: var(--md-sys-color-primary-container);
-  color: var(--md-sys-color-on-primary-container, #21005d);
+  background: var(--k-acento-suave);
+  color: var(--k-acento);
 }
 
 .kb-btn.perigo {
-  color: var(--md-sys-color-error);
+  color: #b3261e;
 }
 
 .kb-btn.perigo:hover {
-  background: var(--md-sys-color-error-container, #f9dedc);
+  background: #fdecea;
+}
+
+:root[data-theme="dark"] .kb-btn.perigo {
+  color: #f2b8b5;
+}
+
+:root[data-theme="dark"] .kb-btn.perigo:hover {
+  background: #44201d;
 }
 
 .kb-btn.pequeno {
   height: 32px;
-  padding: 0 14px;
-  font-size: 13px;
+  padding: 0 13px;
+  font-size: 12.5px;
 }
 
-/* --- faixa de números -------------------------------------------------- */
+.kb-btn.ativo {
+  background: var(--k-acento-suave);
+  color: var(--k-acento);
+  border-color: color-mix(in srgb, var(--k-acento) 30%, transparent);
+}
+
+/* --- filtro ------------------------------------------------------------ */
+
+.kb-filtro {
+  height: 38px;
+  padding: 0 32px 0 13px;
+  border: 1px solid var(--k-coluna-borda);
+  border-radius: var(--k-raio-peq);
+  background-color: var(--k-coluna);
+  color: var(--k-texto);
+  font-size: 13px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 15px) 16px, calc(100% - 10px) 16px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.kb-filtro:hover {
+  border-color: var(--k-texto-fraco);
+}
+
+/* --- barra de números -------------------------------------------------- */
 
 .kb-stats {
   display: flex;
-  gap: 20px;
+  gap: 6px;
   align-items: center;
-  padding: 9px 16px;
-  margin-bottom: 14px;
-  border-radius: var(--shape-md);
-  background: var(--kb-coluna);
-  font-size: 12.5px;
-  color: var(--md-sys-color-on-surface-variant);
+  flex: 0 0 auto;
+  padding: 0 0 14px;
   overflow-x: auto;
-  white-space: nowrap;
   scrollbar-width: none;
 }
 
-.kb-stats b {
-  color: var(--md-sys-color-on-surface);
+.kb-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: var(--shape-full);
+  background: var(--k-coluna);
+  border: 1px solid var(--k-coluna-borda);
+  font-size: 12px;
+  color: var(--k-texto-fraco);
+  white-space: nowrap;
+}
+
+.kb-stat b {
+  font-size: 13px;
   font-weight: 700;
+  color: var(--k-texto);
 }
 
-.kb-ponto {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  margin-right: 5px;
-  vertical-align: 1px;
+.kb-stat.alerta {
+  background: #fdecea;
+  border-color: #f5c6c2;
+  color: #8c1d18;
 }
 
-/* --- trilho ------------------------------------------------------------ */
+.kb-stat.alerta b {
+  color: #b3261e;
+}
+
+:root[data-theme="dark"] .kb-stat.alerta {
+  background: #3a1a17;
+  border-color: #4d211d;
+  color: #f2b8b5;
+}
+
+:root[data-theme="dark"] .kb-stat.alerta b {
+  color: #f2b8b5;
+}
+
+/* =====================================================================
+   Trilho de colunas
+   ===================================================================== */
 
 .kb-trilho {
   display: flex;
-  gap: 12px;
+  gap: 14px;
   align-items: flex-start;
+  flex: 1;
   overflow-x: auto;
-  padding: 2px 2px 18px;
+  overflow-y: hidden;
+  padding: 0 0 16px;
   scrollbar-width: thin;
 }
 
 /* --- coluna ------------------------------------------------------------ */
 
 .kb-coluna {
-  flex: 0 0 300px;
-  width: 300px;
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 270px);
-  min-height: 120px;
-  background: var(--kb-coluna);
-  border-radius: var(--shape-lg);
-  outline: 2px dashed transparent;
-  outline-offset: -2px;
-  transition: outline-color .12s, background .18s;
+  flex: 0 0 290px;
+  width: 290px;
+  max-height: 100%;
+  padding: 0;
+  border-radius: var(--k-raio);
+  background: var(--k-coluna);
+  border: 1px solid var(--k-coluna-borda);
+  box-shadow: var(--k-sombra-1);
+  transition: box-shadow .16s, border-color .16s;
 }
 
 .kb-coluna.alvo {
-  outline-color: var(--md-sys-color-primary);
-  background: var(--md-sys-color-primary-container);
+  border-color: var(--k-acento);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--k-acento) 25%, transparent);
+}
+
+/* A cor escolhida vira uma faixa no topo da coluna — mais discreta que
+   contornar tudo, que ficou pesado. */
+.kb-coluna[data-cor] {
+  border-top: 3px solid var(--k-cor);
 }
 
 .kb-cabecalho {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 13px 8px 6px 15px;
+  gap: 7px;
+  padding: 13px 10px 9px 14px;
+  flex: 0 0 auto;
 }
 
 .kb-titulo {
-  font-size: 13.5px;
-  font-weight: 600;
-  letter-spacing: .1px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -.1px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2731,86 +2868,148 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 
 .kb-contagem {
   flex: 0 0 auto;
-  padding: 1px 8px;
+  min-width: 20px;
+  padding: 1px 7px;
   border-radius: var(--shape-full);
-  background: var(--md-sys-color-surface-container-highest);
+  background: var(--k-hover);
+  color: var(--k-texto-fraco);
   font-size: 11.5px;
-  color: var(--md-sys-color-on-surface-variant);
+  font-weight: 600;
+  text-align: center;
 }
+
+/* --- progresso da coluna --------------------------------------------- */
+
+.kb-progresso-coluna {
+  height: 3px;
+  margin: 0 14px 8px;
+  border-radius: var(--shape-full);
+  background: var(--k-linha);
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+
+.kb-progresso-coluna span {
+  display: block;
+  height: 100%;
+  border-radius: var(--shape-full);
+  background: var(--k-acento);
+  transition: width .3s ease;
+}
+
+/* --- cartões ---------------------------------------------------------- */
 
 .kb-cartoes {
   flex: 1;
   overflow-y: auto;
   padding: 0 8px 4px;
-  min-height: 36px;
+  min-height: 44px;
   scrollbar-width: thin;
 }
 
-/* --- cartão ------------------------------------------------------------ */
-
 .kb-cartao {
   position: relative;
-  display: flex;
-  gap: 9px;
-  align-items: flex-start;
   margin-bottom: 8px;
-  padding: 12px;
-  border-radius: var(--shape-md);
-  background: var(--kb-cartao);
-  border: 1px solid var(--kb-borda);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, .07);
+  padding: 11px 12px 9px;
+  border-radius: var(--k-raio);
+  background: var(--k-cartao);
+  border: 1px solid var(--k-cartao-borda);
+  box-shadow: var(--k-sombra-1);
   cursor: grab;
-  transition: box-shadow .15s, transform .1s, opacity .15s;
-  animation: kbEntra .18s cubic-bezier(.2, 0, 0, 1);
+  transition: box-shadow .16s, border-color .16s, transform .1s;
+  animation: kbEntra .16s cubic-bezier(.2, 0, 0, 1);
 }
 
 @keyframes kbEntra {
-  from { opacity: 0; transform: translateY(6px) scale(.985); }
+  from { opacity: 0; transform: translateY(5px); }
   to   { opacity: 1; transform: none; }
 }
 
 .kb-cartao:hover {
-  box-shadow: 0 2px 10px rgba(0, 0, 0, .13);
+  box-shadow: var(--k-sombra-2);
+  border-color: color-mix(in srgb, var(--k-texto-fraco) 35%, transparent);
 }
 
 .kb-cartao.arrastando {
-  opacity: .35;
+  opacity: .4;
+  cursor: grabbing;
 }
 
 .kb-cartao.concluida {
-  opacity: .6;
+  background: var(--k-hover);
 }
 
 .kb-cartao.concluida .kb-titulo-cartao {
   text-decoration: line-through;
-  color: var(--md-sys-color-on-surface-variant);
+  color: var(--k-texto-fraco);
+}
+
+/* --- linha do título --------------------------------------------------- */
+
+.kb-linha-titulo {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
 }
 
 .kb-check {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
   flex: 0 0 auto;
-  width: 17px;
-  height: 17px;
-  margin-top: 2px;
-  accent-color: var(--md-sys-color-primary);
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border: 2px solid var(--k-texto-fraco);
+  border-radius: 50%;
+  background: transparent;
   cursor: pointer;
+  transition: background .14s, border-color .14s, transform .1s;
 }
 
-.kb-corpo {
-  flex: 1;
-  min-width: 0;
+.kb-check:hover {
+  border-color: var(--k-acento);
+}
+
+.kb-check:active {
+  transform: scale(.88);
+}
+
+.kb-check:checked {
+  background: var(--k-acento);
+  border-color: var(--k-acento);
+}
+
+.kb-check:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 5px;
+  height: 9px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+:root[data-theme="dark"] .kb-check:checked::after {
+  border-color: #06210f;
 }
 
 .kb-titulo-cartao {
+  flex: 1;
+  min-width: 0;
   font-size: 13.5px;
-  line-height: 1.4;
+  line-height: 1.42;
   word-break: break-word;
   cursor: pointer;
 }
 
 .kb-desc {
-  margin-top: 4px;
+  margin: 5px 0 0 27px;
   font-size: 12px;
-  color: var(--md-sys-color-on-surface-variant);
+  line-height: 1.45;
+  color: var(--k-texto-fraco);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -2818,48 +3017,67 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   white-space: pre-wrap;
 }
 
+/* --- rodapé com ícones ------------------------------------------------- */
+
+/* Uma linha só, como no Planner: ícones à esquerda, avatares à direita. */
 .kb-rodape {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  margin-top: 9px;
+  gap: 9px;
+  margin: 9px 0 0 27px;
+  min-height: 22px;
 }
 
-/* --- selos ------------------------------------------------------------- */
+.kb-rodape .kb-espaco {
+  flex: 1;
+}
 
+/* Ícone + número, sem pílula: cinza discreto. */
 .kb-selo {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: var(--shape-full);
-  background: var(--md-sys-color-surface-container-highest);
-  color: var(--md-sys-color-on-surface-variant);
-  font-size: 11px;
+  gap: 3px;
+  font-size: 11.5px;
   font-weight: 500;
+  color: var(--k-texto-fraco);
   white-space: nowrap;
 }
 
 .kb-selo svg {
-  width: 12px;
-  height: 12px;
+  width: 13px;
+  height: 13px;
+  opacity: .85;
 }
 
 .kb-selo.atrasado {
-  background: var(--md-sys-color-error-container, #f9dedc);
-  color: var(--md-sys-color-error, #b3261e);
+  color: #b3261e;
+  font-weight: 600;
+}
+
+:root[data-theme="dark"] .kb-selo.atrasado {
+  color: #f2b8b5;
 }
 
 .kb-selo.hoje {
-  background: var(--md-sys-color-primary-container);
-  color: var(--md-sys-color-on-primary-container, #21005d);
+  color: var(--k-acento);
+  font-weight: 600;
 }
 
 .kb-selo.completo {
-  background: var(--md-sys-color-primary);
-  color: var(--md-sys-color-on-primary);
+  color: var(--k-acento);
 }
+
+/* Prioridade: uma faixa curta e colorida acima do título. */
+.kb-prio {
+  display: inline-block;
+  width: 26px;
+  height: 3px;
+  border-radius: var(--shape-full);
+  margin-bottom: 6px;
+}
+
+.kb-prio.alta { background: #d9822b; }
+.kb-prio.urgente { background: #b3261e; }
 
 /* --- avatares ---------------------------------------------------------- */
 
@@ -2873,55 +3091,35 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   font-size: 10px;
   font-weight: 700;
   flex: 0 0 auto;
-  box-shadow: 0 0 0 2px var(--kb-cartao);
+  box-shadow: 0 0 0 2px var(--k-cartao);
 }
 
 .kb-avatar + .kb-avatar {
-  margin-left: -7px;
+  margin-left: -8px;
 }
 
 .kb-avatar.extra {
-  background: var(--md-sys-color-surface-container-highest);
-  color: var(--md-sys-color-on-surface-variant);
+  background: var(--k-hover);
+  color: var(--k-texto-fraco);
 }
 
-/* --- progresso --------------------------------------------------------- */
-
-.kb-progresso {
-  height: 3px;
-  margin-top: 10px;
-  border-radius: var(--shape-full);
-  background: var(--md-sys-color-surface-container-highest);
-  overflow: hidden;
-}
-
-.kb-progresso span {
-  display: block;
-  height: 100%;
-  border-radius: var(--shape-full);
-  transition: width .2s;
-}
-
-.kb-progresso span.andamento { background: #d9822b; }
-.kb-progresso span.feita { background: #0f9d58; }
-
-/* --- excluir no hover -------------------------------------------------- */
+/* --- remover no hover -------------------------------------------------- */
 
 .kb-remover {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: 7px;
+  right: 7px;
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   border: none;
   border-radius: 50%;
   background: transparent;
-  color: var(--md-sys-color-on-surface-variant);
+  color: var(--k-texto-fraco);
   cursor: pointer;
   opacity: 0;
-  transition: opacity .12s, background .12s;
+  transition: opacity .12s, background .12s, color .12s;
 }
 
 .kb-cartao:hover .kb-remover {
@@ -2929,8 +3127,13 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 }
 
 .kb-remover:hover {
-  background: var(--md-sys-color-error-container, #f9dedc);
-  color: var(--md-sys-color-error, #b3261e);
+  background: #fdecea;
+  color: #b3261e;
+}
+
+:root[data-theme="dark"] .kb-remover:hover {
+  background: #44201d;
+  color: #f2b8b5;
 }
 
 /* --- adicionar --------------------------------------------------------- */
@@ -2938,22 +3141,152 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 .kb-add {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   width: calc(100% - 16px);
-  margin: 0 8px 9px;
+  margin: 2px 8px 9px;
   padding: 9px 11px;
   border: none;
-  border-radius: var(--shape-sm);
+  border-radius: var(--k-raio-peq);
   background: transparent;
-  color: var(--md-sys-color-on-surface-variant);
+  color: var(--k-texto-fraco);
   font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
   transition: background .12s, color .12s;
+  flex: 0 0 auto;
 }
 
 .kb-add:hover {
-  background: var(--md-sys-color-surface-container-highest);
-  color: var(--md-sys-color-on-surface);
+  background: var(--k-hover);
+  color: var(--k-texto);
+}
+
+.kb-vazio {
+  padding: 12px 10px;
+  font-size: 12.5px;
+  color: var(--k-texto-fraco);
+}
+
+/* --- seta de recolher -------------------------------------------------- */
+
+.kb-seta {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: var(--k-raio-peq);
+  background: transparent;
+  color: var(--k-texto-fraco);
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: transform .15s, background .12s;
+}
+
+.kb-seta:hover {
+  background: var(--k-hover);
+}
+
+.kb-seta.fechada {
+  transform: rotate(-90deg);
+}
+
+.kb-coluna.recolhida .kb-cartoes,
+.kb-coluna.recolhida .kb-add,
+.kb-coluna.recolhida .kb-progresso-coluna {
+  display: none;
+}
+
+/* --- menu de contexto -------------------------------------------------- */
+
+.kb-menu {
+  position: fixed;
+  z-index: 1300;
+  min-width: 186px;
+  padding: 5px;
+  border-radius: var(--k-raio);
+  background: var(--k-coluna);
+  border: 1px solid var(--k-coluna-borda);
+  box-shadow: var(--k-sombra-3);
+  animation: kbMenu .11s ease-out;
+}
+
+@keyframes kbMenu {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.kb-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: none;
+  border-radius: var(--k-raio-peq);
+  background: transparent;
+  color: var(--k-texto);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background .12s;
+}
+
+.kb-menu-item:hover {
+  background: var(--k-hover);
+}
+
+.kb-menu-item.perigo {
+  color: #b3261e;
+}
+
+:root[data-theme="dark"] .kb-menu-item.perigo {
+  color: #f2b8b5;
+}
+
+.kb-menu-item svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  opacity: .8;
+}
+
+/* =====================================================================
+   Cores da coluna
+   ===================================================================== */
+
+.kb-cores {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 4px 2px;
+}
+
+.kb-cor-opcao {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  position: relative;
+  box-shadow: 0 0 0 2px transparent;
+  transition: box-shadow .12s, transform .12s;
+}
+
+.kb-cor-opcao:hover {
+  transform: scale(1.12);
+}
+
+.kb-cor-opcao.escolhida {
+  box-shadow: 0 0 0 2px var(--k-texto);
+}
+
+.kb-cor-opcao.sem-cor {
+  background: var(--k-hover);
+  color: var(--k-texto-fraco);
+  font-size: 11px;
+  display: grid;
+  place-items: center;
 }
 
 /* =====================================================================
@@ -2967,9 +3300,9 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 16px;
-  background: rgba(0, 0, 0, .5);
-  animation: kbFade .15s;
+  padding: 18px;
+  background: rgba(0, 0, 0, .45);
+  animation: kbFade .14s;
 }
 
 @keyframes kbFade {
@@ -2981,48 +3314,53 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: 600px;
-  max-height: 90vh;
+  max-width: 620px;
+  max-height: 88vh;
   overflow: hidden;
-  border-radius: var(--shape-xl);
-  background: var(--md-sys-color-surface-container-high);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, .28);
-  animation: kbModal .2s cubic-bezier(.2, 0, 0, 1);
+  border-radius: 14px;
+  background: var(--k-coluna);
+  border: 1px solid var(--k-coluna-borda);
+  box-shadow: var(--k-sombra-3);
+  animation: kbModal .18s cubic-bezier(.2, 0, 0, 1);
 }
 
 @keyframes kbModal {
-  from { transform: scale(.95); opacity: 0; }
+  from { transform: scale(.96); opacity: 0; }
   to   { transform: scale(1); opacity: 1; }
 }
 
 .kb-modal-topo {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
-  padding: 18px 20px 6px;
+  padding: 20px 20px 10px;
 }
 
 .kb-modal-topo h2 {
   flex: 1;
-  font-size: 21px;
-  font-weight: 500;
   margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -.2px;
 }
 
 .kb-fechar {
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   border: none;
-  border-radius: 50%;
+  border-radius: var(--k-raio-peq);
   background: transparent;
-  color: var(--md-sys-color-on-surface-variant);
+  color: var(--k-texto-fraco);
   cursor: pointer;
+  transition: background .12s;
+  flex: 0 0 auto;
 }
 
 .kb-fechar:hover {
-  background: var(--md-sys-color-surface-container-highest);
+  background: var(--k-hover);
+  color: var(--k-texto);
 }
 
 /* --- abas -------------------------------------------------------------- */
@@ -3031,9 +3369,10 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   display: flex;
   gap: 2px;
   padding: 0 16px;
-  border-bottom: 1px solid var(--kb-borda);
+  border-bottom: 1px solid var(--k-linha);
   overflow-x: auto;
   scrollbar-width: none;
+  flex: 0 0 auto;
 }
 
 .kb-tab {
@@ -3041,21 +3380,21 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   border: none;
   border-bottom: 2px solid transparent;
   background: transparent;
-  color: var(--md-sys-color-on-surface-variant);
+  color: var(--k-texto-fraco);
   font-size: 13.5px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: color .15s, border-color .15s;
+  transition: color .14s, border-color .14s;
 }
 
 .kb-tab:hover {
-  color: var(--md-sys-color-on-surface);
+  color: var(--k-texto);
 }
 
 .kb-tab.ativa {
-  color: var(--md-sys-color-primary);
-  border-bottom-color: var(--md-sys-color-primary);
+  color: var(--k-acento);
+  border-bottom-color: var(--k-acento);
 }
 
 /* --- corpo ------------------------------------------------------------- */
@@ -3063,18 +3402,20 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 .kb-modal-corpo {
   flex: 1;
   overflow-y: auto;
-  padding: 18px 20px;
+  padding: 20px;
+  scrollbar-width: thin;
 }
 
 .kb-modal-pe {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 14px 20px 18px;
-  border-top: 1px solid var(--kb-borda);
+  padding: 14px 20px;
+  border-top: 1px solid var(--k-linha);
+  flex: 0 0 auto;
 }
 
-.kb-modal-pe .kb-espaco {
+.kb-espaco {
   flex: 1;
 }
 
@@ -3084,43 +3425,74 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-bottom: 16px;
+  margin-bottom: 18px;
 }
 
 .kb-campo > label {
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--md-sys-color-on-surface-variant);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  color: var(--k-texto-fraco);
 }
 
-/* A borda é sombra, não `border`: assim o foco engrossa sem deslocar o
-   texto um pixel sequer. */
 .kb-campo input,
 .kb-campo textarea,
 .kb-campo select {
   width: 100%;
-  padding: 11px 13px;
-  border: none;
-  border-radius: var(--shape-sm);
-  background: var(--kb-cartao);
-  color: var(--md-sys-color-on-surface);
+  height: 42px;
+  padding: 0 13px;
+  border: 1px solid var(--k-cartao-borda);
+  border-radius: var(--k-raio-peq);
+  background: var(--k-cartao);
+  color: var(--k-texto);
   font-size: 14px;
   font-family: inherit;
   outline: none;
-  box-shadow: 0 0 0 1px var(--kb-borda);
-  transition: box-shadow .15s;
+  transition: border-color .14s, box-shadow .14s;
+}
+
+.kb-campo input:hover,
+.kb-campo textarea:hover,
+.kb-campo select:hover {
+  border-color: var(--k-texto-fraco);
 }
 
 .kb-campo input:focus,
 .kb-campo textarea:focus,
 .kb-campo select:focus {
-  box-shadow: 0 0 0 2px var(--md-sys-color-primary);
+  border-color: var(--k-acento);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--k-acento) 18%, transparent);
 }
 
 .kb-campo textarea {
+  height: auto;
+  min-height: 92px;
+  padding: 11px 13px;
+  line-height: 1.55;
   resize: vertical;
-  min-height: 84px;
-  line-height: 1.5;
+}
+
+.kb-campo select {
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 17px) 19px, calc(100% - 12px) 19px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.kb-campo input::placeholder,
+.kb-campo textarea::placeholder {
+  color: var(--k-texto-fraco);
+  opacity: .8;
+}
+
+.kb-campo input[type="date"] {
+  max-width: 190px;
 }
 
 .kb-duas {
@@ -3128,32 +3500,67 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   gap: 12px;
 }
 
-.kb-duas .kb-campo {
+.kb-duas > .kb-campo {
   flex: 1;
 }
 
-/* --- checklist --------------------------------------------------------- */
+/* --- itens do checklist ------------------------------------------------ */
 
 .kb-item {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
   padding: 8px 9px;
-  border-radius: var(--shape-sm);
+  border-radius: var(--k-raio-peq);
   font-size: 13.5px;
   transition: background .12s;
 }
 
 .kb-item:hover {
-  background: var(--kb-coluna);
+  background: var(--k-hover);
 }
 
 .kb-item input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
   width: 17px;
   height: 17px;
   flex: 0 0 auto;
-  accent-color: var(--md-sys-color-primary);
+  border: 2px solid var(--k-texto-fraco);
+  border-radius: 50%;
+  background: transparent;
   cursor: pointer;
+  transition: background .14s, border-color .14s;
+}
+
+.kb-item input[type="checkbox"]:hover,
+.kb-pessoa input[type="checkbox"]:hover {
+  border-color: var(--k-acento);
+}
+
+.kb-item input[type="checkbox"]:checked,
+.kb-pessoa input[type="checkbox"]:checked {
+  background: var(--k-acento);
+  border-color: var(--k-acento);
+}
+
+.kb-item input[type="checkbox"]:checked::after,
+.kb-pessoa input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 0;
+  width: 5px;
+  height: 9px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+:root[data-theme="dark"] .kb-item input[type="checkbox"]:checked::after,
+:root[data-theme="dark"] .kb-pessoa input[type="checkbox"]:checked::after {
+  border-color: #06210f;
 }
 
 .kb-item .riscado {
@@ -3167,12 +3574,6 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   word-break: break-word;
 }
 
-.kb-vazio {
-  padding: 10px 8px;
-  font-size: 12.5px;
-  color: var(--md-sys-color-on-surface-variant);
-}
-
 /* --- responsáveis ------------------------------------------------------ */
 
 .kb-pessoa {
@@ -3180,21 +3581,27 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   align-items: center;
   gap: 10px;
   padding: 8px 9px;
-  border-radius: var(--shape-sm);
+  border-radius: var(--k-raio-peq);
   cursor: pointer;
   transition: background .12s;
 }
 
 .kb-pessoa:hover {
-  background: var(--kb-coluna);
+  background: var(--k-hover);
 }
 
 .kb-pessoa input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
   width: 17px;
   height: 17px;
   flex: 0 0 auto;
-  accent-color: var(--md-sys-color-primary);
+  border: 2px solid var(--k-texto-fraco);
+  border-radius: 50%;
+  background: transparent;
   cursor: pointer;
+  transition: background .14s, border-color .14s;
 }
 
 .kb-pessoa-nome {
@@ -3208,355 +3615,65 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 
 .kb-pessoa-email {
   font-size: 11.5px;
-  color: var(--md-sys-color-on-surface-variant);
+  color: var(--k-texto-fraco);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 45%;
+  max-width: 42%;
 }
 
-/* --- esqueleto --------------------------------------------------------- */
+/* --- estado vazio ------------------------------------------------------ */
+
+.kb-nada {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 56px 24px;
+  text-align: center;
+  color: var(--k-texto-fraco);
+}
+
+.kb-nada-titulo {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--k-texto);
+}
+
+.kb-nada-texto {
+  font-size: 13px;
+  max-width: 380px;
+  line-height: 1.5;
+}
+
+/* --- carregando -------------------------------------------------------- */
 
 .kb-carregando {
   display: block;
 }
 
-/* =====================================================================
-   Kanban — refinamentos
-   =====================================================================
-   Três pontos no lugar dos botões soltos, cor por coluna, checkbox
-   redondo e campos com mais presença. */
+/* --- responsivo -------------------------------------------------------- */
 
-/* --- menu de contexto da coluna --------------------------------------- */
+@media (max-width: 720px) {
+  .kb {
+    height: auto;
+    min-height: calc(100vh - 120px);
+    padding: 14px 12px 0;
+  }
 
-.kb-menu {
-  position: absolute;
-  z-index: 1300;
-  min-width: 180px;
-  padding: 6px;
-  border-radius: var(--shape-md);
-  background: var(--md-sys-color-surface-container-high);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, .22);
-  animation: kbMenu .12s ease-out;
-}
+  .kb-coluna {
+    flex: 0 0 84vw;
+    width: 84vw;
+  }
 
-@keyframes kbMenu {
-  from { opacity: 0; transform: translateY(-4px) scale(.98); }
-  to   { opacity: 1; transform: none; }
-}
+  .kb-titulo-quadro {
+    font-size: 17px;
+  }
 
-.kb-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 9px 11px;
-  border: none;
-  border-radius: var(--shape-sm);
-  background: transparent;
-  color: var(--md-sys-color-on-surface);
-  font-size: 13.5px;
-  text-align: left;
-  cursor: pointer;
-  transition: background .12s;
-}
-
-.kb-menu-item:hover {
-  background: var(--md-sys-color-surface-container-highest);
-}
-
-.kb-menu-item.perigo {
-  color: var(--md-sys-color-error);
-}
-
-.kb-menu-item.perigo:hover {
-  background: var(--md-sys-color-error-container, #f9dedc);
-}
-
-.kb-menu-item svg {
-  width: 16px;
-  height: 16px;
-  flex: 0 0 auto;
-}
-
-/* --- cor da coluna ----------------------------------------------------- */
-
-/* A cor escolhida vira contorno da coluna inteira. Sem ela, o contorno é
-   transparente e a coluna mantém a aparência padrão. */
-.kb-coluna {
-  border: 2px solid var(--kb-cor, transparent);
-}
-
-/* O cabeçalho recebe um leve banho da cor, para a coluna ler como bloco. */
-.kb-coluna[style*="--kb-cor"] .kb-cabecalho {
-  border-radius: var(--shape-lg) var(--shape-lg) 0 0;
-}
-
-.kb-cores {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 4px 2px;
-}
-
-.kb-cor-opcao {
-  width: 30px;
-  height: 30px;
-  border: none;
-  border-radius: 50%;
-  cursor: pointer;
-  position: relative;
-  box-shadow: 0 0 0 2px transparent;
-  transition: box-shadow .12s, transform .12s;
-}
-
-.kb-cor-opcao:hover {
-  transform: scale(1.1);
-}
-
-.kb-cor-opcao.escolhida {
-  box-shadow: 0 0 0 2px var(--md-sys-color-on-surface);
-}
-
-.kb-cor-opcao.sem-cor {
-  background: var(--md-sys-color-surface-container-highest);
-  color: var(--md-sys-color-on-surface-variant);
-  font-size: 11px;
-  display: grid;
-  place-items: center;
-}
-
-/* --- checkbox redondo -------------------------------------------------- */
-
-/* `appearance:none` troca o controle nativo por um círculo próprio. O
-   nativo não aceita `border-radius` no Chrome, então não há outro caminho. */
-.kb-check,
-.kb-item input[type="checkbox"],
-.kb-pessoa input[type="checkbox"] {
-  appearance: none;
-  -webkit-appearance: none;
-  position: relative;
-  flex: 0 0 auto;
-  width: 20px;
-  height: 20px;
-  border: 2px solid var(--md-sys-color-outline);
-  border-radius: 50%;
-  background: transparent;
-  cursor: pointer;
-  transition: background .14s, border-color .14s, transform .1s;
-}
-
-.kb-check {
-  margin-top: 1px;
-}
-
-.kb-check:hover,
-.kb-item input[type="checkbox"]:hover,
-.kb-pessoa input[type="checkbox"]:hover {
-  border-color: var(--md-sys-color-primary);
-}
-
-.kb-check:active,
-.kb-item input[type="checkbox"]:active,
-.kb-pessoa input[type="checkbox"]:active {
-  transform: scale(.9);
-}
-
-.kb-check:checked,
-.kb-item input[type="checkbox"]:checked,
-.kb-pessoa input[type="checkbox"]:checked {
-  background: var(--md-sys-color-primary);
-  border-color: var(--md-sys-color-primary);
-}
-
-/* O visto é um canto de borda rotacionado — dois lados de um quadrado. */
-.kb-check:checked::after,
-.kb-item input[type="checkbox"]:checked::after,
-.kb-pessoa input[type="checkbox"]:checked::after {
-  content: "";
-  position: absolute;
-  left: 5px;
-  top: 2px;
-  width: 5px;
-  height: 9px;
-  border: solid var(--md-sys-color-on-primary);
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
-}
-
-/* --- campos com mais presença ----------------------------------------- */
-
-.kb-campo input,
-.kb-campo textarea,
-.kb-campo select {
-  height: 46px;
-  padding: 0 15px;
-  border-radius: var(--shape-md);
-  background: var(--md-sys-color-surface-container-lowest);
-  font-size: 14.5px;
-  letter-spacing: .1px;
-  box-shadow: inset 0 0 0 1px var(--kb-borda), 0 1px 2px rgba(0, 0, 0, .04);
-  transition: box-shadow .16s, background .16s;
-}
-
-:root[data-theme="dark"] .kb-campo input,
-:root[data-theme="dark"] .kb-campo textarea,
-:root[data-theme="dark"] .kb-campo select {
-  background: var(--md-sys-color-surface-container-low);
-}
-
-.kb-campo textarea {
-  height: auto;
-  padding: 12px 15px;
-  min-height: 96px;
-  line-height: 1.55;
-}
-
-.kb-campo input:hover,
-.kb-campo textarea:hover,
-.kb-campo select:hover {
-  box-shadow: inset 0 0 0 1px var(--md-sys-color-outline), 0 1px 2px rgba(0, 0, 0, .05);
-}
-
-.kb-campo input:focus,
-.kb-campo textarea:focus,
-.kb-campo select:focus {
-  background: var(--md-sys-color-surface-container-lowest);
-  box-shadow: inset 0 0 0 2px var(--md-sys-color-primary), 0 0 0 4px color-mix(in srgb, var(--md-sys-color-primary) 14%, transparent);
-}
-
-.kb-campo input::placeholder,
-.kb-campo textarea::placeholder {
-  color: var(--md-sys-color-on-surface-variant);
-  opacity: .75;
-}
-
-/* Data tem largura própria — não precisa ocupar a linha inteira. */
-.kb-campo input[type="date"] {
-  max-width: 200px;
-}
-
-/* Rótulo com mais peso, e um respiro maior entre campos. */
-.kb-campo {
-  margin-bottom: 20px;
-}
-
-.kb-campo > label {
-  font-size: 12.5px;
-  font-weight: 600;
-  letter-spacing: .2px;
-  text-transform: uppercase;
-  opacity: .8;
-}
-
-/* =====================================================================
-   Kanban — prioridade, filtros, coluna recolhível
-   ===================================================================== */
-
-/* --- filtro ------------------------------------------------------------ */
-
-.kb-filtro {
-  height: 40px;
-  padding: 0 34px 0 15px;
-  border: none;
-  border-radius: var(--shape-full);
-  background: var(--md-sys-color-surface-container-high);
-  color: var(--md-sys-color-on-surface);
-  font-size: 13.5px;
-  cursor: pointer;
-  appearance: none;
-  -webkit-appearance: none;
-  /* Seta desenhada em CSS: o `select` nativo ignora o tema. */
-  background-image:
-    linear-gradient(45deg, transparent 50%, currentColor 50%),
-    linear-gradient(135deg, currentColor 50%, transparent 50%);
-  background-position:
-    calc(100% - 16px) 17px,
-    calc(100% - 11px) 17px;
-  background-size: 5px 5px, 5px 5px;
-  background-repeat: no-repeat;
-}
-
-.kb-filtro:focus {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--md-sys-color-primary);
-}
-
-/* --- prioridade no cartão ---------------------------------------------- */
-
-.kb-cartao.prio-baixa { border-left: 4px solid var(--md-sys-color-outline-variant); }
-.kb-cartao.prio-normal { border-left: 4px solid var(--md-sys-color-primary); }
-.kb-cartao.prio-alta { border-left: 4px solid #d9822b; }
-.kb-cartao.prio-urgente { border-left: 4px solid var(--md-sys-color-error); }
-
-.kb-selo.prio-alta {
-  background: #fdf1e3;
-  color: #8a4b00;
-}
-
-.kb-selo.prio-urgente {
-  background: var(--md-sys-color-error-container, #f9dedc);
-  color: var(--md-sys-color-error, #b3261e);
-  font-weight: 600;
-}
-
-:root[data-theme="dark"] .kb-selo.prio-alta {
-  background: #3d2c0b;
-  color: #f5d08a;
-}
-
-/* --- coluna recolhível -------------------------------------------------- */
-
-.kb-seta {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  border: none;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--md-sys-color-on-surface-variant);
-  cursor: pointer;
-  flex: 0 0 auto;
-  transition: transform .15s, background .12s;
-}
-
-.kb-seta:hover {
-  background: var(--md-sys-color-surface-container-highest);
-}
-
-.kb-seta.fechada {
-  transform: rotate(-90deg);
-}
-
-/* Recolhida: só o cabeçalho e a barra de progresso. */
-.kb-coluna.recolhida {
-  min-height: 0;
-}
-
-.kb-coluna.recolhida .kb-cartoes,
-.kb-coluna.recolhida .kb-add {
-  display: none;
-}
-
-/* --- progresso da coluna ------------------------------------------------ */
-
-.kb-progresso-coluna {
-  height: 4px;
-  margin: 2px 16px 10px;
-  border-radius: var(--shape-full);
-  background: var(--md-sys-color-surface-container-highest);
-  overflow: hidden;
-}
-
-.kb-progresso-coluna span {
-  display: block;
-  height: 100%;
-  border-radius: var(--shape-full);
-  background: var(--md-sys-color-primary);
-  transition: width .25s ease;
-}
-
-.kb-coluna.recolhida .kb-progresso-coluna {
-  margin-bottom: 12px;
+  .kb-busca {
+    max-width: none;
+    order: 5;
+    flex: 1 0 100%;
+  }
 }
