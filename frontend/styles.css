@@ -3852,3 +3852,380 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 .kb-campo input[type="date"] {
   max-width: 200px;
 }
+
+/* =====================================================================
+   Kanban — modal da tarefa no formato do Planner
+   ===================================================================== */
+
+.kb-modal-tarefa {
+  max-width: 620px;
+}
+
+.kb-tarefa-topo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px 8px 20px;
+  border-bottom: 1px solid var(--k-linha);
+  flex: 0 0 auto;
+}
+
+.kb-tarefa-plano {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--k-texto-fraco);
+  letter-spacing: .2px;
+}
+
+:root[data-theme="dark"] .kb-tarefa-topo,
+:root[data-theme="dark"] .kb-tarefa-plano {
+  color: #b3b0ad;
+}
+
+/* --- título grande com círculo ---------------------------------------- */
+
+.kb-detalhe-titulo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+/* Círculo de status grande, clicável: é o gesto mais comum do modal. */
+.kb-status-circulo {
+  position: relative;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--k-texto-fraco);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  transition: background .14s, border-color .14s, transform .1s;
+}
+
+.kb-status-circulo:hover {
+  border-color: var(--k-acento);
+  background: color-mix(in srgb, var(--k-acento) 16%, transparent);
+}
+
+.kb-status-circulo:active {
+  transform: scale(.9);
+}
+
+.kb-status-circulo.feito {
+  background: var(--k-acento);
+  border-color: var(--k-acento);
+}
+
+.kb-status-circulo.feito::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 3px;
+  width: 5px;
+  height: 9px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+:root[data-theme="dark"] .kb-status-circulo.feito::after {
+  border-color: #0b1f12;
+}
+
+/* O título é um input sem cara de input — edita no lugar. */
+.kb-titulo-grande {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  margin-left: -8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--k-texto);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -.2px;
+  font-family: inherit;
+  outline: none;
+  transition: background .13s, border-color .13s;
+}
+
+.kb-titulo-grande:hover {
+  background: var(--k-cartao-hover);
+}
+
+:root[data-theme="dark"] .kb-titulo-grande:hover {
+  background: #333;
+}
+
+.kb-titulo-grande:focus {
+  background: var(--k-fundo);
+  border-color: var(--k-acento);
+}
+
+:root[data-theme="dark"] .kb-titulo-grande:focus {
+  background: #1f1f1f;
+}
+
+/* --- metadados --------------------------------------------------------- */
+
+.kb-meta {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--k-texto-fraco);
+}
+
+:root[data-theme="dark"] .kb-meta {
+  color: #b3b0ad;
+}
+
+/* --- membros ----------------------------------------------------------- */
+
+.kb-membros-linha {
+  margin-bottom: 18px;
+}
+
+.kb-membros {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.kb-avatar.grande {
+  width: 28px;
+  height: 28px;
+  font-size: 11px;
+  box-shadow: none;
+}
+
+.kb-add-membro {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1.5px dashed var(--k-texto-fraco);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--k-texto-fraco);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color .13s, color .13s, background .13s;
+}
+
+.kb-add-membro:hover {
+  border-color: var(--k-acento);
+  color: var(--k-acento);
+  background: var(--k-acento-suave);
+}
+
+/* --- grelha de campos -------------------------------------------------- */
+
+.kb-grelha-campos {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 14px;
+  margin-bottom: 20px;
+}
+
+.kb-campo-icone {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.kb-campo-icone.largura-toda {
+  grid-column: 1 / -1;
+}
+
+.kb-campo-icone > label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--k-texto-fraco);
+}
+
+:root[data-theme="dark"] .kb-campo-icone > label {
+  color: #b3b0ad;
+}
+
+/* A caixa é a borda; o ícone fica dentro, à esquerda. */
+.kb-campo-caixa {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  height: 36px;
+  border: 1px solid var(--k-linha);
+  border-radius: 4px;
+  background: var(--k-fundo);
+  transition: border-color .13s, box-shadow .13s;
+}
+
+:root[data-theme="dark"] .kb-campo-caixa {
+  background: #1f1f1f;
+  border-color: #474747;
+}
+
+.kb-campo-caixa:focus-within {
+  border-color: var(--k-acento);
+  box-shadow: 0 0 0 1px var(--k-acento);
+}
+
+.kb-campo-icone-svg {
+  flex: 0 0 auto;
+  display: inline-flex;
+  opacity: .6;
+}
+
+.kb-campo-icone-svg svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* O controle em si não tem borda: a caixa é do wrapper. */
+.kb-campo-caixa input,
+.kb-campo-caixa select {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--k-texto);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  box-shadow: none;
+}
+
+.kb-campo-caixa select {
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 4px) 15px, calc(100% 1px) 15px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 14px;
+}
+
+.kb-campo-caixa input[type="date"] {
+  max-width: none;
+}
+
+/* --- seções ------------------------------------------------------------ */
+
+.kb-secao {
+  margin-bottom: 20px;
+}
+
+.kb-secao-titulo {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--k-texto);
+}
+
+.kb-secao-contagem {
+  font-weight: 500;
+  color: var(--k-texto-fraco);
+}
+
+:root[data-theme="dark"] .kb-secao-contagem {
+  color: #b3b0ad;
+}
+
+/* Campo de adicionar item do checklist, com traço em vez de caixa. */
+.kb-add-item {
+  width: 100%;
+  height: 34px;
+  margin-top: 4px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--k-texto);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: background .13s, border-color .13s;
+}
+
+.kb-add-item::placeholder {
+  color: var(--k-texto-fraco);
+}
+
+.kb-add-item:hover {
+  background: var(--k-cartao-hover);
+}
+
+:root[data-theme="dark"] .kb-add-item:hover {
+  background: #333;
+}
+
+.kb-add-item:focus {
+  background: var(--k-fundo);
+  border-color: var(--k-acento);
+}
+
+:root[data-theme="dark"] .kb-add-item:focus {
+  background: #1f1f1f;
+}
+
+/* Mostrar o botão de remover do item no hover da linha. */
+.kb-item:hover .kb-remover {
+  opacity: 1 !important;
+}
+
+/* =====================================================================
+   Área de conteúdo do modal — mais respiro
+   ===================================================================== */
+
+.kb-modal-tarefa .kb-modal-corpo {
+  padding: 20px 24px;
+}
+
+.kb-modal-tarefa .kb-modal-pe {
+  padding: 12px 20px;
+}
+
+.kb-modal-tarefa textarea {
+  border: 1px solid var(--k-linha);
+  border-radius: 4px;
+  background: var(--k-fundo);
+  padding: 10px 12px;
+  font-size: 13px;
+  width: 100%;
+  font-family: inherit;
+  outline: none;
+  resize: vertical;
+  transition: border-color .13s, box-shadow .13s;
+}
+
+:root[data-theme="dark"] .kb-modal-tarefa textarea {
+  background: #1f1f1f;
+  border-color: #474747;
+}
+
+.kb-modal-tarefa textarea:focus {
+  border-color: var(--k-acento);
+  box-shadow: 0 0 0 1px var(--k-acento);
+}
+
+@media (max-width: 720px) {
+  .kb-grelha-campos {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Corpo do detalhe da tarefa. */
+.kb-detalhe {
+  display: block;
+}

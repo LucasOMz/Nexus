@@ -769,22 +769,54 @@ function abrirAtividade(root, a) {
   const podeAtribuir = state.papel === "admin";
 
   const entradaTitulo = el("input", { value: a.titulo });
-  const entradaDesc = el("textarea", { rows: "3", placeholder: "Detalhes (opcional)" });
+  const entradaDesc = el("textarea", {
+    rows: "4",
+    placeholder: "Adicione uma descrição",
+  });
   entradaDesc.value = a.descricao || "";
-  const entradaPrazo = el("input", {
+
+  const campoInicio = el("input", {
+    type: "date",
+    value: a.data_inicio ? new Date(a.data_inicio).toISOString().slice(0, 10) : "",
+  });
+  const campoPrazo = el("input", {
     type: "date",
     value: a.prazo ? new Date(a.prazo).toISOString().slice(0, 10) : "",
   });
 
-  // --- aba checklist ----------------------------------------------------
+  // --- status e prioridade ---------------------------------------------
+  const seletorPrioridade = el("select", {},
+    el("option", { value: "baixa" }, "Baixa"),
+    el("option", { value: "normal" }, "Normal"),
+    el("option", { value: "alta" }, "Alta"),
+    el("option", { value: "urgente" }, "Urgente"));
+  seletorPrioridade.value = a.prioridade || "normal";
+
+  // O status é derivado do que já existe: concluída ou não. Criar um campo
+  // novo no banco só para repetir a mesma informação seria duplicação.
+  const seletorStatus = el("select", {},
+    el("option", { value: "aberta" }, "Em aberto"),
+    el("option", { value: "concluida" }, "Concluída"));
+  seletorStatus.value = a.concluida ? "concluida" : "aberta";
+
+  const seletorBucket = el("select", {},
+    ...dados.map((b) => el("option", { value: String(b.id) }, b.nome)));
+  seletorBucket.value = String(a.bucket_id);
+
+  // --- checklist --------------------------------------------------------
   const listaItens = el("div", {});
+  const contador = el("span", { class: "kb-secao-contagem" });
 
   const desenharItens = () => {
     listaItens.innerHTML = "";
+    const feitos = itens.filter((i) => i.feito).length;
+    contador.textContent = `(${feitos} de ${itens.length} itens concluídos)`;
+
     if (!itens.length) {
-      listaItens.append(el("p", { class: "kb-vazio" }, "Nenhuma subatividade ainda."));
+      listaItens.append(el("p", { class: "kb-vazio" }, "Nenhum item ainda."));
       return;
     }
+
     for (const item of itens) {
       listaItens.append(el("div", { class: "kb-item" },
         el("input", {
@@ -802,8 +834,9 @@ function abrirAtividade(root, a) {
         el("span", { class: "kb-item-texto" + (item.feito ? " riscado" : "") },
           item.texto),
         el("button", {
-          class: "kb-remover", title: "Remover",
-          style: "position:static;opacity:1",
+          class: "kb-remover",
+          title: "Remover",
+          style: "position:static;opacity:0;width:22px;height:22px",
           onclick: async () => {
             try {
               await api.del(`/kanban/itens/${item.id}`);
@@ -818,8 +851,9 @@ function abrirAtividade(root, a) {
   };
   desenharItens();
 
-  const novaSub = el("input", {
-    placeholder: "Nova subatividade — Enter para adicionar",
+  const novoItem = el("input", {
+    class: "kb-add-item",
+    placeholder: "Adicionar um item",
     onkeydown: async (ev) => {
       if (ev.key !== "Enter") return;
       ev.preventDefault();
@@ -835,11 +869,37 @@ function abrirAtividade(root, a) {
     },
   });
 
-  // --- aba responsáveis -------------------------------------------------
-  const listaPessoas = el("div", {});
-  if (podeAtribuir) {
+  // --- responsáveis -----------------------------------------------------
+  const avatares = el("div", { class: "kb-membros" });
+
+  const desenharAvatares = () => {
+    avatares.innerHTML = "";
+    const marcar = (a.responsaveis || []).filter((r) => escolhidos.has(r.usuario_id));
+
+    for (const r of marcar) {
+      avatares.append(el("span", {
+        class: "kb-avatar grande",
+        title: r.nome,
+        style: `background:${corDoAvatar(r.nome)}`,
+      }, iniciais(r.nome)));
+    }
+
+    if (podeAtribuir) {
+      avatares.append(el("button", {
+        class: "kb-add-membro",
+        title: "Adicionar responsável",
+        onclick: () => abrirResponsaveis(),
+      }, "+"));
+    } else if (!marcar.length) {
+      avatares.append(el("span", { class: "kb-vazio" }, "Sem responsável"));
+    }
+  };
+  desenharAvatares();
+
+  function abrirResponsaveis() {
+    const opcoes = el("div", {});
     for (const u of usuarios) {
-      listaPessoas.append(el("label", { class: "kb-pessoa" },
+      opcoes.append(el("label", { class: "kb-pessoa" },
         el("input", {
           type: "checkbox",
           checked: escolhidos.has(u.id) ? "checked" : null,
@@ -852,77 +912,176 @@ function abrirAtividade(root, a) {
           class: "kb-avatar",
           style: `background:${corDoAvatar(u.nome)}`,
         }, iniciais(u.nome)),
-        el("span", { class: "kb-pessoa-nome" }, u.nome),
-        el("span", { class: "kb-pessoa-email" }, u.email || "")));
+        el("span", { class: "kb-pessoa-nome" }, u.nome)));
     }
-    if (!usuarios.length) {
-      listaPessoas.append(el("p", { class: "kb-vazio" }, "Nenhum usuário cadastrado."));
-    }
-  }
 
-  const abas = [
-    {
-      id: "detalhes",
-      rotulo: "Detalhes",
-      render: () => el("div", {},
-        campo("Título", entradaTitulo),
-        campo("Descrição", entradaDesc),
-        campo("Prazo", entradaPrazo)),
-    },
-    {
-      id: "checklist",
-      rotulo: `Subatividades (${itens.length})`,
-      render: () => el("div", {}, listaItens, novaSub),
-    },
-  ];
-
-  if (podeAtribuir) {
-    abas.push({
-      id: "responsaveis",
-      rotulo: "Responsáveis",
-      render: () => listaPessoas,
+    modal({
+      titulo: "Responsáveis",
+      abas: [{ id: "a", rotulo: "Pessoas", render: () => opcoes }],
+      acoes: [
+        { label: "Cancelar", classe: "", onClick: (fechar) => fechar() },
+        {
+          label: "Aplicar",
+          classe: "cheio",
+          onClick: async (fechar) => {
+            try {
+              await api.post(`/kanban/atividades/${a.id}/responsaveis`,
+                { usuario_ids: [...escolhidos] });
+              a.responsaveis = usuarios
+                .filter((u) => escolhidos.has(u.id))
+                .map((u) => ({ usuario_id: u.id, nome: u.nome, email: u.email || "" }));
+              desenharAvatares();
+              fechar();
+              await recarregar(root);
+            } catch (e) { mostrarErro(e); }
+          },
+        },
+      ],
     });
   }
 
-  modal({
-    titulo: "Atividade",
-    abas,
-    acoes: [
-      {
-        label: a.concluida ? "Reabrir" : "Concluir",
-        classe: "tonal",
-        onClick: async () => {
+  // --- corpo ------------------------------------------------------------
+  const corpo = el("div", { class: "kb-detalhe" });
+
+  // Título grande com círculo de status.
+  const circulo = el("button", {
+    class: "kb-status-circulo" + (a.concluida ? " feito" : ""),
+    title: a.concluida ? "Reabrir" : "Concluir",
+    onclick: async () => {
+      try {
+        await api.post(`/kanban/atividades/${a.id}/concluir`);
+        await recarregar(root);
+        fecharModal();
+      } catch (e) { mostrarErro(e); }
+    },
+  });
+
+  corpo.append(el("div", { class: "kb-detalhe-titulo" },
+    circulo,
+    el("input", {
+      class: "kb-titulo-grande",
+      value: a.titulo,
+      oninput: (ev) => { a._novoTitulo = ev.target.value; },
+    })));
+
+  corpo.append(el("p", { class: "kb-meta" },
+    a.criado_por ? `Criado por ${a.criado_por}` : "Atividade do quadro",
+    a.concluida_em ? " · concluída" : ""));
+  corpo.append(el("div", { class: "kb-membros-linha" }, avatares));
+
+  // Campos em grelha.
+  corpo.append(el("div", { class: "kb-grelha-campos" },
+    campoComIcone("check", "Status", seletorStatus),
+    campoComIcone("bandeira", "Prioridade", seletorPrioridade),
+    campoComIcone("calendario", "Data de início", campoInicio),
+    campoComIcone("calendario", "Data de conclusão", campoPrazo),
+    campoComIcone("kanban", "Bucket", seletorBucket, true)));
+
+  corpo.append(el("div", { class: "kb-secao" },
+    el("h3", { class: "kb-secao-titulo" }, "Descrição"),
+    entradaDesc));
+
+  corpo.append(el("div", { class: "kb-secao" },
+    el("h3", { class: "kb-secao-titulo" },
+      "Lista de verificação ", contador),
+    listaItens,
+    novoItem));
+
+  // --- monta o modal ----------------------------------------------------
+  fecharModal();
+
+  const caixa = el("div", { class: "kb-modal kb-modal-tarefa" },
+    el("div", { class: "kb-tarefa-topo" },
+      el("span", { class: "kb-tarefa-plano" }, "Kanban"),
+      el("span", { style: "flex:1" }),
+      el("button", {
+        class: "kb-fechar", title: "Fechar",
+        onclick: () => fecharModal(),
+        html: icon("close", 17),
+      })),
+    el("div", { class: "kb-modal-corpo" }, corpo),
+    el("div", { class: "kb-modal-pe" },
+      el("button", {
+        class: "kb-btn pequeno tonal",
+        onclick: async () => {
           try {
             await api.post(`/kanban/atividades/${a.id}/concluir`);
             await recarregar(root);
+            fecharModal();
           } catch (e) { mostrarErro(e); }
         },
-      },
-      { label: "Excluir", classe: "perigo", onClick: async (fechar) => {
-        if (!confirm(`Excluir "${a.titulo}"?`)) return;
-        try {
-          await api.del(`/kanban/atividades/${a.id}`);
-          fechar();
-          await recarregar(root);
-        } catch (e) { mostrarErro(e); }
-      } },
+      }, a.concluida ? "Reabrir" : "Concluir"),
+      el("button", {
+        class: "kb-btn pequeno perigo",
+        onclick: async () => {
+          if (!(await confirmar("Excluir atividade",
+            `"${a.titulo}" será removida do quadro.`, { rotulo: "Excluir" }))) return;
+          try {
+            await api.del(`/kanban/atividades/${a.id}`);
+            fecharModal();
+            await recarregar(root);
+          } catch (e) { mostrarErro(e); }
+        },
+      }, "Excluir"),
       el("span", { class: "kb-espaco" }),
-      { label: "Salvar", classe: "cheio", onClick: async (fechar) => {
-        try {
-          await api.patch(`/kanban/atividades/${a.id}`, {
-            bucket_id: a.bucket_id,
-            titulo: entradaTitulo.value.trim(),
-            descricao: entradaDesc.value.trim() || null,
-            prazo: entradaPrazo.value ? `${entradaPrazo.value}T12:00:00` : null,
-          });
-          if (podeAtribuir) {
-            await api.post(`/kanban/atividades/${a.id}/responsaveis`,
-              { usuario_ids: [...escolhidos] });
-          }
-          fechar();
-          await recarregar(root);
-        } catch (e) { mostrarErro(e); }
-      } },
-    ],
-  });
+      el("button", {
+        class: "kb-btn pequeno cheio",
+        onclick: async () => {
+          try {
+            await api.patch(`/kanban/atividades/${a.id}`, {
+              bucket_id: Number(seletorBucket.value),
+              titulo: (a._novoTitulo ?? a.titulo).trim() || a.titulo,
+              descricao: entradaDesc.value.trim() || null,
+              data_inicio: campoInicio.value ? `${campoInicio.value}T12:00:00` : null,
+              prazo: campoPrazo.value ? `${campoPrazo.value}T12:00:00` : null,
+              prioridade: seletorPrioridade.value,
+              progresso: a.progresso || 0,
+            });
+
+            // Status "concluída" é aplicado depois, porque a rota de concluir
+            // é alternada — comparar evita fechar uma tarefa já fechada.
+            const querConcluida = seletorStatus.value === "concluida";
+            if (querConcluida !== a.concluida) {
+              await api.post(`/kanban/atividades/${a.id}/concluir`);
+            }
+
+            fecharModal();
+            await recarregar(root);
+          } catch (e) { mostrarErro(e); }
+        },
+      }, "Salvar")));
+
+  const fundo = el("div", {
+    class: "kb kb-fundo",
+    onclick: (ev) => { if (ev.target === fundo) fecharModal(); },
+  }, caixa);
+
+  modalAberto = fundo;
+  document.body.append(fundo);
+
+  const aoTeclar = (ev) => {
+    if (ev.key === "Escape") fecharModal();
+    if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) {
+      caixa.querySelector(".kb-modal-pe .kb-btn.cheio")?.click();
+    }
+  };
+  document.addEventListener("keydown", aoTeclar);
+  fundo._aoTeclar = aoTeclar;
+
+  setTimeout(() => {
+    const campo = caixa.querySelector(".kb-titulo-grande");
+    if (campo) { campo.focus(); campo.setSelectionRange(campo.value.length, campo.value.length); }
+  }, 60);
 }
+
+/** Campo com ícone à esquerda, como os seletores do Planner. */
+function campoComIcone(nomeIcone, rotulo, entrada, larguraToda = false) {
+  return el("div", {
+    class: "kb-campo-icone" + (larguraToda ? " largura-toda" : ""),
+  },
+    el("label", {}, rotulo),
+    el("div", { class: "kb-campo-caixa" },
+      el("span", { class: "kb-campo-icone-svg", html: icon(nomeIcone, 15) }),
+      entrada));
+}
+
