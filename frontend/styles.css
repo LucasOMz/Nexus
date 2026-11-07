@@ -3654,3 +3654,201 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
     grid-template-columns: 1fr;
   }
 }
+
+/* =====================================================================
+   Kanban — correções de escopo e contraste
+   =====================================================================
+   ## O bug
+
+   As variáveis `--k-*` vivem em `.kb`. Mas o modal e o menu são anexados
+   ao `document.body`, **fora de `.kb`** — sem ancestral, `var(--k-cartao)`
+   não resolvia e o navegador caía no valor inicial: fundo transparente e
+   botões invisíveis.
+
+   A correção é dar a classe `kb` ao backdrop e ao menu, para herdarem os
+   tokens. Só que `.kb` também traz altura fixa e `overflow: hidden`, que
+   não servem a um painel flutuante — daí este reset. */
+
+.kb.kb-fundo,
+.kb.kb-menu {
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  overflow: visible;
+  color: var(--k-texto);
+}
+
+.kb.kb-fundo {
+  background: rgba(0, 0, 0, .62);
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.kb.kb-menu {
+  position: fixed;
+}
+
+/* O modal precisa de superfície claramente acima do fundo. */
+.kb-modal {
+  background: var(--k-modal);
+  border: 1px solid var(--k-modal-borda);
+  box-shadow: 0 12px 48px rgba(0, 0, 0, .45);
+}
+
+.kb {
+  --k-modal: #ffffff;
+  --k-modal-borda: #e1dfdd;
+}
+
+:root[data-theme="dark"] .kb {
+  --k-modal: #292929;
+  --k-modal-borda: #3d3d3d;
+}
+
+/* =====================================================================
+   Contraste — o que estava fraco demais para ler
+   ===================================================================== */
+
+/* Rótulo do campo: era 11.5px cinza sobre cinza. */
+.kb-campo > label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--k-texto);
+  opacity: .72;
+  margin-bottom: 1px;
+}
+
+/* Texto de apoio e placeholder legíveis nos dois temas. */
+.kb-vazio,
+.kb-item-texto,
+.kb-nada-texto {
+  color: var(--k-texto-fraco);
+}
+
+:root[data-theme="dark"] .kb-vazio,
+:root[data-theme="dark"] .kb-nada-texto {
+  color: #b3b0ad;
+}
+
+/* Botão principal: verde cheio. No escuro, verde claro com texto escuro;
+   no claro, verde escuro com texto branco. Antes o texto sumia. */
+.kb-btn.cheio {
+  background: var(--k-acento);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+:root[data-theme="dark"] .kb-btn.cheio {
+  background: #7ee2a8;
+  color: #06210f;
+}
+
+.kb-btn.cheio:hover {
+  filter: brightness(1.06);
+}
+
+/* Ação destrutiva precisa de peso suficiente para ser lida. */
+.kb-btn.perigo {
+  color: var(--k-atraso);
+  font-weight: 600;
+}
+
+/* Aba ativa: sublinhado mais grosso, para não depender só da cor. */
+.kb-tab.ativa {
+  border-bottom-width: 3px;
+  font-weight: 700;
+}
+
+/* Separadores do modal mais visíveis no escuro. */
+:root[data-theme="dark"] .kb-tabs,
+:root[data-theme="dark"] .kb-modal-pe {
+  border-color: #3d3d3d;
+}
+
+/* Campos do modal: fundo levemente mais escuro que a superfície, com borda
+   visível — antes eram caixas pretas sobre preto. */
+:root[data-theme="dark"] .kb-campo input,
+:root[data-theme="dark"] .kb-campo textarea,
+:root[data-theme="dark"] .kb-campo select {
+  background: #1f1f1f;
+  border-color: #474747;
+  color: #ffffff;
+}
+
+:root[data-theme="dark"] .kb-campo input:focus,
+:root[data-theme="dark"] .kb-campo textarea:focus,
+:root[data-theme="dark"] .kb-campo select:focus {
+  border-color: #7ee2a8;
+  box-shadow: 0 0 0 1px #7ee2a8;
+}
+
+/* =====================================================================
+   Cartão no escuro: um degrau acima do fundo
+   ===================================================================== */
+
+:root[data-theme="dark"] .kb-cartao {
+  background: #2f2f2f;
+  border-color: #3d3d3d;
+}
+
+:root[data-theme="dark"] .kb-cartao:hover {
+  background: #383838;
+  border-color: #4a4a4a;
+}
+
+:root[data-theme="dark"] .kb-cartao.concluida {
+  background: #262626;
+}
+
+/* Título da coluna e contagem com peso e brilho suficientes. */
+:root[data-theme="dark"] .kb-titulo,
+:root[data-theme="dark"] .kb-contagem {
+  color: #f3f2f1;
+}
+
+:root[data-theme="dark"] .kb-contagem {
+  opacity: .8;
+}
+
+/* Selos: cinza claro, não cinza médio. */
+:root[data-theme="dark"] .kb-selo {
+  color: #c8c6c4;
+}
+
+/* =====================================================================
+   Modal mais compacto
+   ===================================================================== */
+
+.kb-modal {
+  max-width: 560px;
+}
+
+.kb-modal-corpo {
+  padding: 18px 22px;
+}
+
+.kb-modal-topo {
+  padding: 18px 22px 6px;
+}
+
+.kb-modal-pe {
+  padding: 14px 22px;
+}
+
+/* Os campos ocupam a linha toda; largura limitada deixava o modal com
+   metade vazia à direita. */
+.kb-campo input,
+.kb-campo textarea,
+.kb-campo select {
+  max-width: none;
+}
+
+.kb-campo input[type="date"] {
+  max-width: 200px;
+}

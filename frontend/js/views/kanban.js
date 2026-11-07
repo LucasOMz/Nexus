@@ -183,7 +183,7 @@ function modal({ titulo, abas, acoes }) {
     })));
 
   const fundo = el("div", {
-    class: "kb-fundo",
+    class: "kb kb-fundo",
     onclick: (ev) => { if (ev.target === fundo) fecharModal(); },
   }, caixa);
 
@@ -570,7 +570,7 @@ function fecharMenu() {
 function abrirMenuBucket(root, bucket, ancora) {
   fecharMenu();
 
-  const menu = el("div", { class: "kb-menu" },
+  const menu = el("div", { class: "kb kb-menu" },
     el("button", {
       class: "kb-menu-item",
       onclick: () => { fecharMenu(); renomearBucket(root, bucket); },
