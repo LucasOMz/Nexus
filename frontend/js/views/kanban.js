@@ -1,27 +1,28 @@
 /**
- * Kanban — quadro de atividades em colunas.
+ * Kanban — quadro de atividades.
  *
- * ## Estrutura visual
+ * ## Por que um modal próprio
  *
- * Topo com busca e criação de coluna, faixa de números (total, concluídas,
- * atrasadas), e o trilho de colunas. Cada coluna tem cabeçalho próprio e
- * rodapé "Adicionar atividade".
+ * O `dialog()` do sistema serve formulário de três campos. Aqui precisa de
+ * título editável, abas (Detalhes / Checklist / Responsáveis), rodapé com
+ * três ações e campos com borda por sombra. Encaixar isso no diálogo padrão
+ * exigiria estender o componente compartilhado — e o pedido é manter o core
+ * como está.
  *
- * O cartão tem a **caixa de concluir à esquerda**, o que faz o gesto mais
- * comum custar um clique — em vez de abrir o detalhe para marcar.
+ * As classes `kb-*` vivem em `styles.css` e partem dos tokens do tema, então
+ * modo escuro e paleta continuam funcionando.
  *
- * ## Arrastar
+ * ## Subatividades
  *
- * `dragstart` / `dragover` / `drop` do navegador, sem biblioteca. Não há
- * arraste no toque; por isso o cartão abre com um clique e tudo o que muda
- * o cartão está no detalhe.
+ * São os itens do checklist dentro do cartão. Cada um é marcável e tem
+ * ordem; o progresso aparece na barra do rodapé.
  *
  * @module views/kanban
  */
 import { api } from "../api.js";
 import { state } from "../state.js";
 import { ctx } from "../context.js";
-import { el, icon, toast, dialog, skeleton, emptyState, mostrarErro } from "../ui.js";
+import { el, icon, toast, skeleton, emptyState, mostrarErro } from "../ui.js";
 
 let dados = [];
 let busca = "";
@@ -36,7 +37,6 @@ function fmtPrazo(iso) {
   return new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
 }
 
-/** Dias até o prazo. Negativo = vencido. */
 function dias(iso) {
   if (!iso) return null;
   const d = new Date(iso);
@@ -44,6 +44,114 @@ function dias(iso) {
   d.setHours(0, 0, 0, 0);
   hoje.setHours(0, 0, 0, 0);
   return Math.round((d - hoje) / 86400000);
+}
+
+// ---------------------------------------------------------------------------
+// Avatares
+// ---------------------------------------------------------------------------
+
+function iniciais(nome) {
+  const partes = String(nome || "").trim().split(/\s+/).filter(Boolean);
+  if (!partes.length) return "?";
+  if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase();
+  return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase();
+}
+
+function corDoAvatar(nome) {
+  const tons = ["#7c5cff", "#0a7ea4", "#0f9d58", "#d9822b", "#c43e6b", "#5b6abf"];
+  let soma = 0;
+  for (const ch of String(nome || "")) soma = (soma + ch.charCodeAt(0)) % 9973;
+  return tons[soma % tons.length];
+}
+
+// ---------------------------------------------------------------------------
+// Modal
+// ---------------------------------------------------------------------------
+
+let modalAberto = null;
+
+/**
+ * Abre um modal com abas.
+ *
+ * @param {object} opcoes
+ * @param {string} opcoes.titulo
+ * @param {Array<{id: string, rotulo: string, render: Function}>} opcoes.abas
+ * @param {Array} opcoes.acoes
+ */
+function modal({ titulo, abas, acoes }) {
+  fecharModal();
+
+  const corpo = el("div", { class: "kb-modal-corpo" });
+  const barraAbas = el("div", { class: "kb-tabs" });
+  let abaAtiva = abas[0]?.id;
+
+  const trocar = (id) => {
+    abaAtiva = id;
+    for (const b of barraAbas.children) b.classList.toggle("ativa", b.dataset.aba === id);
+    corpo.innerHTML = "";
+    const aba = abas.find((a) => a.id === id);
+    if (aba) corpo.append(aba.render());
+  };
+
+  if (abas.length > 1) {
+    for (const a of abas) {
+      barraAbas.append(el("button", {
+        class: "kb-tab" + (a.id === abaAtiva ? " ativa" : ""),
+        "data-aba": a.id,
+        onclick: () => trocar(a.id),
+      }, a.rotulo));
+    }
+  }
+
+  const caixa = el("div", { class: "kb-modal" },
+    el("div", { class: "kb-modal-topo" },
+      el("h2", {}, titulo),
+      el("button", {
+        class: "kb-fechar", title: "Fechar",
+        onclick: () => fecharModal(),
+        html: icon("close", 20),
+      })),
+    abas.length > 1 ? barraAbas : null,
+    corpo,
+    el("div", { class: "kb-modal-pe" }, ...acoes.map((a) => {
+      // Um elemento já montado entra como está — é o caso do espaçador que
+      // empurra o "Salvar" para a direita.
+      if (a instanceof Node) return a;
+      return el("button", {
+        class: "kb-btn " + (a.classe || ""),
+        onclick: () => a.onClick(fecharModal),
+      }, a.label);
+    })));
+
+  const fundo = el("div", {
+    class: "kb-fundo",
+    onclick: (ev) => { if (ev.target === fundo) fecharModal(); },
+  }, caixa);
+
+  modalAberto = fundo;
+  document.body.append(fundo);
+
+  // Esc fecha — o mesmo atalho do resto do sistema.
+  const aoTeclar = (ev) => {
+    if (ev.key === "Escape") fecharModal();
+  };
+  document.addEventListener("keydown", aoTeclar);
+  fundo._aoTeclar = aoTeclar;
+
+  trocar(abaAtiva);
+  return fundo;
+}
+
+function fecharModal() {
+  if (!modalAberto) return;
+  if (modalAberto._aoTeclar) document.removeEventListener("keydown", modalAberto._aoTeclar);
+  modalAberto.remove();
+  modalAberto = null;
+}
+
+/** Campo com rótulo, no padrão da tela. */
+function campo(rotulo, entrada) {
+  return el("div", { class: "kb-campo" }, el("label", {}, rotulo), entrada);
 }
 
 // ---------------------------------------------------------------------------
@@ -55,8 +163,7 @@ export async function renderKanban(root) {
   ctx.setFab(null);
 
   root.innerHTML = "";
-  const alvo = el("div", { class: "kanban-carregando" }, skeleton(3));
-  root.append(alvo);
+  root.append(el("div", { class: "kb-carregando" }, skeleton(3)));
 
   try {
     const [quadro, lista] = await Promise.all([
@@ -66,8 +173,8 @@ export async function renderKanban(root) {
     dados = Array.isArray(quadro) ? quadro : [];
     usuarios = Array.isArray(lista) ? lista : [];
   } catch (e) {
-    alvo.innerHTML = "";
-    alvo.append(emptyState("relatorios", "Não foi possível carregar", e.message));
+    root.innerHTML = "";
+    root.append(emptyState("relatorios", "Não foi possível carregar", e.message));
     return;
   }
 
@@ -75,15 +182,11 @@ export async function renderKanban(root) {
 }
 
 function desenhar(root) {
-  // Remove o quadro anterior **e** o esqueleto de carregamento. Só o quadro
-  // era removido antes: o esqueleto ficava órfão no DOM e, a cada redesenho,
-  // empilhava mais barras cinzentas acima da barra de busca.
-  root.querySelector(".kanban")?.remove();
-  root.querySelector(".kanban-carregando")?.remove();
+  root.querySelector(".kb")?.remove();
+  root.querySelector(".kb-carregando")?.remove();
 
-  const wrap = el("div", { class: "kanban" });
+  const wrap = el("div", { class: "kb" });
 
-  // --- topo -------------------------------------------------------------
   const campoBusca = el("input", {
     type: "search",
     placeholder: "Buscar tarefas…",
@@ -91,7 +194,7 @@ function desenhar(root) {
     oninput: (e) => {
       busca = e.target.value.toLowerCase().trim();
       desenhar(root);
-      const novo = root.querySelector(".kanban-busca input");
+      const novo = root.querySelector(".kb-busca input");
       if (novo) {
         novo.focus();
         novo.setSelectionRange(novo.value.length, novo.value.length);
@@ -99,40 +202,37 @@ function desenhar(root) {
     },
   });
 
-  wrap.append(el("div", { class: "kanban-topo" },
-    el("div", { class: "kanban-busca" },
+  wrap.append(el("div", { class: "kb-topo" },
+    el("div", { class: "kb-busca" },
       el("span", { html: icon("search", 18) }),
       campoBusca),
     el("span", { style: "flex:1" }),
-    el("button", {
-      class: "btn tonal",
-      onclick: () => criarBucket(root),
-    }, "+ Coluna")));
+    el("button", { class: "kb-btn cheio", onclick: () => criarBucket(root) },
+      el("span", { html: icon("plus", 18) }),
+      el("span", {}, "Nova coluna"))));
 
-  // --- números ----------------------------------------------------------
   const todas = dados.flatMap((b) => b.atividades);
   const abertas = todas.filter((a) => !a.concluida).length;
-  const concluidas = todas.length - abertas;
   const atrasadas = todas.filter((a) => a.atrasada).length;
 
-  wrap.append(el("div", { class: "kanban-stats" },
+  wrap.append(el("div", { class: "kb-stats" },
     el("span", {}, el("b", {}, String(todas.length)), " atividades"),
     el("span", {}, el("b", {}, String(abertas)), " abertas"),
-    el("span", {}, el("b", {}, String(concluidas)), " concluídas"),
+    el("span", {}, el("b", {}, String(todas.length - abertas)), " concluídas"),
     atrasadas
       ? el("span", {},
-          el("span", { class: "ponto", style: "background:var(--md-sys-color-error)" }),
+          el("span", { class: "kb-ponto", style: "background:var(--md-sys-color-error)" }),
           el("b", {}, String(atrasadas)), " atrasadas")
       : el("span", {}, "nenhuma atrasada")));
 
-  // --- trilho -----------------------------------------------------------
-  const trilho = el("div", { class: "kanban-trilho" });
+  const trilho = el("div", { class: "kb-trilho" });
 
   if (!dados.length) {
     trilho.append(el("div", {
-      style: "padding:32px 20px;text-align:center;color:var(--md-sys-color-on-surface-variant)",
+      style: "padding:40px 24px;text-align:center;color:var(--md-sys-color-on-surface-variant)",
     },
-      el("p", { style: "margin:0 0 6px;font-weight:500" }, "Nenhuma coluna ainda"),
+      el("p", { style: "margin:0 0 6px;font-weight:500;font-size:15px" },
+        "Nenhuma coluna ainda"),
       el("p", { style: "margin:0;font-size:13px" },
         "Comece com “A fazer”, “Em andamento” e “Concluído”.")));
   }
@@ -145,7 +245,7 @@ function desenhar(root) {
 
 function coluna(root, bucket) {
   const col = el("div", {
-    class: "kanban-coluna",
+    class: "kb-coluna",
     ondragover: (ev) => { ev.preventDefault(); col.classList.add("alvo"); },
     ondragleave: () => col.classList.remove("alvo"),
     ondrop: async (ev) => {
@@ -156,64 +256,45 @@ function coluna(root, bucket) {
     },
   });
 
-  col.append(el("div", { class: "kanban-cabecalho" },
-    el("span", { class: "kanban-titulo", title: bucket.nome }, bucket.nome),
-    el("span", { class: "kanban-contagem" }, String(bucket.atividades.length)),
+  col.append(el("div", { class: "kb-cabecalho" },
+    el("span", { class: "kb-titulo", title: bucket.nome }, bucket.nome),
+    el("span", { class: "kb-contagem" }, String(bucket.atividades.length)),
     el("span", { style: "flex:1" }),
     el("button", {
-      class: "iconbtn", title: "Renomear coluna",
+      class: "kb-fechar", title: "Renomear coluna",
       onclick: () => renomearBucket(root, bucket),
       html: icon("edit", 15),
     }),
     el("button", {
-      class: "iconbtn", title: "Excluir coluna",
+      class: "kb-fechar", title: "Excluir coluna",
       onclick: () => excluirBucket(root, bucket),
       html: icon("trash", 15),
     })));
 
-  const lista = el("div", { class: "kanban-cartoes" });
+  const lista = el("div", { class: "kb-cartoes" });
 
   const filtradas = bucket.atividades.filter((a) =>
     !busca || (a.titulo || "").toLowerCase().includes(busca));
 
   if (!filtradas.length) {
-    lista.append(el("p", {
-      style: "font-size:12.5px;color:var(--md-sys-color-on-surface-variant);margin:8px 6px",
-    }, busca ? "Nada encontrado." : "Vazia."));
+    lista.append(el("p", { class: "kb-vazio" },
+      busca ? "Nada encontrado." : "Nenhuma atividade."));
   }
 
   for (const a of filtradas) lista.append(cartao(root, a));
 
   col.append(lista, el("button", {
-    class: "kanban-add",
+    class: "kb-add",
     onclick: () => criarAtividade(root, bucket.id),
   },
-    el("span", { html: icon("plus", 15) }),
+    el("span", { html: icon("plus", 16) }),
     el("span", {}, "Adicionar atividade")));
 
   return col;
 }
 
-/** Iniciais para o avatar: "Ana Paula Souza" → "AS". */
-function iniciais(nome) {
-  const partes = String(nome || "").trim().split(/\s+/).filter(Boolean);
-  if (!partes.length) return "?";
-  if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase();
-  return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase();
-}
-
-/** Cor estável por pessoa — o mesmo usuário sempre cai no mesmo tom. */
-function corDoAvatar(nome) {
-  const tons = ["#7c5cff", "#0a7ea4", "#0f9d58", "#d9822b", "#c43e6b", "#5b6abf"];
-  let soma = 0;
-  for (const ch of String(nome || "")) soma = (soma + ch.charCodeAt(0)) % 9973;
-  return tons[soma % tons.length];
-}
-
 function cartao(root, a) {
   const d = dias(a.prazo);
-
-  // --- selos ------------------------------------------------------------
   const selos = [];
 
   if (a.prazo) {
@@ -225,37 +306,32 @@ function cartao(root, a) {
         : d === 0
           ? "Hoje"
           : fmtPrazo(a.prazo);
-    selos.push(el("span", { class: "kanban-selo" + classe },
-      el("span", { class: "kanban-selo-icone", html: icon("calendario", 12) }),
+    selos.push(el("span", { class: "kb-selo" + classe },
+      el("span", { html: icon("calendario", 12) }),
       el("span", {}, texto)));
   }
 
   if (a.total_itens) {
     selos.push(el("span", {
-      class: "kanban-selo" + (a.itens_feitos === a.total_itens ? " completo" : ""),
+      class: "kb-selo" + (a.itens_feitos === a.total_itens ? " completo" : ""),
     },
-      el("span", { class: "kanban-selo-icone", html: icon("check", 12) }),
+      el("span", { html: icon("check", 12) }),
       el("span", {}, `${a.itens_feitos}/${a.total_itens}`)));
   }
 
-  // --- avatares ---------------------------------------------------------
   const avatares = (a.responsaveis || []).slice(0, 4).map((r) =>
     el("span", {
-      class: "kanban-avatar",
+      class: "kb-avatar",
       title: r.nome,
       style: `background:${corDoAvatar(r.nome)}`,
     }, iniciais(r.nome)));
 
   const extras = (a.responsaveis || []).length - avatares.length;
-
-  // --- progresso --------------------------------------------------------
-  // Barra fina no rodapé, como no Planner: cinza = não começou,
-  // âmbar = em andamento, verde = concluída.
   const pct = a.total_itens ? Math.round((a.itens_feitos / a.total_itens) * 100) : 0;
-  const estado = a.concluida ? "feita" : pct > 0 ? "andamento" : "parada";
+  const estado = a.concluida ? "feita" : pct > 0 ? "andamento" : "";
 
   const card = el("div", {
-    class: "kanban-cartao" + (a.concluida ? " concluida" : ""),
+    class: "kb-cartao" + (a.concluida ? " concluida" : ""),
     draggable: "true",
     ondragstart: (ev) => {
       ev.dataTransfer.setData("text/plain", String(a.id));
@@ -265,7 +341,7 @@ function cartao(root, a) {
     ondragend: () => card.classList.remove("arrastando"),
   },
     el("input", {
-      class: "kanban-check",
+      class: "kb-check",
       type: "checkbox",
       checked: a.concluida ? "checked" : null,
       title: a.concluida ? "Reabrir" : "Concluir",
@@ -277,31 +353,26 @@ function cartao(root, a) {
         } catch (e) { mostrarErro(e); }
       },
     }),
-
-    el("div", { class: "kanban-corpo" },
+    el("div", { class: "kb-corpo" },
       el("div", {
-        class: "kanban-cartao-titulo",
+        class: "kb-titulo-cartao",
         onclick: () => abrirAtividade(root, a),
       }, a.titulo),
-
-      a.descricao ? el("div", { class: "kanban-cartao-desc" }, a.descricao) : null,
-
+      a.descricao ? el("div", { class: "kb-desc" }, a.descricao) : null,
       (selos.length || avatares.length)
-        ? el("div", { class: "kanban-rodape" },
+        ? el("div", { class: "kb-rodape" },
             ...selos,
             el("span", { style: "flex:1" }),
             ...avatares,
-            extras > 0 ? el("span", { class: "kanban-avatar extra" }, `+${extras}`) : null)
+            extras > 0 ? el("span", { class: "kb-avatar extra" }, `+${extras}`) : null)
         : null,
-
-      el("div", { class: "kanban-progresso" },
+      el("div", { class: "kb-progresso" },
         el("span", {
-          class: "kanban-progresso-barra " + estado,
+          class: estado,
           style: `width:${a.concluida ? 100 : pct}%`,
         }))),
-
     el("button", {
-      class: "kanban-remover",
+      class: "kb-remover",
       title: "Excluir",
       onclick: async (ev) => {
         ev.stopPropagation();
@@ -318,7 +389,7 @@ function cartao(root, a) {
 }
 
 // ---------------------------------------------------------------------------
-// Ações
+// Dados
 // ---------------------------------------------------------------------------
 
 async function recarregar(root) {
@@ -341,17 +412,18 @@ async function mover(root, atividadeId, bucketId) {
 // ---------------------------------------------------------------------------
 
 function criarBucket(root) {
-  const campo = el("input", { class: "field", placeholder: "Ex.: Em andamento" });
-  dialog({
-    title: "Nova coluna",
-    body: el("div", {}, campo),
-    actions: [
-      { label: "Cancelar", variant: "text", onClick: (fechar) => fechar() },
+  const entrada = el("input", { placeholder: "Ex.: Em andamento" });
+
+  modal({
+    titulo: "Nova coluna",
+    abas: [{ id: "a", rotulo: "Coluna", render: () => campo("Nome da coluna", entrada) }],
+    acoes: [
+      { label: "Cancelar", classe: "", onClick: (fechar) => fechar() },
       {
         label: "Criar",
-        variant: "tonal",
+        classe: "cheio",
         onClick: async (fechar) => {
-          const nome = campo.value.trim();
+          const nome = entrada.value.trim();
           if (!nome) { toast("Informe o nome."); return; }
           try {
             await api.post("/kanban/buckets", { nome });
@@ -362,21 +434,22 @@ function criarBucket(root) {
       },
     ],
   });
-  setTimeout(() => campo.focus(), 60);
+  setTimeout(() => entrada.focus(), 60);
 }
 
 function renomearBucket(root, bucket) {
-  const campo = el("input", { class: "field", value: bucket.nome });
-  dialog({
-    title: "Renomear coluna",
-    body: el("div", {}, campo),
-    actions: [
-      { label: "Cancelar", variant: "text", onClick: (fechar) => fechar() },
+  const entrada = el("input", { value: bucket.nome });
+
+  modal({
+    titulo: "Renomear coluna",
+    abas: [{ id: "a", rotulo: "Coluna", render: () => campo("Nome da coluna", entrada) }],
+    acoes: [
+      { label: "Cancelar", classe: "", onClick: (fechar) => fechar() },
       {
         label: "Salvar",
-        variant: "tonal",
+        classe: "cheio",
         onClick: async (fechar) => {
-          const nome = campo.value.trim();
+          const nome = entrada.value.trim();
           if (!nome) { toast("Informe o nome."); return; }
           try {
             await api.patch(`/kanban/buckets/${bucket.id}`, { nome });
@@ -387,6 +460,7 @@ function renomearBucket(root, bucket) {
       },
     ],
   });
+  setTimeout(() => entrada.select(), 60);
 }
 
 async function excluirBucket(root, bucket) {
@@ -406,29 +480,31 @@ async function excluirBucket(root, bucket) {
 // ---------------------------------------------------------------------------
 
 function criarAtividade(root, bucketId) {
-  const campoTitulo = el("input", { class: "field", placeholder: "O que precisa ser feito?" });
-  const campoPrazo = el("input", { class: "field", type: "date" });
+  const entrada = el("input", { placeholder: "O que precisa ser feito?" });
+  const prazo = el("input", { type: "date" });
 
-  dialog({
-    title: "Nova atividade",
-    body: el("div", {},
-      el("label", { class: "label-campo" }, "Título"),
-      campoTitulo,
-      el("label", { class: "label-campo" }, "Prazo"),
-      campoPrazo),
-    actions: [
-      { label: "Cancelar", variant: "text", onClick: (fechar) => fechar() },
+  modal({
+    titulo: "Nova atividade",
+    abas: [{
+      id: "a",
+      rotulo: "Detalhes",
+      render: () => el("div", {},
+        campo("Título", entrada),
+        campo("Prazo", prazo)),
+    }],
+    acoes: [
+      { label: "Cancelar", classe: "", onClick: (fechar) => fechar() },
       {
         label: "Criar",
-        variant: "tonal",
+        classe: "cheio",
         onClick: async (fechar) => {
-          const titulo = campoTitulo.value.trim();
+          const titulo = entrada.value.trim();
           if (!titulo) { toast("Informe o título."); return; }
           try {
             await api.post("/kanban/atividades", {
               bucket_id: bucketId,
               titulo,
-              prazo: campoPrazo.value ? `${campoPrazo.value}T12:00:00` : null,
+              prazo: prazo.value ? `${prazo.value}T12:00:00` : null,
             });
             fechar();
             await recarregar(root);
@@ -437,47 +513,33 @@ function criarAtividade(root, bucketId) {
       },
     ],
   });
-  setTimeout(() => campoTitulo.focus(), 60);
+  setTimeout(() => entrada.focus(), 60);
 }
 
 function abrirAtividade(root, a) {
-  const corpo = el("div", {});
+  let itens = a.itens || [];
+  const escolhidos = new Set((a.responsaveis || []).map((r) => r.usuario_id));
+  const podeAtribuir = state.papel === "admin";
 
-  const campoTitulo = el("input", { class: "field", value: a.titulo });
-  const campoPrazo = el("input", {
-    class: "field",
+  const entradaTitulo = el("input", { value: a.titulo });
+  const entradaDesc = el("textarea", { rows: "3", placeholder: "Detalhes (opcional)" });
+  entradaDesc.value = a.descricao || "";
+  const entradaPrazo = el("input", {
     type: "date",
     value: a.prazo ? new Date(a.prazo).toISOString().slice(0, 10) : "",
   });
-  const campoDesc = el("textarea", {
-    class: "field",
-    rows: "3",
-    placeholder: "Detalhes (opcional)",
-  });
-  campoDesc.value = a.descricao || "";
 
-  corpo.append(
-    el("label", { class: "label-campo" }, "Título"),
-    campoTitulo,
-    el("label", { class: "label-campo" }, "Descrição"),
-    campoDesc,
-    el("label", { class: "label-campo" }, "Prazo"),
-    campoPrazo);
-
-  // --- checklist --------------------------------------------------------
+  // --- aba checklist ----------------------------------------------------
   const listaItens = el("div", {});
-  let itens = a.itens || [];
 
   const desenharItens = () => {
     listaItens.innerHTML = "";
     if (!itens.length) {
-      listaItens.append(el("p", {
-        style: "font-size:12.5px;color:var(--md-sys-color-on-surface-variant);margin:4px 8px",
-      }, "Nenhum item ainda."));
+      listaItens.append(el("p", { class: "kb-vazio" }, "Nenhuma subatividade ainda."));
       return;
     }
     for (const item of itens) {
-      listaItens.append(el("div", { class: "kanban-item" },
+      listaItens.append(el("div", { class: "kb-item" },
         el("input", {
           type: "checkbox",
           checked: item.feito ? "checked" : null,
@@ -490,10 +552,11 @@ function abrirAtividade(root, a) {
             } catch (e) { mostrarErro(e); }
           },
         }),
-        el("span", { class: item.feito ? "feito" : "" }, item.texto),
-        el("span", { style: "flex:1" }),
+        el("span", { class: "kb-item-texto" + (item.feito ? " riscado" : "") },
+          item.texto),
         el("button", {
-          class: "iconbtn danger", title: "Remover",
+          class: "kb-remover", title: "Remover",
+          style: "position:static;opacity:1",
           onclick: async () => {
             try {
               await api.del(`/kanban/itens/${item.id}`);
@@ -508,10 +571,8 @@ function abrirAtividade(root, a) {
   };
   desenharItens();
 
-  const novoItem = el("input", {
-    class: "field",
-    placeholder: "Adicionar item e pressionar Enter",
-    style: "margin-top:8px",
+  const novaSub = el("input", {
+    placeholder: "Nova subatividade — Enter para adicionar",
     onkeydown: async (ev) => {
       if (ev.key !== "Enter") return;
       ev.preventDefault();
@@ -527,77 +588,94 @@ function abrirAtividade(root, a) {
     },
   });
 
-  corpo.append(
-    el("h3", { class: "secao-titulo" }, "Checklist"),
-    listaItens,
-    novoItem);
-
-  // --- responsáveis (só administrador) ----------------------------------
-  const podeAtribuir = state.papel === "admin";
-  const escolhidos = new Set((a.responsaveis || []).map((r) => r.usuario_id));
-
+  // --- aba responsáveis -------------------------------------------------
+  const listaPessoas = el("div", {});
   if (podeAtribuir) {
-    const nomes = new Map();
-    const caixas = el("div", { style: "max-height:150px;overflow:auto" });
     for (const u of usuarios) {
-      nomes.set(u.id, u.nome);
-      caixas.append(el("label", {
-        class: "kanban-item",
-        style: "cursor:pointer",
-      },
+      listaPessoas.append(el("label", { class: "kb-pessoa" },
         el("input", {
           type: "checkbox",
           checked: escolhidos.has(u.id) ? "checked" : null,
-          "data-usuario": String(u.id),
           onchange: (ev) => {
             if (ev.target.checked) escolhidos.add(u.id);
             else escolhidos.delete(u.id);
           },
         }),
-        el("span", {}, u.nome),
-        el("span", { style: "flex:1" }),
         el("span", {
-          style: "font-size:11px;color:var(--md-sys-color-on-surface-variant)",
-        }, u.email || "")));
+          class: "kb-avatar",
+          style: `background:${corDoAvatar(u.nome)}`,
+        }, iniciais(u.nome)),
+        el("span", { class: "kb-pessoa-nome" }, u.nome),
+        el("span", { class: "kb-pessoa-email" }, u.email || "")));
     }
-    corpo.append(el("h3", { class: "secao-titulo" }, "Responsáveis"), caixas);
-    corpo._nomes = nomes;
+    if (!usuarios.length) {
+      listaPessoas.append(el("p", { class: "kb-vazio" }, "Nenhum usuário cadastrado."));
+    }
   }
 
-  const acoes = [
+  const abas = [
     {
-      label: a.concluida ? "Reabrir" : "Concluir",
-      variant: "tonal",
-      onClick: async () => {
-        try {
-          await api.post(`/kanban/atividades/${a.id}/concluir`);
-          await recarregar(root);
-        } catch (e) { mostrarErro(e); }
-      },
+      id: "detalhes",
+      rotulo: "Detalhes",
+      render: () => el("div", {},
+        campo("Título", entradaTitulo),
+        campo("Descrição", entradaDesc),
+        campo("Prazo", entradaPrazo)),
     },
     {
-      label: "Salvar",
-      variant: "tonal",
-      onClick: async (fechar) => {
+      id: "checklist",
+      rotulo: `Subatividades (${itens.length})`,
+      render: () => el("div", {}, listaItens, novaSub),
+    },
+  ];
+
+  if (podeAtribuir) {
+    abas.push({
+      id: "responsaveis",
+      rotulo: "Responsáveis",
+      render: () => listaPessoas,
+    });
+  }
+
+  modal({
+    titulo: "Atividade",
+    abas,
+    acoes: [
+      {
+        label: a.concluida ? "Reabrir" : "Concluir",
+        classe: "tonal",
+        onClick: async () => {
+          try {
+            await api.post(`/kanban/atividades/${a.id}/concluir`);
+            await recarregar(root);
+          } catch (e) { mostrarErro(e); }
+        },
+      },
+      { label: "Excluir", classe: "perigo", onClick: async (fechar) => {
+        if (!confirm(`Excluir "${a.titulo}"?`)) return;
+        try {
+          await api.del(`/kanban/atividades/${a.id}`);
+          fechar();
+          await recarregar(root);
+        } catch (e) { mostrarErro(e); }
+      } },
+      el("span", { class: "kb-espaco" }),
+      { label: "Salvar", classe: "cheio", onClick: async (fechar) => {
         try {
           await api.patch(`/kanban/atividades/${a.id}`, {
             bucket_id: a.bucket_id,
-            titulo: campoTitulo.value.trim(),
-            descricao: campoDesc.value.trim() || null,
-            prazo: campoPrazo.value ? `${campoPrazo.value}T12:00:00` : null,
+            titulo: entradaTitulo.value.trim(),
+            descricao: entradaDesc.value.trim() || null,
+            prazo: entradaPrazo.value ? `${entradaPrazo.value}T12:00:00` : null,
           });
-
           if (podeAtribuir) {
             await api.post(`/kanban/atividades/${a.id}/responsaveis`,
               { usuario_ids: [...escolhidos] });
           }
-
           fechar();
           await recarregar(root);
         } catch (e) { mostrarErro(e); }
-      },
-    },
-  ];
-
-  dialog({ title: "Atividade", body: corpo, actions: acoes, wide: true });
+      } },
+    ],
+  });
 }

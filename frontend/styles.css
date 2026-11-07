@@ -2530,60 +2530,136 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 }
 
 /* =====================================================================
-   Kanban
+   Kanban — camada visual própria
    =====================================================================
-   Segue a referência visual do Planner: trilho horizontal, coluna com
-   cabeçalho próprio, cartão com caixa de concluir à esquerda e selos no
-   rodapé.
+   Estas classes NÃO reutilizam `.field` nem o `dialog()` do sistema: a tela
+   do quadro precisa de modal com abas, campos com borda por sombra e botões
+   em pílula, e nada disso existe no formulário padrão.
 
-   Os tokens `--md-sys-color-*` e `--shape-*` vêm do tema da aplicação —
-   nada de cor fixa aqui, senão o modo escuro quebra. */
+   Tudo parte dos tokens do tema (`--md-sys-color-*`, `--shape-*`), então o
+   modo escuro e a paleta continuam valendo. */
 
-.kanban-topo {
+.kb {
+  --kb-coluna: var(--md-sys-color-surface-container);
+  --kb-cartao: var(--md-sys-color-surface-container-lowest);
+  --kb-borda: var(--md-sys-color-outline-variant);
+  display: block;
+}
+
+:root[data-theme="dark"] .kb {
+  --kb-coluna: var(--md-sys-color-surface-container-low);
+  --kb-cartao: var(--md-sys-color-surface-container-high);
+  --kb-borda: var(--md-sys-color-surface-container-highest);
+}
+
+/* --- topo -------------------------------------------------------------- */
+
+.kb-topo {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
-.kanban-busca {
+.kb-busca {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex: 1 1 260px;
-  max-width: 420px;
-  background: var(--md-sys-color-surface-container-high);
+  gap: 8px;
+  flex: 1 1 240px;
+  max-width: 440px;
+  height: 42px;
+  padding: 0 16px;
   border-radius: var(--shape-full);
-  padding: 0 14px;
-  height: 40px;
+  background: var(--md-sys-color-surface-container-high);
+  transition: box-shadow .15s;
 }
 
-.kanban-busca svg {
+.kb-busca:focus-within {
+  box-shadow: 0 0 0 2px var(--md-sys-color-primary);
+}
+
+.kb-busca svg {
   flex: 0 0 auto;
-  opacity: .6;
+  opacity: .55;
 }
 
-.kanban-busca input {
+.kb-busca input {
   flex: 1;
   min-width: 0;
   border: none;
+  outline: none;
   background: transparent;
   color: var(--md-sys-color-on-surface);
-  font: var(--md-body-medium, 400 14px/20px inherit);
-  outline: none;
+  font-size: 14px;
 }
 
-/* --- barra de números ------------------------------------------------- */
+.kb-busca input::placeholder {
+  color: var(--md-sys-color-on-surface-variant);
+}
 
-.kanban-stats {
-  display: flex;
-  gap: 18px;
+/* --- botões ------------------------------------------------------------ */
+
+.kb-btn {
+  display: inline-flex;
   align-items: center;
-  padding: 8px 14px;
+  justify-content: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 20px;
+  border: none;
+  border-radius: var(--shape-full);
+  background: transparent;
+  color: var(--md-sys-color-primary);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .15s, box-shadow .15s;
+  white-space: nowrap;
+}
+
+.kb-btn:hover {
+  background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent);
+}
+
+.kb-btn.cheio {
+  background: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
+}
+
+.kb-btn.cheio:hover {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .18);
+}
+
+.kb-btn.tonal {
+  background: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container, #21005d);
+}
+
+.kb-btn.perigo {
+  color: var(--md-sys-color-error);
+}
+
+.kb-btn.perigo:hover {
+  background: var(--md-sys-color-error-container, #f9dedc);
+}
+
+.kb-btn.pequeno {
+  height: 32px;
+  padding: 0 14px;
+  font-size: 13px;
+}
+
+/* --- faixa de números -------------------------------------------------- */
+
+.kb-stats {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  padding: 9px 16px;
   margin-bottom: 14px;
-  background: var(--md-sys-color-surface-container-low);
   border-radius: var(--shape-md);
+  background: var(--kb-coluna);
   font-size: 12.5px;
   color: var(--md-sys-color-on-surface-variant);
   overflow-x: auto;
@@ -2591,156 +2667,150 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   scrollbar-width: none;
 }
 
-.kanban-stats b {
+.kb-stats b {
   color: var(--md-sys-color-on-surface);
   font-weight: 700;
 }
 
-.kanban-stats .ponto {
+.kb-ponto {
+  display: inline-block;
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  display: inline-block;
-  margin-right: 4px;
+  margin-right: 5px;
   vertical-align: 1px;
 }
 
-/* --- trilho ----------------------------------------------------------- */
+/* --- trilho ------------------------------------------------------------ */
 
-.kanban-trilho {
+.kb-trilho {
   display: flex;
   gap: 12px;
   align-items: flex-start;
   overflow-x: auto;
-  padding: 2px 2px 16px;
+  padding: 2px 2px 18px;
   scrollbar-width: thin;
 }
 
-/* --- coluna ----------------------------------------------------------- */
+/* --- coluna ------------------------------------------------------------ */
 
-.kanban-coluna {
+.kb-coluna {
   flex: 0 0 300px;
   width: 300px;
-  background: var(--md-sys-color-surface-container-low);
-  border-radius: var(--shape-lg);
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 300px);
-  min-height: 140px;
-  transition: background .2s, outline-color .12s;
+  max-height: calc(100vh - 270px);
+  min-height: 120px;
+  background: var(--kb-coluna);
+  border-radius: var(--shape-lg);
   outline: 2px dashed transparent;
   outline-offset: -2px;
+  transition: outline-color .12s, background .18s;
 }
 
-/* Alvo do arraste: a coluna aceita o cartão. */
-.kanban-coluna.alvo {
+.kb-coluna.alvo {
   outline-color: var(--md-sys-color-primary);
   background: var(--md-sys-color-primary-container);
 }
 
-.kanban-cabecalho {
+.kb-cabecalho {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 12px 6px 4px 14px;
+  padding: 13px 8px 6px 15px;
 }
 
-.kanban-titulo {
-  font-weight: 600;
+.kb-titulo {
   font-size: 13.5px;
+  font-weight: 600;
   letter-spacing: .1px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.kanban-contagem {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--md-sys-color-on-surface-variant);
-  background: var(--md-sys-color-surface-container-high);
-  border-radius: var(--shape-full);
-  padding: 1px 7px;
+.kb-contagem {
   flex: 0 0 auto;
+  padding: 1px 8px;
+  border-radius: var(--shape-full);
+  background: var(--md-sys-color-surface-container-highest);
+  font-size: 11.5px;
+  color: var(--md-sys-color-on-surface-variant);
 }
 
-/* --- cartões ---------------------------------------------------------- */
-
-.kanban-cartoes {
+.kb-cartoes {
   flex: 1;
   overflow-y: auto;
-  padding: 0 8px 6px;
-  min-height: 40px;
+  padding: 0 8px 4px;
+  min-height: 36px;
   scrollbar-width: thin;
 }
 
-.kanban-cartao {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-  background: var(--md-sys-color-surface-container-lowest);
-  border-radius: var(--shape-md);
-  padding: 12px;
-  margin-bottom: 8px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, .08), 0 1px 3px 1px rgba(0, 0, 0, .05);
-  cursor: grab;
+/* --- cartão ------------------------------------------------------------ */
+
+.kb-cartao {
   position: relative;
-  border-left: 4px solid var(--md-sys-color-outline-variant);
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  margin-bottom: 8px;
+  padding: 12px;
+  border-radius: var(--shape-md);
+  background: var(--kb-cartao);
+  border: 1px solid var(--kb-borda);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .07);
+  cursor: grab;
   transition: box-shadow .15s, transform .1s, opacity .15s;
-  animation: cartaoEntra .18s cubic-bezier(.2, 0, 0, 1);
+  animation: kbEntra .18s cubic-bezier(.2, 0, 0, 1);
 }
 
-@keyframes cartaoEntra {
-  from { opacity: 0; transform: translateY(6px) scale(.98); }
+@keyframes kbEntra {
+  from { opacity: 0; transform: translateY(6px) scale(.985); }
   to   { opacity: 1; transform: none; }
 }
 
-.kanban-cartao:hover {
-  box-shadow: 0 1px 2px rgba(0, 0, 0, .1), 0 2px 6px 2px rgba(0, 0, 0, .07);
+.kb-cartao:hover {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .13);
 }
 
-.kanban-cartao:active {
-  cursor: grabbing;
+.kb-cartao.arrastando {
+  opacity: .35;
 }
 
-.kanban-cartao.concluida {
-  opacity: .62;
+.kb-cartao.concluida {
+  opacity: .6;
 }
 
-.kanban-cartao.concluida .kanban-cartao-titulo {
+.kb-cartao.concluida .kb-titulo-cartao {
   text-decoration: line-through;
   color: var(--md-sys-color-on-surface-variant);
 }
 
-/* Faixa de prioridade pela borda esquerda. */
-.kanban-cartao.prio-alta { border-left-color: var(--md-sys-color-tertiary, #7d5260); }
-.kanban-cartao.prio-urgente { border-left-color: var(--md-sys-color-error); }
-.kanban-cartao.prio-baixa { border-left-color: var(--md-sys-color-outline-variant); }
-
-.kanban-check {
-  margin-top: 2px;
+.kb-check {
+  flex: 0 0 auto;
   width: 17px;
   height: 17px;
-  flex: 0 0 auto;
+  margin-top: 2px;
   accent-color: var(--md-sys-color-primary);
   cursor: pointer;
 }
 
-.kanban-corpo {
+.kb-corpo {
   flex: 1;
   min-width: 0;
 }
 
-.kanban-cartao-titulo {
+.kb-titulo-cartao {
   font-size: 13.5px;
   line-height: 1.4;
   word-break: break-word;
+  cursor: pointer;
 }
 
-.kanban-cartao-desc {
+.kb-desc {
+  margin-top: 4px;
   font-size: 12px;
   color: var(--md-sys-color-on-surface-variant);
-  margin-top: 4px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -2748,246 +2818,405 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   white-space: pre-wrap;
 }
 
-.kanban-rodape {
+.kb-rodape {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
-  margin-top: 8px;
+  margin-top: 9px;
 }
 
-/* --- selos ------------------------------------------------------------ */
+/* --- selos ------------------------------------------------------------- */
 
-.kanban-selo {
+.kb-selo {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  font-size: 11px;
-  font-weight: 500;
+  gap: 4px;
   padding: 2px 8px;
   border-radius: var(--shape-full);
-  background: var(--md-sys-color-surface-container-high);
+  background: var(--md-sys-color-surface-container-highest);
   color: var(--md-sys-color-on-surface-variant);
+  font-size: 11px;
+  font-weight: 500;
   white-space: nowrap;
 }
 
-.kanban-selo.atrasado {
-  background: var(--md-sys-color-error-container, #f9dedc);
-  color: var(--md-sys-color-error, #b3261e);
-}
-
-.kanban-selo.hoje {
-  background: var(--md-sys-color-tertiary-container, #ffd8e4);
-  color: var(--md-sys-color-on-surface);
-}
-
-.kanban-selo.responsavel {
-  background: var(--md-sys-color-primary-container);
-  color: var(--md-sys-color-on-primary-container, #21005d);
-}
-
-/* Botão de excluir aparece só no hover — reduz ruído visual. */
-.kanban-remover {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 26px;
-  height: 26px;
-  border: none;
-  border-radius: var(--shape-full);
-  display: grid;
-  place-items: center;
-  background: transparent;
-  color: var(--md-sys-color-on-surface-variant);
-  opacity: 0;
-  cursor: pointer;
-  transition: opacity .12s, background .12s;
-}
-
-.kanban-cartao:hover .kanban-remover {
-  opacity: 1;
-}
-
-.kanban-remover:hover {
-  background: var(--md-sys-color-error-container, #f9dedc);
-  color: var(--md-sys-color-error, #b3261e);
-}
-
-/* --- rodapé da coluna ------------------------------------------------- */
-
-.kanban-add {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: calc(100% - 16px);
-  margin: 0 8px 8px;
-  padding: 8px 10px;
-  border: none;
-  border-radius: var(--shape-sm);
-  background: transparent;
-  color: var(--md-sys-color-on-surface-variant);
-  font-size: 13px;
-  cursor: pointer;
-  transition: background .12s;
-}
-
-.kanban-add:hover {
-  background: var(--md-sys-color-surface-container-high);
-  color: var(--md-sys-color-on-surface);
-}
-
-/* --- checklist no modal ----------------------------------------------- */
-
-.kanban-item {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  padding: 7px 8px;
-  border-radius: var(--shape-sm);
-  font-size: 13px;
-  transition: background .12s;
-}
-
-.kanban-item:hover {
-  background: var(--md-sys-color-surface-container);
-}
-
-.kanban-item input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--md-sys-color-primary);
-  cursor: pointer;
-  flex: 0 0 auto;
-}
-
-.kanban-item .feito {
-  text-decoration: line-through;
-  opacity: .55;
-}
-
-/* Raiz da tela. Existe para o redesenho poder remover só este bloco sem
-   tocar no resto da página. */
-.kanban {
-  display: block;
-}
-
-/* Rótulo de campo dentro de diálogo. Discreto, acima do input — não é o
-   mesmo `.field` do formulário principal. */
-.label-campo {
-  display: block;
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--md-sys-color-on-surface-variant);
-  margin: 12px 0 4px;
-}
-
-.label-campo:first-child {
-  margin-top: 0;
-}
-
-/* =====================================================================
-   Kanban — contraste entre coluna e cartão
-   =====================================================================
-   ## O erro que isto corrige
-
-   O cartão usava `surface-container-lowest`. No tema claro esse token é
-   BRANCO — o cartão se destaca da coluna cinza. No tema escuro ele é o mais
-   ESCURO de todos (#0C140E), e o cartão sumia dentro da coluna.
-
-   O mesmo token inverte de significado entre os temas. Por isso os dois
-   valores são nomeados aqui e invertidos explicitamente no escuro. */
-
-.kanban {
-  --kb-coluna: var(--md-sys-color-surface-container);
-  --kb-cartao: var(--md-sys-color-surface-container-lowest);
-  --kb-borda: var(--md-sys-color-outline-variant);
-}
-
-:root[data-theme="dark"] .kanban {
-  --kb-coluna: var(--md-sys-color-surface-container-low);
-  --kb-cartao: var(--md-sys-color-surface-container-high);
-  --kb-borda: var(--md-sys-color-surface-container-highest);
-}
-
-.kanban-coluna {
-  background: var(--kb-coluna);
-}
-
-.kanban-cartao {
-  background: var(--kb-cartao);
-  border: 1px solid var(--kb-borda);
-  border-left-width: 4px;
-}
-
-/* --- avatar ----------------------------------------------------------- */
-
-.kanban-avatar {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  display: inline-grid;
-  place-items: center;
-  font-size: 10.5px;
-  font-weight: 700;
-  color: #fff;
-  letter-spacing: .2px;
-  flex: 0 0 auto;
-  box-shadow: 0 0 0 2px var(--kb-cartao);
-}
-
-/* Avatares encostados, como no Planner: o anel separa um do outro. */
-.kanban-avatar + .kanban-avatar {
-  margin-left: -8px;
-}
-
-.kanban-avatar.extra {
-  background: var(--md-sys-color-surface-container-highest);
-  color: var(--md-sys-color-on-surface-variant);
-}
-
-/* --- selos com ícone -------------------------------------------------- */
-
-.kanban-selo-icone {
-  display: inline-flex;
-  align-items: center;
-}
-
-.kanban-selo-icone svg {
+.kb-selo svg {
   width: 12px;
   height: 12px;
 }
 
-.kanban-selo.completo {
+.kb-selo.atrasado {
+  background: var(--md-sys-color-error-container, #f9dedc);
+  color: var(--md-sys-color-error, #b3261e);
+}
+
+.kb-selo.hoje {
   background: var(--md-sys-color-primary-container);
   color: var(--md-sys-color-on-primary-container, #21005d);
 }
 
-/* --- barra de progresso ----------------------------------------------- */
+.kb-selo.completo {
+  background: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
+}
 
-.kanban-progresso {
+/* --- avatares ---------------------------------------------------------- */
+
+.kb-avatar {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  flex: 0 0 auto;
+  box-shadow: 0 0 0 2px var(--kb-cartao);
+}
+
+.kb-avatar + .kb-avatar {
+  margin-left: -7px;
+}
+
+.kb-avatar.extra {
+  background: var(--md-sys-color-surface-container-highest);
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+/* --- progresso --------------------------------------------------------- */
+
+.kb-progresso {
   height: 3px;
+  margin-top: 10px;
   border-radius: var(--shape-full);
   background: var(--md-sys-color-surface-container-highest);
-  margin-top: 10px;
   overflow: hidden;
 }
 
-.kanban-progresso-barra {
+.kb-progresso span {
   display: block;
   height: 100%;
   border-radius: var(--shape-full);
-  transition: width .2s ease;
+  transition: width .2s;
 }
 
-.kanban-progresso-barra.parada { background: transparent; }
-.kanban-progresso-barra.andamento { background: #d9822b; }
-.kanban-progresso-barra.feita { background: #0f9d58; }
+.kb-progresso span.andamento { background: #d9822b; }
+.kb-progresso span.feita { background: #0f9d58; }
 
-.kanban-cartao.arrastando {
-  opacity: .35;
+/* --- excluir no hover -------------------------------------------------- */
+
+.kb-remover {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .12s, background .12s;
 }
 
-/* --- esqueleto de carregamento ---------------------------------------- */
+.kb-cartao:hover .kb-remover {
+  opacity: 1;
+}
 
-.kanban-carregando {
+.kb-remover:hover {
+  background: var(--md-sys-color-error-container, #f9dedc);
+  color: var(--md-sys-color-error, #b3261e);
+}
+
+/* --- adicionar --------------------------------------------------------- */
+
+.kb-add {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: calc(100% - 16px);
+  margin: 0 8px 9px;
+  padding: 9px 11px;
+  border: none;
+  border-radius: var(--shape-sm);
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background .12s, color .12s;
+}
+
+.kb-add:hover {
+  background: var(--md-sys-color-surface-container-highest);
+  color: var(--md-sys-color-on-surface);
+}
+
+/* =====================================================================
+   Modal
+   ===================================================================== */
+
+.kb-fundo {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, .5);
+  animation: kbFade .15s;
+}
+
+@keyframes kbFade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.kb-modal {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 600px;
+  max-height: 90vh;
+  overflow: hidden;
+  border-radius: var(--shape-xl);
+  background: var(--md-sys-color-surface-container-high);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .28);
+  animation: kbModal .2s cubic-bezier(.2, 0, 0, 1);
+}
+
+@keyframes kbModal {
+  from { transform: scale(.95); opacity: 0; }
+  to   { transform: scale(1); opacity: 1; }
+}
+
+.kb-modal-topo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 20px 6px;
+}
+
+.kb-modal-topo h2 {
+  flex: 1;
+  font-size: 21px;
+  font-weight: 500;
+  margin: 0;
+}
+
+.kb-fechar {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+  cursor: pointer;
+}
+
+.kb-fechar:hover {
+  background: var(--md-sys-color-surface-container-highest);
+}
+
+/* --- abas -------------------------------------------------------------- */
+
+.kb-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--kb-borda);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.kb-tab {
+  padding: 11px 14px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color .15s, border-color .15s;
+}
+
+.kb-tab:hover {
+  color: var(--md-sys-color-on-surface);
+}
+
+.kb-tab.ativa {
+  color: var(--md-sys-color-primary);
+  border-bottom-color: var(--md-sys-color-primary);
+}
+
+/* --- corpo ------------------------------------------------------------- */
+
+.kb-modal-corpo {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 20px;
+}
+
+.kb-modal-pe {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 20px 18px;
+  border-top: 1px solid var(--kb-borda);
+}
+
+.kb-modal-pe .kb-espaco {
+  flex: 1;
+}
+
+/* --- campos ------------------------------------------------------------ */
+
+.kb-campo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.kb-campo > label {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+/* A borda é sombra, não `border`: assim o foco engrossa sem deslocar o
+   texto um pixel sequer. */
+.kb-campo input,
+.kb-campo textarea,
+.kb-campo select {
+  width: 100%;
+  padding: 11px 13px;
+  border: none;
+  border-radius: var(--shape-sm);
+  background: var(--kb-cartao);
+  color: var(--md-sys-color-on-surface);
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  box-shadow: 0 0 0 1px var(--kb-borda);
+  transition: box-shadow .15s;
+}
+
+.kb-campo input:focus,
+.kb-campo textarea:focus,
+.kb-campo select:focus {
+  box-shadow: 0 0 0 2px var(--md-sys-color-primary);
+}
+
+.kb-campo textarea {
+  resize: vertical;
+  min-height: 84px;
+  line-height: 1.5;
+}
+
+.kb-duas {
+  display: flex;
+  gap: 12px;
+}
+
+.kb-duas .kb-campo {
+  flex: 1;
+}
+
+/* --- checklist --------------------------------------------------------- */
+
+.kb-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 9px;
+  border-radius: var(--shape-sm);
+  font-size: 13.5px;
+  transition: background .12s;
+}
+
+.kb-item:hover {
+  background: var(--kb-coluna);
+}
+
+.kb-item input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  accent-color: var(--md-sys-color-primary);
+  cursor: pointer;
+}
+
+.kb-item .riscado {
+  text-decoration: line-through;
+  opacity: .55;
+}
+
+.kb-item-texto {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.kb-vazio {
+  padding: 10px 8px;
+  font-size: 12.5px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+/* --- responsáveis ------------------------------------------------------ */
+
+.kb-pessoa {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 9px;
+  border-radius: var(--shape-sm);
+  cursor: pointer;
+  transition: background .12s;
+}
+
+.kb-pessoa:hover {
+  background: var(--kb-coluna);
+}
+
+.kb-pessoa input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  accent-color: var(--md-sys-color-primary);
+  cursor: pointer;
+}
+
+.kb-pessoa-nome {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-pessoa-email {
+  font-size: 11.5px;
+  color: var(--md-sys-color-on-surface-variant);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 45%;
+}
+
+/* --- esqueleto --------------------------------------------------------- */
+
+.kb-carregando {
   display: block;
 }
