@@ -17,6 +17,7 @@ import { renderSelecao, renderHome } from "./js/views/inventario.js";
 import { renderAtivos } from "./js/views/ativos.js";
 import { renderImpressao } from "./js/views/impressao.js";
 import { renderCalendario } from "./js/views/calendario.js";
+import { renderKanban } from "./js/views/kanban.js";
 import { renderReporte } from "./js/views/reporte.js";
 import { renderProdutos } from "./js/views/produtos.js";
 import { renderMovimentacoes } from "./js/views/movimentacoes.js";
@@ -56,6 +57,7 @@ const MODULOS = {
   seguranca: { rotulo: "Segurança da conta", icone: "settings" },
   relatorios: { rotulo: "Relatórios", icone: "relatorios" },
   calendario: { rotulo: "Calendário", icone: "calendario" },
+  kanban: { rotulo: "Kanban", icone: "kanban" },
   impressao: { rotulo: "Impressão", icone: "print" },
   cadastros: { rotulo: "Cadastros", icone: "cadastros" },
   reporte: { rotulo: "Reporte de Erro", icone: "reporte" },
@@ -81,6 +83,7 @@ const VIEWS = {
   seguranca: renderSeguranca,
   relatorios: renderRelatorios,
   calendario: renderCalendario,
+  kanban: renderKanban,
   impressao: renderImpressao,
   cadastros: renderCadastros,
   reporte: renderReporte,

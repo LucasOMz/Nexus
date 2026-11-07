@@ -2528,3 +2528,133 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 .cal-dia.tem-contrato {
   box-shadow: inset 0 0 0 1px var(--md-sys-color-tertiary-container, rgba(255, 223, 158, 0.5));
 }
+
+/* =====================================================================
+   Kanban
+   =====================================================================
+   Colunas em trilho horizontal. A cartão é arrastável (HTML5 nativo) e o
+   clique abre o detalhe — por isso `cursor: grab` só no cartão, não na
+   coluna. */
+
+.kanban-wrap {
+  padding-bottom: 8px;
+}
+
+.kanban-trilho {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  overflow-x: auto;
+  padding-bottom: 12px;
+  scrollbar-width: thin;
+}
+
+.kanban-coluna {
+  flex: 0 0 280px;
+  width: 280px;
+  background: var(--md-sys-color-surface-container, #f2f5f3);
+  border-radius: var(--shape-lg);
+  padding: 10px;
+  transition: outline-color .12s ease;
+  outline: 2px dashed transparent;
+  outline-offset: -2px;
+}
+
+/* Alvo do arraste: a coluna inteira aceita o cartão. */
+.kanban-coluna.alvo {
+  outline-color: var(--md-sys-color-primary);
+}
+
+.kanban-cabecalho {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 2px 8px;
+}
+
+.kanban-titulo {
+  font-weight: 600;
+  font-size: 13.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kanban-cartoes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 8px;
+}
+
+.kanban-cartao {
+  background: var(--md-sys-color-surface);
+  border-radius: var(--shape-md);
+  padding: 10px;
+  cursor: grab;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  transition: box-shadow .12s ease, transform .12s ease;
+}
+
+.kanban-cartao:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .08);
+}
+
+.kanban-cartao:active {
+  cursor: grabbing;
+  transform: scale(.99);
+}
+
+/* Concluída continua visível, mas não compete com o que falta. */
+.kanban-cartao.concluida {
+  opacity: .55;
+}
+
+.kanban-cartao.concluida .kanban-cartao-titulo {
+  text-decoration: line-through;
+}
+
+.kanban-cartao-titulo {
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.kanban-cartao-desc {
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: var(--md-sys-color-on-surface-variant, #5b665f);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.kanban-rodape {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.kanban-rodape .chip {
+  font-size: 11px;
+  padding: 2px 7px;
+}
+
+/* Prazo vencido e prazo próximo: dois tons, não um. */
+.chip.danger {
+  background: var(--md-sys-color-error-container, #fde7e7);
+  color: var(--md-sys-color-error, #b3261e);
+}
+
+.chip.aviso {
+  background: var(--md-sys-color-warning-container, #fff4e0);
+  color: var(--md-sys-color-warning, #8a5a00);
+}
+
+.kanban-item:hover {
+  background: var(--md-sys-color-surface-container, #f2f5f3);
+  border-radius: var(--shape-sm);
+}
