@@ -191,9 +191,8 @@ export async function abrirDetalhes(ativo) {
 
   // --- 2b. quem já usou -------------------------------------------------
   //
-  // Máquina compartilhada tem mais de uma pessoa. A lista é corrente: um
-  // registro por pessoa, e quem não aparece há 30 dias sai — não é histórico
-  // de logon.
+  // Máquina compartilhada tem mais de uma pessoa. A lista guarda todo mundo
+  // que já se logou, com a data do último acesso — nada expira.
   if (usuarios.length) {
     const lista = el("div", {});
     for (const u of usuarios) {

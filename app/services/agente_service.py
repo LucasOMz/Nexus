@@ -448,7 +448,7 @@ def registrar_usuario_do_ativo(db: Session, ativo_id: int, nome: str | None) -> 
     uso atual — e a pergunta que a tela responde e "quem usa isto", nao
     "quem ja usou alguma vez".
     """
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timezone
 
     from app.models.core import Ativo
     from app.models.usuario_ativo import UsuarioDoAtivo
@@ -461,7 +461,6 @@ def registrar_usuario_do_ativo(db: Session, ativo_id: int, nome: str | None) -> 
         return
 
     agora = datetime.now(timezone.utc)
-    corte = agora - timedelta(days=30)
 
     ativo = db.get(Ativo, ativo_id)
     if ativo is None:
@@ -481,11 +480,17 @@ def registrar_usuario_do_ativo(db: Session, ativo_id: int, nome: str | None) -> 
     else:
         atual.ultimo_login = agora
 
-    # Limpeza: quem nao aparece ha 30 dias sai da lista.
-    db.query(UsuarioDoAtivo).filter(
-        UsuarioDoAtivo.ativo_id == ativo_id,
-        UsuarioDoAtivo.ultimo_login < corte,
-    ).delete(synchronize_session=False)
+    # ## Sem expiração
+    #
+    # Antes, quem não aparecia há 30 dias era removido — a lista respondia
+    # "quem usa isto", não "quem já usou".
+    #
+    # Agora guarda todo mundo que já se logou na máquina, com a data do
+    # último acesso de cada um. É histórico, e o tamanho é limitado pelo
+    # número de pessoas que passam pelo equipamento, não pelo tempo.
+    #
+    # Nada a apagar aqui. `primeira_vez` marca quando a pessoa apareceu pela
+    # primeira vez; `ultimo_login`, a última.
 
 
 def aplicar_inventario(db: Session, token: TokenAgente, payload: dict) -> dict:

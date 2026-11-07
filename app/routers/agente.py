@@ -504,9 +504,8 @@ def usuarios_do_ativo(
 ) -> list[UsuarioDoAtivoSaida]:
     """Quem já usou esta máquina, do mais recente para o mais antigo.
 
-    Máquina compartilhada tem mais de uma pessoa. A lista é corrente: um
-    registro por pessoa, e quem não aparece há 30 dias sai — não é histórico
-    de logon.
+    Máquina compartilhada tem mais de uma pessoa. A lista guarda todo mundo
+    que já se logou, com a data do último acesso de cada um — nada expira.
     """
     from app.models.usuario_ativo import UsuarioDoAtivo
 

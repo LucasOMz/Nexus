@@ -23,11 +23,14 @@ que acontece com o equipamento.
 Aqui é só uma lista corrente: um registro por pessoa, com a última vez que
 apareceu. **Sem linha por evento.**
 
-## Expiração
+## Histórico, sem expiração
 
-Quem não aparece há mais de 30 dias sai da lista. Sem isso, uma máquina
-usada por dez pessoas ao longo de dois anos acumularia nomes que não têm
-mais relação com o uso atual.
+A lista guarda **todo mundo** que já se logou na máquina, com a data do
+último acesso de cada um. Nada é removido por tempo.
+
+O tamanho é limitado pelo número de pessoas que passam pelo equipamento,
+não pelo prazo: um computador de balcão usado por trinta pessoas terá
+trinta linhas — e é exatamente a informação que se quer.
 """
 from __future__ import annotations
 
