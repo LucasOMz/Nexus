@@ -246,8 +246,15 @@ function abrirUsuario(usuario, lookups) {
           return;
         }
         try {
-          if (isEdit) await api.put(`/usuarios/${u.id}`, payload);
-          else await api.post("/usuarios", senha ? { ...payload, senha } : payload);
+          // A senha entra no corpo **nos dois caminhos**.
+          //
+          // Antes ela só era anexada no cadastro novo: ao editar, o campo era
+          // lido, o formulário aceitava, a tela dizia "Usuário salvo" — e a
+          // senha nunca chegava ao servidor. Quem tentasse entrar recebia
+          // "senha incorreta", sem nada estar quebrado.
+          const corpo = senha ? { ...payload, senha } : payload;
+          if (isEdit) await api.put(`/usuarios/${u.id}`, corpo);
+          else await api.post("/usuarios", corpo);
           close();
           toast("Usuário salvo");
           renderAdmin(document.getElementById("view"));
