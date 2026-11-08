@@ -9,10 +9,11 @@ import secrets
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, require_admin, require_escrita, require_exclusao
+from app.core.planta import planta_ativa
 from app.core.security import hash_password
 from app.database import get_db
 from app.models.core import Categoria, Departamento, Fornecedor, Localizacao, Usuario
@@ -47,15 +48,29 @@ def _ip(request: Request) -> str:
 # Departamento
 # ---------------------------------------------------------------------------
 @router.get("/departamentos", response_model=list[DepartamentoOut])
-def list_departamentos(db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
-    return db.query(Departamento).filter(Departamento.deleted_at.is_(None)).order_by(Departamento.nome).all()
+def list_departamentos(
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+    planta_id: int | None = Depends(planta_ativa),
+):
+    consulta = db.query(Departamento).filter(Departamento.deleted_at.is_(None))
+    if planta_id is not None:
+        # O legado (planta nula) continua visível: ativos e usuários já
+        # apontam para ele, e escondê-lo deixaria o vínculo órfão na tela.
+        consulta = consulta.filter(
+            or_(Departamento.planta_id.is_(None), Departamento.planta_id == planta_id)
+        )
+    return consulta.order_by(Departamento.nome).all()
 
 
 @router.post("/departamentos", response_model=DepartamentoOut, status_code=201)
 def create_departamento(
-    body: DepartamentoCreate, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(cad_write)
+    body: DepartamentoCreate, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(cad_write),
+    planta_id: int | None = Depends(planta_ativa),
 ):
-    obj = Departamento(**body.model_dump())
+    # Carimba a planta ativa: o cadastro criado aqui não aparece nas
+    # outras. O administrador sem planta escolhida grava nulo.
+    obj = Departamento(**body.model_dump(), planta_id=planta_id)
     db.add(obj)
     db.flush()
     audit(db, user, "create", "departamento", obj.id, ip=_ip(request), diff=body.model_dump())
@@ -95,15 +110,29 @@ def delete_departamento(
 # Localização
 # ---------------------------------------------------------------------------
 @router.get("/localizacoes", response_model=list[LocalizacaoOut])
-def list_localizacoes(db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
-    return db.query(Localizacao).filter(Localizacao.deleted_at.is_(None)).order_by(Localizacao.nome).all()
+def list_localizacoes(
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+    planta_id: int | None = Depends(planta_ativa),
+):
+    consulta = db.query(Localizacao).filter(Localizacao.deleted_at.is_(None))
+    if planta_id is not None:
+        # O legado (planta nula) continua visível: ativos e usuários já
+        # apontam para ele, e escondê-lo deixaria o vínculo órfão na tela.
+        consulta = consulta.filter(
+            or_(Localizacao.planta_id.is_(None), Localizacao.planta_id == planta_id)
+        )
+    return consulta.order_by(Localizacao.nome).all()
 
 
 @router.post("/localizacoes", response_model=LocalizacaoOut, status_code=201)
 def create_localizacao(
-    body: LocalizacaoCreate, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(cad_write)
+    body: LocalizacaoCreate, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(cad_write),
+    planta_id: int | None = Depends(planta_ativa),
 ):
-    obj = Localizacao(**body.model_dump())
+    # Carimba a planta ativa: o cadastro criado aqui não aparece nas
+    # outras. O administrador sem planta escolhida grava nulo.
+    obj = Localizacao(**body.model_dump(), planta_id=planta_id)
     db.add(obj)
     db.flush()
     audit(db, user, "create", "localizacao", obj.id, ip=_ip(request), diff=body.model_dump())
@@ -143,15 +172,29 @@ def delete_localizacao(
 # Fornecedor
 # ---------------------------------------------------------------------------
 @router.get("/fornecedores", response_model=list[FornecedorOut])
-def list_fornecedores(db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
-    return db.query(Fornecedor).filter(Fornecedor.deleted_at.is_(None)).order_by(Fornecedor.nome).all()
+def list_fornecedores(
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+    planta_id: int | None = Depends(planta_ativa),
+):
+    consulta = db.query(Fornecedor).filter(Fornecedor.deleted_at.is_(None))
+    if planta_id is not None:
+        # O legado (planta nula) continua visível: ativos e usuários já
+        # apontam para ele, e escondê-lo deixaria o vínculo órfão na tela.
+        consulta = consulta.filter(
+            or_(Fornecedor.planta_id.is_(None), Fornecedor.planta_id == planta_id)
+        )
+    return consulta.order_by(Fornecedor.nome).all()
 
 
 @router.post("/fornecedores", response_model=FornecedorOut, status_code=201)
 def create_fornecedor(
-    body: FornecedorCreate, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(cad_write)
+    body: FornecedorCreate, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(cad_write),
+    planta_id: int | None = Depends(planta_ativa),
 ):
-    obj = Fornecedor(**body.model_dump())
+    # Carimba a planta ativa: o cadastro criado aqui não aparece nas
+    # outras. O administrador sem planta escolhida grava nulo.
+    obj = Fornecedor(**body.model_dump(), planta_id=planta_id)
     db.add(obj)
     db.flush()
     audit(db, user, "create", "fornecedor", obj.id, ip=_ip(request), diff=body.model_dump())
@@ -195,19 +238,27 @@ def list_categorias(
     dominio: Dominio | None = Query(default=None),
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
+    planta_id: int | None = Depends(planta_ativa),
 ):
     q = db.query(Categoria).filter(Categoria.deleted_at.is_(None))
     if dominio is not None:
         # NULL (comum) OU do domínio solicitado.
         q = q.filter((Categoria.dominio.is_(None)) | (Categoria.dominio == dominio))
+    if planta_id is not None:
+        # O legado (planta nula) continua visível: ativos e usuários já
+        # apontam para ele, e escondê-lo deixaria o vínculo órfão na tela.
+        q = q.filter(or_(Categoria.planta_id.is_(None), Categoria.planta_id == planta_id))
     return q.order_by(Categoria.nome).all()
 
 
 @router.post("/categorias", response_model=CategoriaOut, status_code=201)
 def create_categoria(
-    body: CategoriaCreate, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(cad_write)
+    body: CategoriaCreate, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(cad_write),
+    planta_id: int | None = Depends(planta_ativa),
 ):
-    obj = Categoria(**body.model_dump())
+    # Carimba a planta ativa: o cadastro criado aqui não aparece nas
+    # outras. O administrador sem planta escolhida grava nulo.
+    obj = Categoria(**body.model_dump(), planta_id=planta_id)
     db.add(obj)
     db.flush()
     audit(db, user, "create", "categoria", obj.id, ip=_ip(request), diff=body.model_dump())

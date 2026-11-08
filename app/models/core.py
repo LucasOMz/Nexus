@@ -20,6 +20,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -67,9 +68,18 @@ class Planta(BaseModel, Base):
 
 class Departamento(BaseModel, Base):
     __tablename__ = "departamentos"
+    # Único por planta, não global: duas plantas podem ter "Financeiro".
+    __table_args__ = (
+        UniqueConstraint("planta_id", "nome", name="uq_departamento_planta_nome"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    nome: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
+
+    # Nulo = cadastro legado, anterior ao escopo por planta. Continua visível
+    # a todas, porque ativos e usuários já apontam para ele.
+    planta_id: Mapped[int | None] = mapped_column(ForeignKey("plantas.id"), index=True)
+
+    nome: Mapped[str] = mapped_column(String(120), nullable=False)
     sigla: Mapped[str | None] = mapped_column(String(20))
 
     usuarios: Mapped[list[Usuario]] = relationship(back_populates="departamento")
@@ -79,6 +89,10 @@ class Localizacao(BaseModel, Base):
     __tablename__ = "localizacoes"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+
+    # Nulo = legado compartilhado.
+    planta_id: Mapped[int | None] = mapped_column(ForeignKey("plantas.id"), index=True)
+
     nome: Mapped[str] = mapped_column(String(120), nullable=False)
     descricao: Mapped[str | None] = mapped_column(Text)
 
@@ -87,6 +101,10 @@ class Fornecedor(BaseModel, Base):
     __tablename__ = "fornecedores"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+
+    # Nulo = legado compartilhado.
+    planta_id: Mapped[int | None] = mapped_column(ForeignKey("plantas.id"), index=True)
+
     nome: Mapped[str] = mapped_column(String(160), nullable=False)
     cnpj: Mapped[str | None] = mapped_column(String(18))
     contato: Mapped[str | None] = mapped_column(String(120))
@@ -98,6 +116,10 @@ class Categoria(BaseModel, Base):
     __tablename__ = "categorias"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+
+    # Nulo = legado compartilhado.
+    planta_id: Mapped[int | None] = mapped_column(ForeignKey("plantas.id"), index=True)
+
     nome: Mapped[str] = mapped_column(String(120), nullable=False)
     dominio: Mapped[Dominio | None] = mapped_column(sa_enum(Dominio), nullable=True)  # NULL = comum
     descricao: Mapped[str | None] = mapped_column(Text)

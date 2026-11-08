@@ -903,6 +903,18 @@ ALTER TABLE kanban_atividades
 
 CREATE INDEX IF NOT EXISTS ix_kanban_atividades_arquivada_em
     ON kanban_atividades(arquivada_em);
+-- Cadastros de apoio por planta. Nullable: as linhas criadas antes deste
+-- escopo continuam visiveis a todas as plantas, porque ativos e usuarios
+-- ja apontam para elas.
+ALTER TABLE departamentos ADD COLUMN IF NOT EXISTS planta_id INTEGER REFERENCES plantas(id);
+ALTER TABLE localizacoes ADD COLUMN IF NOT EXISTS planta_id INTEGER REFERENCES plantas(id);
+ALTER TABLE fornecedores ADD COLUMN IF NOT EXISTS planta_id INTEGER REFERENCES plantas(id);
+ALTER TABLE categorias   ADD COLUMN IF NOT EXISTS planta_id INTEGER REFERENCES plantas(id);
+
+CREATE INDEX IF NOT EXISTS ix_departamentos_planta_id ON departamentos(planta_id);
+CREATE INDEX IF NOT EXISTS ix_localizacoes_planta_id  ON localizacoes(planta_id);
+CREATE INDEX IF NOT EXISTS ix_fornecedores_planta_id  ON fornecedores(planta_id);
+CREATE INDEX IF NOT EXISTS ix_categorias_planta_id    ON categorias(planta_id);
 
 
 COMMIT;

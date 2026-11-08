@@ -57,6 +57,9 @@ class DepartamentoOut(DepartamentoBase, DatasComFuso):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    # Nulo = cadastro legado, anterior ao escopo por planta. A tela mostra
+    # "todas" nesse caso, em vez de deixar em branco.
+    planta_id: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -76,6 +79,7 @@ class LocalizacaoOut(LocalizacaoBase, DatasComFuso):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    planta_id: int | None = None
 
 
 class FornecedorBase(SemVazios):
@@ -96,6 +100,7 @@ class FornecedorOut(FornecedorBase, DatasComFuso):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    planta_id: int | None = None
 
 
 class CategoriaBase(SemVazios):
@@ -114,6 +119,7 @@ class CategoriaOut(CategoriaBase, DatasComFuso):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    planta_id: int | None = None
 
 
 # ---------------------------------------------------------------------------
