@@ -168,6 +168,12 @@ function modal({ titulo, abas, acoes }) {
     }
   }
 
+  // Blindagem contra duplo clique: o menu fecha e este modal abre no centro
+  // da tela, e o segundo clique do gesto cai no botao que acabou de nascer.
+  // 320ms e o intervalo tipico entre os dois cliques.
+  const nasceu = Date.now();
+  const podeClicar = () => Date.now() - nasceu > 320;
+
   const caixa = el("div", { class: "kb-modal" },
     el("div", { class: "kb-modal-topo" },
       el("h2", {}, titulo),
@@ -184,7 +190,10 @@ function modal({ titulo, abas, acoes }) {
       if (a instanceof Node) return a;
       return el("button", {
         class: "kb-btn " + (a.classe || ""),
-        onclick: () => a.onClick(fecharModal),
+        onclick: () => {
+          if (!podeClicar()) return;
+          a.onClick(fecharModal);
+        },
       }, a.label);
     })));
 
@@ -318,6 +327,13 @@ function desenhar(root) {
         desenhar(root);
       },
     }, mostrarConcluidas ? "Concluídas: visíveis" : "Concluídas: ocultas"),
+    el("button", {
+      class: "kb-btn pequeno",
+      title: "Colunas e atividades fora do quadro",
+      onclick: () => abrirArquivados(root),
+    },
+      el("span", { html: icon("arquivo", 15) }),
+      el("span", {}, "Arquivados")),
     el("button", { class: "kb-btn cheio", onclick: () => criarBucket(root) },
       el("span", { html: icon("plus", 17) }),
       el("span", {}, "Nova coluna"))));
@@ -655,7 +671,7 @@ function abrirMenuBucket(root, bucket, ancora) {
     el("button", {
       class: "kb-menu-item perigo",
       onclick: () => { fecharMenu(); excluirBucket(root, bucket); },
-    }, el("span", { html: icon("trash", 16) }), el("span", {}, "Excluir coluna")));
+    }, el("span", { html: icon("trash", 16) }), el("span", {}, "Arquivar coluna")));
 
   document.body.append(menu);
 
@@ -782,15 +798,113 @@ function renomearBucket(root, bucket) {
 async function excluirBucket(root, bucket) {
   const quantas = bucket.atividades.length;
   const aviso = quantas
-    ? `A coluna tem ${quantas} atividade(s) e elas serão excluídas junto.`
+    ? `As ${quantas} atividade(s) dela vão junto para o arquivo.`
     : "A coluna está vazia.";
-  if (!(await confirmar("Excluir coluna",
-    `A coluna "${bucket.nome}" será removida.\n\n${aviso}`,
-    { rotulo: "Excluir" }))) return;
+
+  const ok = await confirmar("Arquivar coluna",
+    `A coluna "${bucket.nome}" sai do quadro.\n\n${aviso}\n\n`
+    + "Nada é apagado: dá para restaurar em Arquivados.",
+    { rotulo: "Arquivar", perigo: false });
+
+  if (!ok) return;
+
   try {
+    // Sem `com_atividades=true`, o servidor **arquiva** — sai do quadro e
+    // continua no banco. O caminho destrutivo existe, mas é explícito e
+    // este botão não o usa.
     await api.del(`/kanban/buckets/${bucket.id}`);
+    toast("Coluna arquivada.");
     await recarregar(root);
   } catch (e) { mostrarErro(e); }
+}
+
+
+/**
+ * Lista o que está fora do quadro, com opção de restaurar.
+ *
+ * ## Por que isto existe
+ *
+ * Excluir uma coluna levava as atividades junto, sem volta. Arquivar resolve
+ * o acidente — mas só resolve se houver como **voltar atrás**. Sem esta
+ * tela, arquivado seria apenas "sumiu para sempre, com nome diferente".
+ */
+async function abrirArquivados(root) {
+  let dados;
+
+  try {
+    dados = await api.get("/kanban/arquivados");
+  } catch (e) {
+    mostrarErro(e);
+    return;
+  }
+
+  const colunas = dados?.buckets || [];
+  const atividades = dados?.atividades || [];
+
+  const corpo = el("div", {});
+
+  // --- colunas ---------------------------------------------------------
+  corpo.append(el("h3", { class: "kb-secao-titulo" }, "Colunas arquivadas"));
+
+  if (!colunas.length) {
+    corpo.append(el("p", { class: "kb-vazio" }, "Nenhuma coluna arquivada."));
+  } else {
+    for (const b of colunas) {
+      corpo.append(el("div", { class: "kb-arq-linha" },
+        el("div", { class: "kb-arq-info" },
+          el("div", { class: "kb-arq-nome" }, b.nome),
+          el("div", { class: "kb-arq-data" },
+            `${b.atividades} atividade(s) · ${fmtPrazo(b.arquivado_em)}`)),
+        el("button", {
+          class: "kb-btn pequeno tonal",
+          onclick: async (ev) => {
+            ev.stopPropagation();
+            try {
+              await api.post(`/kanban/buckets/${b.id}/restaurar`);
+              toast("Coluna restaurada.");
+              fecharModal();
+              await recarregar(root);
+            } catch (e) { mostrarErro(e); }
+          },
+        }, "Restaurar")));
+    }
+  }
+
+  // --- atividades ------------------------------------------------------
+  corpo.append(el("h3", {
+    class: "kb-secao-titulo",
+    style: "margin-top:22px",
+  }, "Atividades arquivadas"));
+
+  if (!atividades.length) {
+    corpo.append(el("p", { class: "kb-vazio" }, "Nenhuma atividade arquivada."));
+  } else {
+    for (const a of atividades) {
+      corpo.append(el("div", { class: "kb-arq-linha" },
+        el("div", { class: "kb-arq-info" },
+          el("div", { class: "kb-arq-nome" }, a.titulo),
+          el("div", { class: "kb-arq-data" },
+            `${a.bucket_nome} · ${fmtPrazo(a.arquivada_em)}`)),
+        el("button", {
+          class: "kb-btn pequeno tonal",
+          onclick: async (ev) => {
+            ev.stopPropagation();
+            try {
+              await api.post(`/kanban/atividades/${a.id}/restaurar`);
+              toast("Atividade restaurada.");
+              fecharModal();
+              await recarregar(root);
+            } catch (e) { mostrarErro(e); }
+          },
+        }, "Restaurar")));
+    }
+  }
+
+  modal({
+    titulo: "Arquivados",
+    abas: [{ id: "a", rotulo: "Arquivados", render: () => corpo }],
+    acoes: [{ label: "Fechar", classe: "cheio", onClick: (fechar) => fechar() }],
+  });
 }
 
 // ---------------------------------------------------------------------------

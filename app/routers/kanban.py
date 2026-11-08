@@ -126,7 +126,9 @@ def quadro(
     planta_id: int | None = Depends(planta_ativa),
 ) -> list[BucketOut]:
     """O quadro inteiro: buckets com as atividades dentro."""
-    consulta = aplicar_filtro(db.query(Bucket), Bucket, planta_id)
+    consulta = aplicar_filtro(db.query(Bucket), Bucket, planta_id).filter(
+        Bucket.arquivado_em.is_(None)
+    )
     buckets = (
         consulta.options(
             selectinload(Bucket.atividades).selectinload(Atividade.itens),
@@ -152,6 +154,7 @@ def quadro(
             atividades=[
                 _serializar(a, nomes)
                 for a in sorted(b.atividades, key=lambda x: (x.ordem, x.id))
+                if a.arquivada_em is None
             ],
         )
         for b in buckets
@@ -227,17 +230,46 @@ def editar_bucket(
 @router.delete("/buckets/{bucket_id}")
 def excluir_bucket(
     bucket_id: int,
+    com_atividades: bool = False,
     db: Session = Depends(get_db),
     user: Usuario = Depends(get_current_user),
 ) -> dict:
+    """Exclui uma coluna. Vazia, direto; com atividades, só com declaração.
+
+    ## A trava
+
+    Apagar um bucket leva as atividades junto (cascade). Sem `com_atividades`,
+    o servidor **recusa** quando há itens dentro e devolve a contagem — o
+    cliente usa esse número para montar a confirmação.
+
+    Isso não substitui a confirmação na tela; impede que ela seja a **única**
+    barreira. Bug de interface, duplo clique ou requisição manual param aqui.
+    """
     bucket = db.get(Bucket, bucket_id)
     if bucket is None:
         raise HTTPException(404, "Bucket não encontrado.")
-    # Apagar um bucket leva as atividades junto (cascade). A tela precisa
-    # avisar: é a diferença entre "arquivar a coluna" e "perder os cartões".
+
+    quantas = (
+        db.query(Atividade)
+        .filter(Atividade.bucket_id == bucket.id, Atividade.arquivada_em.is_(None))
+        .count()
+    )
+
+    # Sem `com_atividades`, **arquiva** — a operação segura.
+    if not com_atividades:
+        agora = datetime.now(timezone.utc)
+        bucket.arquivado_em = agora
+        db.query(Atividade).filter(
+            Atividade.bucket_id == bucket.id,
+            Atividade.arquivada_em.is_(None),
+        ).update({Atividade.arquivada_em: agora}, synchronize_session=False)
+        db.commit()
+        return {"ok": True, "arquivado": True, "atividades_arquivadas": quantas}
+
+    # Com a declaração explícita, apaga de verdade.
     db.delete(bucket)
     db.commit()
-    return {"ok": True}
+    return {"ok": True, "arquivado": False, "atividades_excluidas": quantas}
 
 
 class OrdemEntrada(BaseModel):
@@ -438,13 +470,120 @@ def concluir_atividade(
 @router.delete("/atividades/{atividade_id}")
 def excluir_atividade(
     atividade_id: int,
+    definitivo: bool = False,
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(get_current_user),
+) -> dict:
+    """Arquiva a atividade. Com `definitivo=true`, apaga de verdade."""
+    atividade = db.get(Atividade, atividade_id)
+    if atividade is None:
+        raise HTTPException(404, "Atividade não encontrada.")
+
+    if definitivo:
+        db.delete(atividade)
+        db.commit()
+        return {"ok": True, "arquivado": False}
+
+    atividade.arquivada_em = datetime.now(timezone.utc)
+    db.commit()
+    return {"ok": True, "arquivado": True}
+
+
+# ---------------------------------------------------------------------------
+# Arquivados
+# ---------------------------------------------------------------------------
+
+
+class ArquivadoBucket(BaseModel):
+    id: int
+    nome: str
+    arquivado_em: datetime
+    atividades: int
+
+
+class ArquivadoAtividade(BaseModel):
+    id: int
+    titulo: str
+    bucket_nome: str
+    arquivada_em: datetime
+
+
+@router.get("/arquivados")
+def listar_arquivados(
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(get_current_user),
+    planta_id: int | None = Depends(planta_ativa),
+) -> dict:
+    """O que está fora do quadro: colunas e atividades arquivadas."""
+    colunas = aplicar_filtro(db.query(Bucket), Bucket, planta_id).filter(
+        Bucket.arquivado_em.is_not(None)
+    ).all()
+
+    atividades = (
+        db.query(Atividade)
+        .join(Bucket, Atividade.bucket_id == Bucket.id)
+        .filter(
+            Atividade.arquivada_em.is_not(None),
+            Bucket.arquivado_em.is_(None),
+        )
+        .order_by(Atividade.arquivada_em.desc())
+        .limit(200)
+        .all()
+    )
+
+    nomes = {b.id: b.nome for b in db.query(Bucket).all()}
+
+    return {
+        "buckets": [
+            ArquivadoBucket(
+                id=b.id,
+                nome=b.nome,
+                arquivado_em=b.arquivado_em,
+                atividades=sum(1 for a in b.atividades if a.arquivada_em is not None),
+            )
+            for b in colunas
+        ],
+        "atividades": [
+            ArquivadoAtividade(
+                id=a.id,
+                titulo=a.titulo,
+                bucket_nome=nomes.get(a.bucket_id, "—"),
+                arquivada_em=a.arquivada_em,
+            )
+            for a in atividades
+        ],
+    }
+
+
+@router.post("/buckets/{bucket_id}/restaurar")
+def restaurar_bucket(
+    bucket_id: int,
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(get_current_user),
+) -> dict:
+    """Devolve a coluna ao quadro, com as atividades que estavam nela."""
+    bucket = db.get(Bucket, bucket_id)
+    if bucket is None:
+        raise HTTPException(404, "Bucket não encontrado.")
+
+    bucket.arquivado_em = None
+    db.query(Atividade).filter(Atividade.bucket_id == bucket.id).update(
+        {Atividade.arquivada_em: None}, synchronize_session=False
+    )
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/atividades/{atividade_id}/restaurar")
+def restaurar_atividade(
+    atividade_id: int,
     db: Session = Depends(get_db),
     user: Usuario = Depends(get_current_user),
 ) -> dict:
     atividade = db.get(Atividade, atividade_id)
     if atividade is None:
         raise HTTPException(404, "Atividade não encontrada.")
-    db.delete(atividade)
+    atividade.arquivada_em = None
     db.commit()
     return {"ok": True}
 

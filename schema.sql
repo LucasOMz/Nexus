@@ -893,6 +893,16 @@ CREATE TABLE IF NOT EXISTS kanban_responsaveis (
 	FOREIGN KEY(atividade_id) REFERENCES kanban_atividades (id), 
 	FOREIGN KEY(usuario_id) REFERENCES usuarios (id)
 );
+-- Kanban: arquivamento. Excluir coluna leva as atividades junto, sem volta;
+-- arquivar tira do quadro e deixa a porta aberta para restaurar.
+ALTER TABLE kanban_buckets
+    ADD COLUMN IF NOT EXISTS arquivado_em TIMESTAMPTZ;
+
+ALTER TABLE kanban_atividades
+    ADD COLUMN IF NOT EXISTS arquivada_em TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS ix_kanban_atividades_arquivada_em
+    ON kanban_atividades(arquivada_em);
 
 
 COMMIT;

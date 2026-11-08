@@ -72,15 +72,67 @@ class TestBuckets:
         ids = [x["id"] for x in quadro if x["id"] in (a, b)]
         assert ids == [b, a], ids
 
-    def test_excluir_bucket_leva_as_atividades(self, client, auth_headers):
-        bucket = _bucket(client, auth_headers, "Temporário")
-        _atividade(client, auth_headers, bucket, "some junto")
-
+    def test_excluir_bucket_vazio_e_direto(self, client, auth_headers):
+        """Coluna vazia não precisa de confirmação — não há o que perder."""
+        bucket = _bucket(client, auth_headers, "Vazia")
         assert client.delete(f"/api/v1/kanban/buckets/{bucket}",
                              headers=auth_headers).status_code == 200
 
+    def test_arquivar_bucket_preserva_as_atividades(self, client, auth_headers):
+        """Sem `com_atividades`, a coluna sai do quadro mas nada é perdido.
+
+        ## Por que arquivar é o padrão
+
+        Excluir leva as atividades junto por cascade, **sem volta**. Já se
+        perdeu trabalho assim: um duplo clique no menu abriu a confirmação e
+        o segundo clique acertou o "Excluir" que acabara de nascer.
+
+        Arquivar tira do quadro e deixa a porta aberta para restaurar.
+        """
+        bucket = _bucket(client, auth_headers, "Cheia")
+        _atividade(client, auth_headers, bucket, "volta depois")
+
+        r = client.delete(f"/api/v1/kanban/buckets/{bucket}", headers=auth_headers)
+        assert r.status_code == 200, r.text
+        assert r.json()["arquivado"] is True
+        assert r.json()["atividades_arquivadas"] == 1
+
+        # Saiu do quadro...
         quadro = client.get("/api/v1/kanban", headers=auth_headers).json()
         assert all(x["id"] != bucket for x in quadro)
+
+        # ...mas está nos arquivados.
+        arquivados = client.get("/api/v1/kanban/arquivados", headers=auth_headers).json()
+        assert any(b["id"] == bucket for b in arquivados["buckets"])
+
+    def test_restaurar_bucket_traz_as_atividades(self, client, auth_headers):
+        bucket = _bucket(client, auth_headers, "Volta")
+        _atividade(client, auth_headers, bucket, "eu volto")
+
+        client.delete(f"/api/v1/kanban/buckets/{bucket}", headers=auth_headers)
+        r = client.post(f"/api/v1/kanban/buckets/{bucket}/restaurar",
+                        headers=auth_headers)
+        assert r.status_code == 200, r.text
+
+        quadro = client.get("/api/v1/kanban", headers=auth_headers).json()
+        coluna = next((x for x in quadro if x["id"] == bucket), None)
+        assert coluna is not None
+        assert [a["titulo"] for a in coluna["atividades"]] == ["eu volto"]
+
+    def test_excluir_definitivo_apaga_de_verdade(self, client, auth_headers):
+        """`com_atividades=true` é o caminho destrutivo, agora explícito."""
+        bucket = _bucket(client, auth_headers, "Adeus")
+        _atividade(client, auth_headers, bucket, "some")
+
+        r = client.delete(
+            f"/api/v1/kanban/buckets/{bucket}?com_atividades=true",
+            headers=auth_headers,
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["arquivado"] is False
+
+        arquivados = client.get("/api/v1/kanban/arquivados", headers=auth_headers).json()
+        assert all(b["id"] != bucket for b in arquivados["buckets"])
 
 
 class TestAtividades:

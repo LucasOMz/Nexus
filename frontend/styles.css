@@ -5325,3 +5325,57 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
     width: 100%;
   }
 }
+
+/* =====================================================================
+   Kanban — Arquivados
+   ===================================================================== */
+
+.kb-arq-linha {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 8px;
+  border-radius: 4px;
+  border-bottom: 1px solid var(--k-linha);
+  transition: background .12s;
+}
+
+.kb-arq-linha:last-child {
+  border-bottom: none;
+}
+
+.kb-arq-linha:hover {
+  background: var(--k-cartao-hover);
+}
+
+:root[data-theme="dark"] .kb-arq-linha {
+  border-color: #3a3a3a;
+}
+
+:root[data-theme="dark"] .kb-arq-linha:hover {
+  background: #333;
+}
+
+.kb-arq-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.kb-arq-nome {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--k-texto);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-arq-data {
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--k-texto-fraco);
+}
+
+:root[data-theme="dark"] .kb-arq-data {
+  color: #b3b0ad;
+}

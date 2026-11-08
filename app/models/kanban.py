@@ -57,6 +57,11 @@ class Bucket(BaseModel, Base):
     # Cor do cabeçalho, no padrão do sistema. Vazio usa a cor padrão da tela.
     cor: Mapped[str | None] = mapped_column(String(20))
 
+    # Arquivamento: a coluna sai do quadro mas nada é apagado. Excluir um
+    # bucket leva as atividades junto por cascade, e isso é perda de trabalho
+    # sem volta — arquivar é a operação segura.
+    arquivado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     atividades: Mapped[list["Atividade"]] = relationship(
         back_populates="bucket", cascade="all, delete-orphan"
     )
@@ -94,6 +99,9 @@ class Atividade(BaseModel, Base):
 
     # Quando começa. O prazo já existia; juntos dão o intervalo da tarefa.
     data_inicio: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # Arquivada: some do quadro, continua no banco e pode voltar.
+    arquivada_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
 
     criado_por_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
 
