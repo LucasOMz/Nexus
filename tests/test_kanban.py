@@ -223,3 +223,81 @@ class TestModulo:
 
         r = client.get("/api/v1/kanban", headers=headers)
         assert r.status_code == 403, r.text
+
+class TestOrdem:
+    """Reordenar por arraste.
+
+    ## O bug
+
+    O drop só acontecia na coluna e mandava ordem: 0. O cartão arrastado
+    ia para o topo e **os outros não se mexiam** — a coluna ficava com
+    empates e o banco devolvia uma sequência arbitrária.
+
+    ## A correção
+
+    O servidor renumera a coluna inteira (0..n-1) depois de mover, e aceita
+    ntes_de_id para saber onde inserir.
+    """
+
+    def _titulos(self, client, headers, bucket_id):
+        quadro = client.get("/api/v1/kanban", headers=headers).json()
+        coluna = next(x for x in quadro if x["id"] == bucket_id)
+        return [a["titulo"] for a in coluna["atividades"]]
+
+    def test_mover_para_o_topo(self, client, auth_headers):
+        bucket = _bucket(client, auth_headers, "Ordem")
+        a = _atividade(client, auth_headers, bucket, "A")
+        _atividade(client, auth_headers, bucket, "B")
+        c = _atividade(client, auth_headers, bucket, "C")
+
+        assert self._titulos(client, auth_headers, bucket) == ["A", "B", "C"]
+
+        r = client.post(f"/api/v1/kanban/atividades/{c}/mover",
+                        headers=auth_headers,
+                        json={"bucket_id": bucket, "antes_de_id": a})
+        assert r.status_code == 200, r.text
+
+        assert self._titulos(client, auth_headers, bucket) == ["C", "A", "B"]
+
+    def test_mover_para_o_fim(self, client, auth_headers):
+        bucket = _bucket(client, auth_headers, "Ordem")
+        a = _atividade(client, auth_headers, bucket, "A")
+        _atividade(client, auth_headers, bucket, "B")
+        _atividade(client, auth_headers, bucket, "C")
+
+        r = client.post(f"/api/v1/kanban/atividades/{a}/mover",
+                        headers=auth_headers,
+                        json={"bucket_id": bucket, "no_fim": True})
+        assert r.status_code == 200, r.text
+
+        assert self._titulos(client, auth_headers, bucket) == ["B", "C", "A"]
+
+    def test_ordem_nao_tem_empates(self, client, auth_headers):
+        """Depois de mover, cada cartão tem uma posição distinta.
+
+        Empate é o que fazia a coluna 'jogar na ordem que quisesse'.
+        """
+        bucket = _bucket(client, auth_headers, "Ordem")
+        ids = [_atividade(client, auth_headers, bucket, t) for t in "ABCD"]
+
+        client.post(f"/api/v1/kanban/atividades/{ids[3]}/mover",
+                    headers=auth_headers,
+                    json={"bucket_id": bucket, "antes_de_id": ids[1]})
+
+        quadro = client.get("/api/v1/kanban", headers=auth_headers).json()
+        coluna = next(x for x in quadro if x["id"] == bucket)
+        ordens = [a["ordem"] for a in coluna["atividades"]]
+        assert len(set(ordens)) == len(ordens), ordens
+
+    def test_mover_entre_buckets_renumera_a_origem(self, client, auth_headers):
+        origem = _bucket(client, auth_headers, "Origem")
+        destino = _bucket(client, auth_headers, "Destino")
+        a = _atividade(client, auth_headers, origem, "A")
+        _atividade(client, auth_headers, origem, "B")
+
+        client.post(f"/api/v1/kanban/atividades/{a}/mover",
+                    headers=auth_headers, json={"bucket_id": destino})
+
+        quadro = client.get("/api/v1/kanban", headers=auth_headers).json()
+        col = next(x for x in quadro if x["id"] == origem)
+        assert [x["ordem"] for x in col["atividades"]] == [0]

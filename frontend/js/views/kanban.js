@@ -23,12 +23,18 @@ import { api } from "../api.js";
 import { state } from "../state.js";
 import { ctx } from "../context.js";
 import { el, icon, toast, skeleton, emptyState, mostrarErro } from "../ui.js";
+import { grade, calendario, graficos, linhaDoTempo } from "./kanban_views.js";
 
 let dados = [];
 let busca = "";
 let usuarios = [];
 let filtroPrioridade = "";
 let mostrarConcluidas = true;
+
+// Visualização atual. Só no navegador: qual formato cada pessoa prefere
+// é escolha de quem olha, não dado do quadro.
+let vista = "quadro";
+let mesCalendario = null;
 
 /** Colunas recolhidas — guardado no navegador, nao no servidor. */
 function colunasRecolhidas() {
@@ -276,6 +282,25 @@ function desenhar(root) {
     el("option", { value: "baixa" }, "Baixa"));
   filtro.value = filtroPrioridade;
 
+  // --- seletor de visualização -----------------------------------------
+  const VISTAS = [
+    { id: "quadro", rotulo: "Quadro", icone: "kanban" },
+    { id: "grade", rotulo: "Grade", icone: "grade" },
+    { id: "calendario", rotulo: "Calendário", icone: "calendario" },
+    { id: "graficos", rotulo: "Gráficos", icone: "graficos" },
+    { id: "timeline", rotulo: "Linha do tempo", icone: "timeline" },
+  ];
+
+  const barraVistas = el("div", { class: "kb-vistas" },
+    ...VISTAS.map((v) => el("button", {
+      class: "kb-vista" + (vista === v.id ? " ativa" : ""),
+      onclick: () => { vista = v.id; desenhar(root); },
+    },
+      el("span", { html: icon(v.icone, 16) }),
+      el("span", {}, v.rotulo))));
+
+  wrap.append(barraVistas);
+
   wrap.append(el("div", { class: "kb-topo" },
     el("div", {},
       el("h1", { class: "kb-titulo-quadro" }, "Kanban"),
@@ -314,7 +339,7 @@ function desenhar(root) {
   // --- trilho -----------------------------------------------------------
   const trilho = el("div", { class: "kb-trilho" });
 
-  if (!dados.length) {
+  if (!dados.length && vista === "quadro") {
     trilho.append(el("div", { class: "kb-nada" },
       el("div", { class: "kb-nada-titulo" }, "Seu quadro está vazio"),
       el("div", { class: "kb-nada-texto" },
@@ -322,9 +347,28 @@ function desenhar(root) {
         + "um bom começo.")));
   }
 
-  for (const bucket of dados) trilho.append(coluna(root, bucket));
+  if (vista === "quadro") {
+    for (const bucket of dados) trilho.append(coluna(root, bucket));
+    wrap.append(trilho);
+  } else {
+    const acoes = {
+      aoAbrir: (a) => abrirAtividade(root, a),
+      aoConcluir: async (a) => {
+        try {
+          await api.post(`/kanban/atividades/${a.id}/concluir`);
+          await recarregar(root);
+        } catch (e) { mostrarErro(e); }
+      },
+    };
 
-  wrap.append(trilho);
+    let conteudo;
+    if (vista === "grade") conteudo = grade(dados, acoes);
+    else if (vista === "calendario") conteudo = calendario(dados, { ...acoes, mes: mesCalendario });
+    else if (vista === "graficos") conteudo = graficos(dados);
+    else conteudo = linhaDoTempo(dados, acoes);
+
+    wrap.append(el("div", { class: "kb-vista-corpo" }, conteudo));
+  }
   root.append(wrap);
 }
 
@@ -340,7 +384,7 @@ function coluna(root, bucket) {
       ev.preventDefault();
       col.classList.remove("alvo");
       const id = Number(ev.dataTransfer.getData("text/plain"));
-      if (id) await mover(root, id, bucket.id);
+      if (id) await mover(root, id, bucket.id, { noFim: true });
     },
   });
 
@@ -464,6 +508,22 @@ function cartao(root, a) {
       card.classList.add("arrastando");
     },
     ondragend: () => card.classList.remove("arrastando"),
+
+    // Soltar sobre um cartao insere antes dele. E o que permite reordenar
+    // dentro da coluna — antes o drop so existia na coluna inteira.
+    ondragover: (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      card.classList.add("alvo-antes");
+    },
+    ondragleave: () => card.classList.remove("alvo-antes"),
+    ondrop: async (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      card.classList.remove("alvo-antes");
+      const id = Number(ev.dataTransfer.getData("text/plain"));
+      if (id && id !== a.id) await mover(root, id, a.bucket_id, { antesDeId: a.id });
+    },
   });
 
   // Faixa de prioridade: só alta e urgente ganham, e é curta.
@@ -529,10 +589,21 @@ async function recarregar(root) {
   desenhar(root);
 }
 
-async function mover(root, atividadeId, bucketId) {
+/**
+ * Move o cartão.
+ *
+ * `antesDeId` insere imediatamente antes daquele cartão; sem ele, `noFim`
+ * põe no fim da coluna. Quem calcula o índice é o servidor — o cliente só
+ * descreve o que o usuário fez. Mandar "ordem: 0" sempre era o bug: todo
+ * cartão arrastado ia para o topo e os demais não se mexiam.
+ */
+async function mover(root, atividadeId, bucketId, { antesDeId = null, noFim = false } = {}) {
   try {
-    await api.post(`/kanban/atividades/${atividadeId}/mover`,
-      { bucket_id: bucketId, ordem: 0 });
+    await api.post(`/kanban/atividades/${atividadeId}/mover`, {
+      bucket_id: bucketId,
+      antes_de_id: antesDeId,
+      no_fim: noFim,
+    });
     await recarregar(root);
   } catch (e) { mostrarErro(e); }
 }
@@ -1091,33 +1162,13 @@ function abrirAtividade(root, a) {
       })),
     el("div", { class: "kb-modal-corpo" }, corpo),
     el("div", { class: "kb-modal-pe" },
-      el("button", {
-        class: "kb-btn pequeno tonal",
-        onclick: async () => {
-          try {
-            await api.post(`/kanban/atividades/${a.id}/concluir`);
-            await recarregar(root);
-            fecharModal();
-          } catch (e) { mostrarErro(e); }
-        },
-      },
-        el("span", { html: icon("check", 15) }),
-        el("span", {}, a.concluida ? "Reabrir" : "Concluir")),
-      el("button", {
-        class: "kb-btn pequeno perigo",
-        onclick: async () => {
-          if (!(await confirmar("Excluir atividade",
-            `"${a.titulo}" será removida do quadro.`, { rotulo: "Excluir" }))) return;
-          try {
-            await api.del(`/kanban/atividades/${a.id}`);
-            fecharModal();
-            await recarregar(root);
-          } catch (e) { mostrarErro(e); }
-        },
-      },
-        el("span", { html: icon("trash", 15) }),
-        el("span", {}, "Excluir")),
-      el("span", { class: "kb-espaco" }),
+      // Só Salvar neste rodapé.
+      //
+      // Concluir saiu: é o checkbox do cartão, e o botão fechava o modal
+      // sem salvar o que estava editado — dois caminhos para o mesmo gesto,
+      // um deles destruindo o trabalho.
+      //
+      // Excluir saiu: vive no cartão e no menu da coluna, longe do Salvar.
       el("button", {
         class: "kb-btn pequeno cheio",
         onclick: async () => {

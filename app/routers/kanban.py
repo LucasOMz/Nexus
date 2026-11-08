@@ -330,7 +330,29 @@ def editar_atividade(
 
 class MoverEntrada(BaseModel):
     bucket_id: int
+    # Índice desejado (0 = topo). Ignorado quando `antes_de_id` vem.
     ordem: int = 0
+    # Soltar sobre um cartão: entra imediatamente antes dele.
+    antes_de_id: int | None = None
+    # Soltar no vazio da coluna: vai para o fim.
+    no_fim: bool = False
+
+
+def _renumerar(db: Session, bucket_id: int) -> None:
+    """Reatribui 0..n-1 às atividades de um bucket, na ordem atual.
+
+    Sem isto cada arraste deixa dois cartões com a mesma `ordem`, e o banco
+    passa a devolver uma sequência arbitrária — o sintoma que apareceu:
+    "o bucket joga na ordem que quiser".
+    """
+    itens = (
+        db.query(Atividade)
+        .filter(Atividade.bucket_id == bucket_id)
+        .order_by(Atividade.ordem, Atividade.id)
+        .all()
+    )
+    for posicao, item in enumerate(itens):
+        item.ordem = posicao
 
 
 @router.post("/atividades/{atividade_id}/mover", response_model=AtividadeOut)
@@ -340,7 +362,7 @@ def mover_atividade(
     db: Session = Depends(get_db),
     user: Usuario = Depends(get_current_user),
 ) -> AtividadeOut:
-    """Move o cartão para outro bucket, ou reposiciona no mesmo."""
+    """Move o cartão para outro bucket e/ou outra posição."""
     atividade = db.get(Atividade, atividade_id)
     if atividade is None:
         raise HTTPException(404, "Atividade não encontrada.")
@@ -348,8 +370,43 @@ def mover_atividade(
     if destino is None:
         raise HTTPException(404, "Bucket de destino não encontrado.")
 
+    origem_id = atividade.bucket_id
+
+    # Tira do lugar de origem antes de calcular a posição nova, senão ela
+    # própria entra na contagem.
     atividade.bucket_id = destino.id
-    atividade.ordem = entrada.ordem
+    atividade.ordem = 10_000
+    db.flush()
+
+    irmaos = (
+        db.query(Atividade)
+        .filter(
+            Atividade.bucket_id == destino.id,
+            Atividade.id != atividade.id,
+        )
+        .order_by(Atividade.ordem, Atividade.id)
+        .all()
+    )
+
+    if entrada.antes_de_id is not None:
+        indice = next(
+            (i for i, x in enumerate(irmaos) if x.id == entrada.antes_de_id),
+            len(irmaos),
+        )
+    elif entrada.no_fim:
+        indice = len(irmaos)
+    else:
+        indice = max(0, min(entrada.ordem, len(irmaos)))
+
+    irmaos.insert(indice, atividade)
+
+    for posicao, item in enumerate(irmaos):
+        item.ordem = posicao
+
+    # A coluna de origem também precisa fechar o buraco deixado.
+    if origem_id != destino.id:
+        _renumerar(db, origem_id)
+
     db.commit()
     db.refresh(atividade)
     return _serializar(atividade, {})
