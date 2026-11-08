@@ -16,7 +16,7 @@ from app.core.deps import get_current_user, require_admin, require_escrita, requ
 from app.core.planta import planta_ativa
 from app.core.security import hash_password
 from app.database import get_db
-from app.models.core import Categoria, Departamento, Fornecedor, Localizacao, Usuario
+from app.models.core import Categoria, Departamento, Fornecedor, Localizacao, Planta, Usuario
 from app.models.enums import Dominio
 from app.schemas.common import (
     CategoriaCreate,
@@ -396,3 +396,59 @@ def delete_usuario(
     obj.deleted_at = datetime.now(timezone.utc)
     audit(db, user, "delete", "usuario", obj.id, ip=_ip(request))
     db.commit()
+
+# ---------------------------------------------------------------------------
+# Cadastros legados
+# ---------------------------------------------------------------------------
+@router.get("/cadastros/legado")
+def contar_legado(
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+) -> dict:
+    """Quantos cadastros ainda estão sem planta.
+
+    A tela usa esse número para oferecer a atribuição — sem ele, os registros
+    antigos ficam aparecendo em todas as plantas e ninguém sabe por quê.
+    """
+    return {
+        modelo.__tablename__: db.query(modelo)
+        .filter(modelo.deleted_at.is_(None), modelo.planta_id.is_(None))
+        .count()
+        for modelo in (Departamento, Localizacao, Fornecedor, Categoria)
+    }
+
+
+@router.post("/cadastros/atribuir-legado")
+def atribuir_legado(
+    planta_id: int = Query(..., description="Planta que recebe os cadastros sem dono"),
+    request: Request = None,
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(require_admin),
+) -> dict:
+    """Move os cadastros sem planta para a planta informada.
+
+    **Só os nulos.** Cadastro já atribuído nunca é tocado — rodar duas vezes
+    não move nada na segunda.
+
+    O admin decide qual planta recebe; o sistema não tem como saber.
+    """
+    if db.get(Planta, planta_id) is None:
+        raise HTTPException(404, "Planta não encontrada.")
+
+    movidos = {}
+    for modelo in (Departamento, Localizacao, Fornecedor, Categoria):
+        n = (
+            db.query(modelo)
+            .filter(modelo.deleted_at.is_(None), modelo.planta_id.is_(None))
+            .update({modelo.planta_id: planta_id}, synchronize_session=False)
+        )
+        movidos[modelo.__tablename__] = n
+
+    audit(
+        db, user, "update", "cadastro", 0,
+        ip=_ip(request) if request else None,
+        diff={"legado_para_planta": planta_id, **movidos},
+    )
+    db.commit()
+    return {"ok": True, "planta_id": planta_id, "movidos": movidos}
+
