@@ -5379,3 +5379,43 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 :root[data-theme="dark"] .kb-arq-data {
   color: #b3b0ad;
 }
+
+/* Seletor de planta na barra superior.
+   Só o administrador vê — para o usuário comum o servidor já escopa. */
+.seletor-planta {
+  height: 34px;
+  max-width: 190px;
+  padding: 0 28px 0 11px;
+  margin-right: 6px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--shape-full);
+  background-color: transparent;
+  color: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  text-overflow: ellipsis;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 13px) 15px, calc(100% - 8px) 15px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.seletor-planta:hover {
+  border-color: var(--md-sys-color-outline);
+}
+
+.seletor-planta:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--md-sys-color-primary);
+}
+
+@media (max-width: 720px) {
+  .seletor-planta {
+    max-width: 120px;
+    font-size: 11.5px;
+  }
+}

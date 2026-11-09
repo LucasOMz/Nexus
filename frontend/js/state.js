@@ -37,6 +37,16 @@ export const state = {
     this.access = access_token;
     this.refresh = refresh_token;
     this.user = user;
+
+    // Restaura a planta escolhida no topo. Sem isto, cada recarga voltaria
+    // para "todas as plantas" e o administrador teria de escolher de novo.
+    try {
+      const salva = localStorage.getItem("nexus.planta.ativa");
+      if (salva !== null) {
+        this._plantaAtiva = salva === "" ? null : Number(salva);
+      }
+    } catch (e) { /* modo privado pode bloquear */ }
+
     localStorage.setItem(LS.access, access_token);
     localStorage.setItem(LS.refresh, refresh_token);
     localStorage.setItem(LS.user, JSON.stringify(user));
@@ -148,6 +158,31 @@ export const state = {
   },
   get isAuthed() { return Boolean(this.access); },
   get isAdmin() { return this.user?.papel === "admin"; },
+  /**
+   * Planta que a tela está mostrando agora.
+   *
+   * ## Por que além de plantaId
+   *
+   * plantaId é o que a pessoa **é** — vem do cadastro e não muda.
+   * plantaAtiva é o que ela **quer ver** — o administrador escolhe no topo.
+   *
+   * São coisas diferentes: o admin continua admin (pode tudo) mesmo quando
+   * está olhando só uma planta. E o usuário comum não escolhe nada — vê a
+   * dele, sempre.
+   */
+  get plantaAtiva() {
+    const escolhida = this._plantaAtiva;
+    if (escolhida !== undefined) return escolhida || null;
+    return this.user?.planta_id ?? null;
+  },
+
+  set plantaAtiva(valor) {
+    this._plantaAtiva = valor === null || valor === undefined ? null : Number(valor);
+    try {
+      localStorage.setItem("nexus.planta.ativa", this._plantaAtiva ?? "");
+    } catch (e) { /* modo privado pode bloquear */ }
+  },
+
   /** Id da planta do usuário (null = acesso a todas, caso do administrador). */
   get plantaId() { return this.user?.planta_id ?? null; },
   get canWrite() { return this.isAdmin || Boolean(this.perms.pode_escrever); },

@@ -111,6 +111,55 @@ function buildShell() {
 
   const menuBtn = el("button", { class: "iconbtn", title: "Menu", onclick: openDrawer, html: icon("menu") });
   const homeBtn = el("button", { class: "iconbtn", title: "Menu inicial do inventário", onclick: () => router.go("home"), html: icon("home") });
+
+/**
+ * Seletor da planta que a tela está mostrando.
+ *
+ * ## Por que só o administrador vê
+ *
+ * Usuário comum tem planta fixa no cadastro — o servidor já escopa. Para ele
+ * um seletor seria um botão que não faz nada.
+ *
+ * O administrador não tem planta: `planta_id` nulo significa "todas". Sem
+ * escolher, tudo o que ele cria nasce sem planta e aparece em todas as
+ * plantas — que é o problema que este controle resolve.
+ *
+ * ## "Todas" não é o mesmo que "nenhuma"
+ *
+ * É uma visão consolidada legítima, e continua disponível. O que muda é que
+ * agora dá para trabalhar dentro de uma planta específica.
+ */
+function seletorDePlanta() {
+  if (!state.isAdmin) return el("span", {});
+
+  const caixa = el("select", {
+    class: "seletor-planta",
+    title: "Planta que esta tela está mostrando",
+    onchange: (ev) => {
+      const valor = ev.target.value;
+      state.plantaAtiva = valor === "" ? null : Number(valor);
+      // Redesenha a tela atual: os dados visíveis mudam de escopo. `ctx.rerender`
+      // é o mesmo caminho que o botão de recarregar usa — não inventa navegação.
+      if (ctx.rerender) ctx.rerender();
+      else location.reload();
+    },
+  },
+    el("option", { value: "" }, "Todas as plantas"),
+  );
+
+  // As plantas vêm do servidor. Falha em silêncio: sem a lista, o seletor
+  // fica só com "Todas", que é o comportamento anterior.
+  api.get("/plantas/opcoes").then((lista) => {
+    const atual = state.plantaAtiva;
+    for (const p of lista || []) {
+      caixa.append(el("option", { value: String(p.id) }, p.nome || p.sigla || String(p.id)));
+    }
+    caixa.value = atual === null || atual === undefined ? "" : String(atual);
+  }).catch(() => {});
+
+  return caixa;
+}
+
   const badge = seletorInventario();
 
   const topbar = el("header", { class: "topbar" },
@@ -120,6 +169,7 @@ function buildShell() {
     // nome sem ajudar. Fica na gaveta, onde há espaço e quem procura vai.
     el("div", { class: "brand", html: '<span class="long">Nexus</span>' }),
     el("div", { class: "spacer" }),
+    seletorDePlanta(),
     badge,
     sinoNotificacoes(),
     el("button", { class: "iconbtn", title: TITULO_TEMA, onclick: abrirSeletorDeTema, html: iconeDoModo() }),

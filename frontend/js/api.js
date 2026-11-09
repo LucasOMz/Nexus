@@ -43,6 +43,10 @@ export const api = {
     const headers = {};
     if (body !== undefined) headers["Content-Type"] = "application/json";
     if (state.access) headers["Authorization"] = "Bearer " + state.access;
+    // Planta ativa escolhida no topo da tela. Sem isto, o servidor nao
+    // tem como saber qual planta o administrador quer ver — e tudo o
+    // que ele cria nasce sem planta, aparecendo em todas.
+    if (state.plantaAtiva) headers["X-Planta-Id"] = String(state.plantaAtiva);
 
     // Prazo para a resposta.
     //
@@ -134,6 +138,10 @@ export const api = {
   async form(method, path, dados) {
     const headers = {};
     if (state.access) headers["Authorization"] = "Bearer " + state.access;
+    // Planta ativa escolhida no topo da tela. Sem isto, o servidor nao
+    // tem como saber qual planta o administrador quer ver — e tudo o
+    // que ele cria nasce sem planta, aparecendo em todas.
+    if (state.plantaAtiva) headers["X-Planta-Id"] = String(state.plantaAtiva);
 
     let res;
     try {
@@ -175,6 +183,10 @@ export const api = {
   async blob(path) {
     const headers = {};
     if (state.access) headers["Authorization"] = "Bearer " + state.access;
+    // Planta ativa escolhida no topo da tela. Sem isto, o servidor nao
+    // tem como saber qual planta o administrador quer ver — e tudo o
+    // que ele cria nasce sem planta, aparecendo em todas.
+    if (state.plantaAtiva) headers["X-Planta-Id"] = String(state.plantaAtiva);
 
     let res;
     try {
