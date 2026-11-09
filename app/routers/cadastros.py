@@ -9,7 +9,7 @@ import secrets
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import func, or_
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, require_admin, require_escrita, require_exclusao
@@ -55,11 +55,12 @@ def list_departamentos(
 ):
     consulta = db.query(Departamento).filter(Departamento.deleted_at.is_(None))
     if planta_id is not None:
-        # O legado (planta nula) continua visível: ativos e usuários já
-        # apontam para ele, e escondê-lo deixaria o vínculo órfão na tela.
-        consulta = consulta.filter(
-            or_(Departamento.planta_id.is_(None), Departamento.planta_id == planta_id)
-        )
+        # **Só** a planta pedida. Cadastro sem planta (`NULL`) não entra:
+        # ele existe porque foi criado antes do escopo, e mostrá-lo em
+        # todas as plantas é justamente o que fazia um cadastro da planta
+        # A aparecer na B. Os órfãos aparecem só na visão "Todas", que é
+        # onde o administrador os atribui.
+        consulta = consulta.filter(Departamento.planta_id == planta_id)
     return consulta.order_by(Departamento.nome).all()
 
 
@@ -117,11 +118,12 @@ def list_localizacoes(
 ):
     consulta = db.query(Localizacao).filter(Localizacao.deleted_at.is_(None))
     if planta_id is not None:
-        # O legado (planta nula) continua visível: ativos e usuários já
-        # apontam para ele, e escondê-lo deixaria o vínculo órfão na tela.
-        consulta = consulta.filter(
-            or_(Localizacao.planta_id.is_(None), Localizacao.planta_id == planta_id)
-        )
+        # **Só** a planta pedida. Cadastro sem planta (`NULL`) não entra:
+        # ele existe porque foi criado antes do escopo, e mostrá-lo em
+        # todas as plantas é justamente o que fazia um cadastro da planta
+        # A aparecer na B. Os órfãos aparecem só na visão "Todas", que é
+        # onde o administrador os atribui.
+        consulta = consulta.filter(Localizacao.planta_id == planta_id)
     return consulta.order_by(Localizacao.nome).all()
 
 
@@ -179,11 +181,12 @@ def list_fornecedores(
 ):
     consulta = db.query(Fornecedor).filter(Fornecedor.deleted_at.is_(None))
     if planta_id is not None:
-        # O legado (planta nula) continua visível: ativos e usuários já
-        # apontam para ele, e escondê-lo deixaria o vínculo órfão na tela.
-        consulta = consulta.filter(
-            or_(Fornecedor.planta_id.is_(None), Fornecedor.planta_id == planta_id)
-        )
+        # **Só** a planta pedida. Cadastro sem planta (`NULL`) não entra:
+        # ele existe porque foi criado antes do escopo, e mostrá-lo em
+        # todas as plantas é justamente o que fazia um cadastro da planta
+        # A aparecer na B. Os órfãos aparecem só na visão "Todas", que é
+        # onde o administrador os atribui.
+        consulta = consulta.filter(Fornecedor.planta_id == planta_id)
     return consulta.order_by(Fornecedor.nome).all()
 
 
@@ -245,9 +248,8 @@ def list_categorias(
         # NULL (comum) OU do domínio solicitado.
         q = q.filter((Categoria.dominio.is_(None)) | (Categoria.dominio == dominio))
     if planta_id is not None:
-        # O legado (planta nula) continua visível: ativos e usuários já
-        # apontam para ele, e escondê-lo deixaria o vínculo órfão na tela.
-        q = q.filter(or_(Categoria.planta_id.is_(None), Categoria.planta_id == planta_id))
+        # Só a planta pedida — ver o comentário das outras listagens.
+        q = q.filter(Categoria.planta_id == planta_id)
     return q.order_by(Categoria.nome).all()
 
 

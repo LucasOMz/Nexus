@@ -89,8 +89,12 @@ class TestUsuarioComum:
         nomes = [x["nome"] for x in client.get("/api/v1/departamentos", headers=headers).json()]
         assert "Da Tres" in nomes, "usuario sem planta deveria ver tudo"
 
-    def test_legado_aparece_para_o_usuario_comum(self, client, auth_headers):
-        """Cadastro com planta nula continua visivel — senao o vinculo some."""
+    def test_legado_nao_aparece_para_o_usuario_comum(self, client, auth_headers):
+        """Cadastro com planta nula NAO aparece para quem tem planta.
+
+        E o caso reportado: trocar de conta e continuar vendo cadastro de
+        outra planta. A causa era o nulo tratado como "de todos".
+        """
         b = _planta(client, auth_headers, "Quatro")
         client.post("/api/v1/departamentos", headers=auth_headers, json={"nome": "Legado Comum"})
 
@@ -98,4 +102,4 @@ class TestUsuarioComum:
         headers = _login(client, "comum@teste.com")
 
         nomes = [x["nome"] for x in client.get("/api/v1/departamentos", headers=headers).json()]
-        assert "Legado Comum" in nomes
+        assert "Legado Comum" not in nomes

@@ -66,8 +66,18 @@ class TestCadastroPorPlanta:
         assert "So da Alfa" in _listar(client, auth_headers, a)
         assert "So da Alfa" not in _listar(client, auth_headers, b)
 
-    def test_legado_aparece_nas_duas(self, client, auth_headers):
-        """`planta_id` nulo e o cadastro anterior ao escopo — visivel a todas."""
+    def test_legado_nao_vaza_para_as_plantas(self, client, auth_headers):
+        """Cadastro sem planta NAO aparece em planta nenhuma.
+
+        ## A regra mudou
+
+        Antes, nulo significava "visivel a todas" — e por isso um cadastro
+        criado pelo administrador aparecia em toda planta do sistema, que era
+        exatamente a queixa.
+
+        Agora o orfao so aparece na visao consolidada (admin sem planta),
+        que e onde ele pode ser atribuido.
+        """
         a = _planta(client, auth_headers, "Gama")
         b = _planta(client, auth_headers, "Delta")
 
@@ -80,8 +90,12 @@ class TestCadastroPorPlanta:
         assert r.status_code == 201, r.text
         assert r.json()["planta_id"] is None
 
-        assert "Legado" in _listar(client, auth_headers, a)
-        assert "Legado" in _listar(client, auth_headers, b)
+        # Nao aparece em planta nenhuma...
+        assert "Legado" not in _listar(client, auth_headers, a)
+        assert "Legado" not in _listar(client, auth_headers, b)
+
+        # ...mas continua visivel na visao consolidada.
+        assert "Legado" in _listar(client, auth_headers, None)
 
     def test_mesmo_nome_em_plantas_diferentes(self, client, auth_headers):
         """A unicidade e por planta, nao global."""
