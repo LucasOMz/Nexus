@@ -65,6 +65,74 @@ function secao(titulo, ...filhos) {
  *
  * @param {object} ativo — o registro da lista (precisa de `id` e `dominio`)
  */
+
+/**
+ * Janela com os programas instalados nesta máquina.
+ *
+ * ## Por que janela própria
+ *
+ * A lista tem ~150 linhas. Dentro de "Detalhes" ela empurrava o hardware, os
+ * usuários e o histórico para baixo — informação que se consulta sempre ficava
+ * escondida atrás de informação que se consulta às vezes.
+ *
+ * Aqui ela aparece sozinha, e quem abre já sabe o que veio ver.
+ */
+export function abrirSoftwares(ativo) {
+  const corpo = el("div", {});
+  corpo.append(skeleton(4));
+
+  dialog({
+    title: `Softwares — ${ativo.patrimonio || ativo.numero_serie || "ativo"}`,
+    body: corpo,
+    wide: true,
+    actions: [{ label: "Fechar", variant: "tonal", onClick: (fechar) => fechar() }],
+  });
+
+  api.get(`/ativos/${ativo.id}/software`).then((dados) => {
+    corpo.innerHTML = "";
+
+    const linhas = dados?.softwares || [];
+
+    if (!linhas.length) {
+      corpo.append(el("div", { class: "card" },
+        el("p", { style: "margin:0 0 6px;font-weight:500" }, "Nenhum programa reportado"),
+        el("p", { class: "muted", style: "margin:0;font-size:13px" },
+          "O agente envia a lista junto com o inventário — use \"Atualizar agora\" "
+          + "no agente para não esperar o ciclo diário.")));
+      return;
+    }
+
+    const quando = dados.coletado_em
+      ? new Date(dados.coletado_em).toLocaleString("pt-BR")
+      : null;
+
+    corpo.append(el("p", { class: "muted", style: "margin:0 0 10px;font-size:12.5px" },
+      `${linhas.length} programa(s)`
+      + (quando ? ` · última coleta em ${quando}` : "")));
+
+    const tabela = el("table", { class: "data" },
+      el("thead", {}, el("tr", {},
+        el("th", {}, "Programa"),
+        el("th", { style: "width:150px" }, "Versão"),
+        el("th", { style: "width:180px" }, "Fabricante"))));
+
+    const tbody = el("tbody", {});
+    for (const s of linhas) {
+      tbody.append(el("tr", {},
+        el("td", {}, s.nome),
+        el("td", { class: "muted" }, s.versao || "—"),
+        el("td", { class: "muted" }, s.fabricante || "—")));
+    }
+
+    tabela.append(tbody);
+    corpo.append(tabela);
+  }).catch((e) => {
+    corpo.innerHTML = "";
+    corpo.append(el("div", { class: "card" },
+      el("p", { class: "text-error", style: "margin:0" }, e.message)));
+  });
+}
+
 export async function abrirDetalhes(ativo) {
   const corpo = el("div", {}, skeleton(4));
 
@@ -212,51 +280,6 @@ export async function abrirDetalhes(ativo) {
     corpo.append(secao("Usuários desta máquina", lista) || el("div", {}));
   }
 
-
-  // --- 2c. softwares instalados -----------------------------------------
-  //
-  // Mesmo botao que a tela de Software e Licencas mostra, mas para uma
-  // maquina so: aqui a pergunta e "o que tem neste PC", nao "quem tem este
-  // programa".
-  if (softwares) {
-    const linhas = softwares.softwares || [];
-
-    const quando = softwares.coletado_em
-      ? new Date(softwares.coletado_em).toLocaleString("pt-BR")
-      : null;
-
-    const caixa = el("div", {});
-
-    if (!linhas.length) {
-      caixa.append(el("p", { class: "muted", style: "margin:0;font-size:13px" },
-        "Nenhum programa reportado ainda. O agente envia a lista uma vez "
-        + "por dia — se a máquina acabou de ser instalada, aguarde a "
-        + "próxima coleta."));
-    } else {
-      caixa.append(el("p", { class: "muted", style: "margin:0 0 8px;font-size:12px" },
-        `${linhas.length} programa(s)`
-        + (quando ? ` · última coleta em ${quando}` : "")));
-
-      // Lista compacta: nome e versão na mesma linha. Uma tabela aqui
-      // competiria com o resto da ficha, que é só leitura.
-      for (const s of linhas) {
-        caixa.append(el("div", {
-          class: "row between",
-          style: "padding:5px 0;border-bottom:1px solid "
-            + "var(--md-sys-color-outline-variant);font-size:13px",
-        },
-          el("span", { style: "overflow:hidden;text-overflow:ellipsis" }, s.nome),
-          el("span", { class: "muted", style: "white-space:nowrap;margin-left:10px" },
-            s.versao || "—")));
-      }
-    }
-
-    corpo.append(secao("Softwares instalados", caixa) || el("div", {}));
-  } else {
-    corpo.append(secao("Softwares instalados",
-      el("p", { class: "muted", style: "margin:0;font-size:13px" },
-        "Não foi possível carregar a lista de programas.")) || el("div", {}));
-  }
 
   // --- 3. histórico -----------------------------------------------------
   if (!historico.length) {
