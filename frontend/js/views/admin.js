@@ -11,8 +11,6 @@ import { erroDeResposta } from "../erros.js";
 import { renderTemplates } from "./admin_etiquetas.js";
 import { renderBackups } from "./admin_backups.js";
 import { renderAuth } from "./admin_auth.js";
-import { renderOCS } from "./admin_ocs.js";
-import { renderReconciliacao } from "./admin_ocs_reconciliacao.js";
 import { renderLgpd } from "./admin_lgpd.js";
 import { renderChecklist } from "./admin_checklist.js";
 import { renderBanco } from "./admin_banco.js";
@@ -582,8 +580,6 @@ export async function renderAdmin(root) {
     ["backups", "Backups"],
     ["auth", "Autenticação (AD)"],
     ["notificacoes", "Notificações"],
-    ["ocs", "OCS Inventory"],
-    ["reconciliacao", "Reconciliação OCS"],
     ["lgpd", "Privacidade (LGPD)"],
     ["manutencao", "Modo Manutenção"],
     ["agente", "Agente Nexus"],
@@ -591,7 +587,6 @@ export async function renderAdmin(root) {
   ];
 
   // Permite abrir o painel direto numa aba: `#/admin?aba=ocs`.
-  // É o que o sino usa ao avisar de um problema na sincronização com o OCS.
   const pedida = new URLSearchParams((location.hash.split("?")[1] || "")).get("aba");
   if (pedida && abas.some(([chave]) => chave === pedida)) abaAtiva = pedida;
 
@@ -610,7 +605,6 @@ export async function renderAdmin(root) {
     auditoria: ["log", "historico", "trilha", "quem fez", "rastro"],
     backups: ["copia", "restaurar", "seguranca", "dump", "salvar"],
     auth: ["ad", "active directory", "ldap", "senha", "dominio", "login de rede"],
-    ocs: ["inventario automatico", "servidor", "token", "sincronizacao", "agente"],
     reconciliacao: ["divergencia", "fantasma", "perdido", "rede", "comparar"],
     banco: ["dba", "conexao", "postgresql", "servidor", "sqlite", "mysql"],
     agente: ["agente", "nexus", "instalacao", "instalação", "serial", "token", "pendente"],
@@ -637,7 +631,7 @@ export async function renderAdmin(root) {
     // "Notificações" entrou aqui: é a saída de informação do sistema — o
     // oposto do OCS, que é a entrada. Quem procura "por que não chega e-mail"
     // procura em Sistema, não em Patrimônio.
-    ["Sistema", ["auth", "notificacoes", "ocs", "backups", "banco", "manutencao", "agente"]],
+    ["Sistema", ["auth", "notificacoes", "backups", "banco", "manutencao", "agente"]],
   ];
 
   // Aba fora de qualquer grupo não pode sumir: cai em "Outros".
@@ -771,8 +765,6 @@ export async function renderAdmin(root) {
   else if (abaAtiva === "backups") await renderBackups(alvo);
   else if (abaAtiva === "auth") await renderAuth(alvo);
   else if (abaAtiva === "notificacoes") await renderNotificacoes(alvo);
-  else if (abaAtiva === "ocs") await renderOCS(alvo);
-  else if (abaAtiva === "reconciliacao") await renderReconciliacao(alvo);
   else if (abaAtiva === "lgpd") await renderLgpd(alvo);
   else if (abaAtiva === "manutencao") await renderManutencao(alvo);
   else if (abaAtiva === "agente") await renderAgente(alvo);

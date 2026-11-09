@@ -55,8 +55,6 @@ from app.routers import (
     movimentacoes,
     notificacoes,
     notificacoes_admin,
-    ocs,
-    ocs_reconciliacao,
     plantas,
     produtos,
     qrcode,
@@ -64,13 +62,14 @@ from app.routers import (
     reportes,
     scanner,
     software,
+    software_instalado,
     transferencias,
     zerados,
 )
 from app.routers import (
     print as print_router,
 )
-from app.services import notificacoes_agendador, ocs_agendador
+from app.services import notificacoes_agendador
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
@@ -91,43 +90,6 @@ async def lifespan(_app: FastAPI):
     if settings.auto_create_tables:
         init_db()
 
-    # --- Sincronização automática com o OCS ---------------------------
-    #
-    # ## Por que a falha aqui NÃO pode derrubar a aplicação
-    #
-    # Isto é um **agendador de fundo**, e a aplicação serve pedidos sem ele
-    # perfeitamente — o que se perde é a sincronização automática, que ainda
-    # pode ser disparada à mão na tela de Administração.
-    #
-    # A versão anterior deixava a exceção subir. Em container com limite de
-    # threads (`pids_limit`, ou `ulimit -u` baixo), o resultado era:
-    #
-    #     RuntimeError: can't start new thread
-    #     ERROR: Application startup failed. Exiting.
-    #
-    # ...e o container entrava em **laço de reinício**: o Portainer mostrava
-    # "restarting", a aplicação nunca subia, e a tela ficava fora do ar.
-    #
-    # **Recurso que não conseguiu subir não pode virar indisponibilidade
-    # total.** Quem perde a função perde uma função; quem perde o boot perde
-    # o sistema.
-    #
-    # Desligado por padrão nos testes, para não abrir sessões paralelas.
-    if settings.scheduler_ativo:
-        try:
-            ocs_agendador.iniciar()
-        except Exception as exc:  # noqa: BLE001
-            # `log.exception` grava o rastro completo — é o que permite
-            # descobrir se foi limite de threads, de memória ou outra coisa.
-            log.exception(
-                "OCS: o agendador automático não pôde ser iniciado (%s). "
-                "A aplicação segue normalmente; a sincronização continua "
-                "disponível na tela de Administração → OCS.",
-                type(exc).__name__,
-            )
-
-        # --- Notificações por e-mail -----------------------------------
-        #
         # Mesma proteção do OCS, e pelo mesmo motivo: recurso acessório que
         # não sobe não pode virar indisponibilidade total. Sem SMTP
         # configurado, o ciclo simplesmente não envia nada — e é o estado
@@ -143,7 +105,6 @@ async def lifespan(_app: FastAPI):
             )
 
     yield
-    ocs_agendador.parar()
     notificacoes_agendador.parar()
 
 
@@ -322,13 +283,15 @@ app.include_router(manutencao_admin.router, prefix=API)
 app.include_router(agente.router, prefix=API)
 app.include_router(kanban.router, prefix=API)
 app.include_router(reportes.router, prefix=API)
-app.include_router(ocs.router, prefix=API)
-app.include_router(ocs_reconciliacao.router, prefix=API)
 app.include_router(banco.router, prefix=API)
 app.include_router(busca.router, prefix=API)
 app.include_router(contratos.router, prefix=API)
 app.include_router(lgpd.router, prefix=API)
 app.include_router(descarte.router, prefix=API)
+# **Antes** do router de software: /softwares/{software_id} casa com
+# qualquer segmento, inclusive com /softwares/instalados. O FastAPI resolve
+# na ordem de registro, entao a rota mais especifica precisa vir primeiro.
+app.include_router(software_instalado.router, prefix=API)
 app.include_router(software.router, prefix=API)
 app.include_router(transferencias.router, prefix=API)
 

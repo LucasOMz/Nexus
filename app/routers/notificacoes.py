@@ -18,7 +18,6 @@ from app.core.planta import aplicar_filtro, planta_ativa
 from app.database import get_db
 from app.models.core import Ativo, Usuario
 from app.models.enums import StatusAtivo
-from app.models.ti import AtivoTI
 
 router = APIRouter(prefix="/notificacoes", tags=["notificacoes"])
 
@@ -105,10 +104,6 @@ def listar(
 
     # --- Transferências esperando decisão deste usuário --------------------
     for item in _transferencias_pendentes(db, user):
-        itens.insert(0, item)
-
-    # --- Problemas na integração com o OCS (só o administrador) ------------
-    for item in _ocs_pendencias(db, user):
         itens.insert(0, item)
 
     # --- Contratos de locação perto do fim ---------------------------------
@@ -202,94 +197,6 @@ def _contratos_vencendo(db: Session, user: Usuario) -> list[dict]:
             # Para onde clicar leva.
             "rota": f"#/contratos/{c.id}",
         })
-    return saida
-
-
-def _ocs_pendencias(db: Session, user: Usuario) -> list[dict]:
-    """Avisa o administrador quando a integração com o OCS vai mal.
-
-    Três situações justificam um aviso:
-
-    * a última sincronização **falhou** — o parque para de atualizar em silêncio
-    * a sincronização automática está ligada mas **atrasou** muito
-    * existem máquinas importadas **sem planta**, esperando revisão
-
-    Avisamos também quando a integração está desligada: um erro guardado de
-    quando ela estava ativa não deve ficar alarmando o sino para sempre.
-    """
-    from datetime import datetime, timezone
-
-    from app.services.config_service import obter_config_ocs
-
-    papel = getattr(user.papel, "value", user.papel)
-    if papel != "admin":
-        return []
-
-    cfg = obter_config_ocs(db)
-    if not cfg.ativo:
-        return []
-
-    saida: list[dict] = []
-
-    # 1) A última sincronização falhou.
-    if cfg.ultimo_erro_msg:
-        falhas = int(cfg.falhas_consecutivas or 0)
-        vezes = f"{falhas} vez{'es' if falhas > 1 else ''}" if falhas else "1 vez"
-        saida.append({
-            "tipo": "ocs_falha",
-            "nivel": "erro",
-            "titulo": f"Falha na sincronização com o OCS ({vezes})",
-            "detalhe": f"{cfg.ultimo_erro_msg} — o inventário não está sendo atualizado.",
-            "painel": "ocs",
-            "dias": 0,
-        })
-
-    # 2) Sincronização automática atrasada.
-    if cfg.sync_automatica and cfg.ultima_sync_em:
-        try:
-            ultima = datetime.fromisoformat(cfg.ultima_sync_em)
-            if ultima.tzinfo is None:
-                ultima = ultima.replace(tzinfo=timezone.utc)
-            esperado = max(5, int(cfg.sync_intervalo_minutos or 60)) * 60
-            # Só avisa quando passa do DOBRO do intervalo: um atraso pequeno é normal.
-            atraso = (datetime.now(timezone.utc) - ultima).total_seconds() - (esperado * 2)
-            if atraso > 0:
-                horas = int(atraso // 3600)
-                quando = f"{horas} hora(s)" if horas >= 1 else f"{int(atraso // 60)} minuto(s)"
-                saida.append({
-                    "tipo": "ocs_atrasada",
-                    "nivel": "urgente",
-                    "titulo": "Sincronização com o OCS atrasada",
-                    "detalhe": f"A última foi em {cfg.ultima_sync_em[:16].replace('T', ' ')} — "
-                               f"passou {quando} do esperado.",
-                    "painel": "ocs",
-                    "dias": 0,
-                })
-        except (ValueError, TypeError):
-            pass
-
-    # 3) Máquinas vindas do OCS ainda sem planta (esperando revisão).
-    sem_planta = (
-        db.query(Ativo)
-        .join(AtivoTI, AtivoTI.ativo_id == Ativo.id)
-        .filter(
-            Ativo.deleted_at.is_(None),
-            Ativo.planta_id.is_(None),
-            AtivoTI.ocs_id.isnot(None),
-        )
-        .count()
-    )
-    if sem_planta:
-        saida.append({
-            "tipo": "ocs_sem_planta",
-            "nivel": "info",
-            "titulo": f"{sem_planta} máquina(s) do OCS sem planta",
-            "detalhe": "Importadas pelo OCS, mas nenhuma regra de hostname definiu a planta. "
-                       "Confira as regras em Administração → OCS Inventory.",
-            "painel": "ocs",
-            "dias": 0,
-        })
-
     return saida
 
 

@@ -117,6 +117,12 @@ class CodigoEntrada(BaseModel):
     rotulo: str | None = Field(default=None, max_length=120)
     dias: int = Field(default=7, ge=1, le=365)
     usos_max: int = Field(default=1, ge=1, le=100000)
+    # Planta dona das máquinas registradas com este código.
+    #
+    # O agente não tem sessão: sem isto, todas as máquinas da frota nascem na
+    # primeira planta ativa. Quem monta o pacote de implantação é que sabe
+    # para qual filial ele vai.
+    planta_id: int | None = None
 
 
 class CodigoSaida(BaseModel):
@@ -165,6 +171,7 @@ def criar_codigo(
         usos_max=entrada.usos_max,
         rotulo=entrada.rotulo,
         criado_por_id=user.id,
+        planta_id=entrada.planta_id,
     )
     return {"codigo": valor, "registro": _serializar(registro).model_dump()}
 
@@ -435,6 +442,51 @@ def historico_do_ativo(
 
 class SenhaEntrada(BaseModel):
     senha: str = Field(default="", max_length=200)
+
+
+@router.post("/agente/software")
+def software_do_agente(
+    payload: dict,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Recebe a lista de programas instalados. Autentica pelo token da máquina.
+
+    ## Por que rota própria
+
+    Hardware e software têm frequências diferentes: memória muda quando
+    alguém troca o pente, software muda toda semana. Enviar 150 programas a
+    cada coleta de hardware seria desperdício de banda e de banco.
+
+    ## O que espera
+
+    ```json
+    {"software": [{"nome": "Google Chrome", "versao": "120.0",
+                   "fabricante": "Google LLC"}, ...]}
+    ```
+
+    Devolve quantos foram gravados e quantos foram descartados — o agente
+    mostra isso no log, e é como se descobre uma coleta que veio vazia.
+    """
+    cabecalho = request.headers.get("Authorization") or ""
+    if not cabecalho.lower().startswith("bearer "):
+        raise HTTPException(401, "token_ausente")
+    token = servico.buscar_token(db, cabecalho.split(" ", 1)[1].strip())
+    if token is None:
+        raise HTTPException(401, "token_invalido")
+
+    from app.services import software_agente
+
+    resultado = software_agente.registrar_software(
+        db, token.ativo_id, payload.get("software") or []
+    )
+
+    if not resultado.get("ok"):
+        raise HTTPException(400, resultado.get("motivo") or "payload_invalido")
+
+    token.ultimo_uso_em = datetime.now(timezone.utc)
+    db.commit()
+    return resultado
 
 
 @router.post("/agente/validar-senha")

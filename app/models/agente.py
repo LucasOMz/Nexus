@@ -55,6 +55,16 @@ class CodigoInstalacao(BaseModel, Base):
     __tablename__ = "codigos_instalacao"
 
     # Guarda o SHA-256, não o código. Mostrado uma única vez, na criação.
+    # Planta dona das máquinas registradas com este código.
+    #
+    # O agente não tem sessão: sem isto, toda máquina da frota nasce na
+    # primeira planta ativa. Quem monta o pacote de implantação é que sabe
+    # para qual filial ele vai.
+    #
+    # Nulo nos códigos criados antes desta coluna: eles continuam válidos e
+    # caem na primeira planta ativa, como antes.
+    planta_id: Mapped[int | None] = mapped_column(ForeignKey("plantas.id"), index=True)
+
     codigo_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     # Valor em claro, para poder ser mostrado de novo na lista.
     # Nullable porque códigos criados antes desta coluna não o têm —

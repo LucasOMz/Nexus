@@ -67,6 +67,7 @@ def gerar_codigo(
     usos_max: int = 1,
     rotulo: str | None = None,
     criado_por_id: int | None = None,
+    planta_id: int | None = None,
 ) -> tuple[CodigoInstalacao, str]:
     """Cria um código e devolve **(registro, valor em claro)**.
 
@@ -79,6 +80,7 @@ def gerar_codigo(
         codigo_valor=valor,
         prefixo=valor.split("-")[0],
         rotulo=rotulo,
+        planta_id=planta_id,
         usos_max=max(1, usos_max),
         usos_feitos=0,
         expira_em=datetime.now(timezone.utc) + timedelta(days=max(1, dias)),
@@ -185,12 +187,24 @@ def fabricante_valido(valor) -> str | None:
     return texto[:80]
 
 
-def _criar_ativo_do_payload(db: Session, serial: str, payload: dict, hostname: str | None):
+def _criar_ativo_do_payload(
+    db: Session,
+    serial: str,
+    payload: dict,
+    hostname: str | None,
+    codigo=None,
+):
     """Cria o ativo a partir do que o agente enviou.
 
-    Usa a **primeira planta ativa** como dona: o agente não tem sessão, e não
-    há como perguntar a que planta a máquina pertence. Um administrador pode
-    mover depois.
+    ## De quem é a máquina
+
+    A planta vem do **código de instalação** usado no registro. Quem gera o
+    código escolhe a planta, e toda máquina registrada com ele nasce lá — o
+    agente não tem sessão, então ele não teria como saber.
+
+    Códigos antigos (sem planta) caem na primeira planta ativa, que era o
+    comportamento anterior. Continuam funcionando, e o administrador pode
+    mover a máquina depois.
 
     O `numero_serie` é o que veio do agente — inclusive o `OEM-...` derivado
     do MachineGuid. É por ele que as próximas coletas vão casar.
@@ -199,7 +213,14 @@ def _criar_ativo_do_payload(db: Session, serial: str, payload: dict, hostname: s
     from app.models.enums import Dominio, StatusAtivo, TipoItem
     from app.models.ti import AtivoTI
 
-    planta = db.query(Planta).filter(Planta.ativa.is_(True), Planta.deleted_at.is_(None)).first()
+    # A planta do código tem prioridade: é a escolha explícita de quem montou
+    # o pacote de implantação. Sem ela, cai na primeira ativa (legado).
+    planta = None
+    if codigo is not None and getattr(codigo, "planta_id", None) is not None:
+        planta = db.get(Planta, codigo.planta_id)
+
+    if planta is None:
+        planta = db.query(Planta).filter(Planta.ativa.is_(True), Planta.deleted_at.is_(None)).first()
     if planta is None:
         planta = db.query(Planta).filter(Planta.deleted_at.is_(None)).first()
     if planta is None:
@@ -282,7 +303,11 @@ def registrar(
         # Registro automático. Com `OEM-<MachineGuid>` o identificador é único
         # por máquina, então criar não gera duplicata — e o técnico não
         # precisa esperar aprovação nenhuma.
-        ativo = _criar_ativo_do_payload(db, serial, payload, hostname)
+        # `codigo` aqui é o texto que o agente mandou; o registro — que tem a
+        # planta — é `registro`, devolvido por `buscar_codigo`.
+        ativo = _criar_ativo_do_payload(
+            db, serial, payload, hostname, codigo=registro
+        )
         criado = ativo is not None
 
     if ativo is None:

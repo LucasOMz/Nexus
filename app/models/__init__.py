@@ -58,7 +58,6 @@ from app.models.notificacao import (
     PreferenciaNotificacao,
     TemplateNotificacao,
 )
-from app.models.ocs import ConfiguracaoOCS, SincronizacaoOCS
 from app.models.software import (
     AtribuicaoLicenca,
     Licenca,
@@ -114,8 +113,6 @@ __all__ = [
     "ReporteErro",
     "ResultadoItem",
     "StatusContagem",
-    "ConfiguracaoOCS",
-    "SincronizacaoOCS",
     "Transferencia",
     "QRZerado",
     "StatusAtivo",

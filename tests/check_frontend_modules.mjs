@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Verificação de integridade dos módulos do frontend.
  *
  * Importa TODOS os módulos ES do frontend e falha se algum `import`/`export`
@@ -38,7 +38,7 @@ const modulos = [
   "js/version.js", "js/context.js", "js/state.js", "js/offline.js", "js/api.js",
   "js/ui.js", "js/charts.js", "js/label.js", "js/erros.js", "js/lookups.js", "js/router.js",
   "js/easteregg.js", "js/versao_servidor.js", "js/seletor_ativo.js", "js/notificacoes.js",
-  "js/views/calendario.js", "js/views/reporte.js", "js/views/admin_ocs.js", "js/views/admin_banco.js", "js/barra_lateral.js", "js/ordenar.js",
+  "js/views/calendario.js", "js/views/reporte.js", "js/views/admin_banco.js", "js/barra_lateral.js", "js/ordenar.js",
   "js/views/login.js", "js/views/inventario.js", "js/views/dashboard.js",
   "js/views/software.js", "js/views/descarte.js", "js/views/admin_lgpd.js",
   "js/views/ativos.js", "js/views/produtos.js", "js/views/movimentacoes.js",

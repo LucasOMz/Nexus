@@ -25,6 +25,9 @@ const ABAS = [
   ["software", "Softwares", "produtos"],
   ["licencas", "Licenças", "auth"],
   ["atribuicoes", "Atribuições", "user"],
+  // Programas que os computadores reportam. Fica por último porque é
+  // consulta, não cadastro — as outras abas é que alimentam o sistema.
+  ["instalados", "Instalados", "grade"],
 ];
 
 // Estado do módulo. Mantido entre trocas de aba para não recarregar tudo.
@@ -96,6 +99,7 @@ async function abrir(aba, conteudo) {
     software: abaSoftware,
     licencas: abaLicencas,
     atribuicoes: abaAtribuicoes,
+    instalados: abaInstalados,
   };
   try {
     await telas[aba](conteudo);
@@ -188,6 +192,157 @@ async function abaConformidade(caixa) {
 // ---------------------------------------------------------------------------
 // Software
 // ---------------------------------------------------------------------------
+
+/**
+ * Programas instalados nos computadores, agrupados por nome.
+ *
+ * ## Por que agrupado
+ *
+ * A coleta traz uma linha por programa por maquina. Com 3.000 maquinas, o
+ * mesmo Chrome apareceria 2.000 vezes. A lista agrupa por nome e mostra
+ * quantas versoes existem e em quantos PCs.
+ *
+ * ## O detalhe
+ *
+ * Cada versao lista as maquinas que a tem. E como se responde "quem esta na
+ * 119 e precisa atualizar" sem exportar planilha.
+ */
+async function abaInstalados(caixa) {
+  const aberto = { nome: null };
+
+  const campoBusca = el("input", {
+    class: "field",
+    type: "search",
+    placeholder: "Buscar programa...",
+    style: "max-width:320px",
+  });
+
+  let debounce = null;
+  campoBusca.addEventListener("input", () => {
+    clearTimeout(debounce);
+    debounce = setTimeout(() => desenhar(), 250);
+  });
+
+  const lista = el("div", {});
+
+  async function desenhar() {
+    lista.innerHTML = "";
+    lista.append(skeleton(4));
+
+    let itens;
+    try {
+      const busca = campoBusca.value.trim();
+      const q = busca ? "?busca=" + encodeURIComponent(busca) : "";
+      itens = await api.get("/softwares/instalados" + q);
+    } catch (e) {
+      lista.innerHTML = "";
+      lista.append(el("div", { class: "card" },
+        el("p", { class: "text-error", style: "margin:0" }, e.message)));
+      return;
+    }
+
+    lista.innerHTML = "";
+
+    if (!itens.length) {
+      lista.append(vazio(
+        "Nenhum programa coletado",
+        "O agente envia a lista uma vez por dia. Se acabou de instalar, "
+          + "aguarde a proxima coleta ou rode o envio manual no agente."
+      ));
+      return;
+    }
+
+    const corpo = el("tbody", {});
+
+    for (const item of itens) {
+      const expandido = aberto.nome === item.nome;
+
+      corpo.append(el("tr", {
+        style: "cursor:pointer",
+        onclick: () => {
+          aberto.nome = expandido ? null : item.nome;
+          desenhar();
+        },
+      },
+        el("td", {},
+          el("span", { style: "margin-right:6px;opacity:.6" },
+            expandido ? "\u25be" : "\u25b8"),
+          el("span", {}, item.nome)),
+        el("td", {}, String(item.versoes)),
+        el("td", {}, String(item.pcs))));
+
+      if (expandido) {
+        const detalhe = el("tr", {},
+          el("td", { colspan: "3", style: "padding:0 0 8px 22px" },
+            el("div", { class: "muted", style: "font-size:12.5px" },
+              "Carregando versoes...")));
+        corpo.append(detalhe);
+        carregarDetalhe(detalhe, item.nome);
+      }
+    }
+
+    lista.append(el("table", { class: "data" },
+      el("thead", {}, el("tr", {},
+        el("th", {}, "Programa"),
+        el("th", { style: "width:90px" }, "Vers\u00f5es"),
+        el("th", { style: "width:90px" }, "PCs"))),
+      corpo));
+  }
+
+  async function carregarDetalhe(linha, nome) {
+    let dados;
+    try {
+      dados = await api.get("/softwares/instalados/" + encodeURIComponent(nome));
+    } catch (e) {
+      linha.querySelector("div").textContent = e.message;
+      return;
+    }
+
+    const celula = linha.querySelector("td");
+    celula.innerHTML = "";
+
+    if (!dados.versoes.length) {
+      celula.append(el("div", { class: "muted" }, "Sem versoes registradas."));
+      return;
+    }
+
+    for (const v of dados.versoes) {
+      const rotulo = v.versao || "sem versao";
+      const bloco = el("div", { style: "margin:8px 0" },
+        el("div", { style: "font-weight:600;font-size:13px;margin-bottom:4px" },
+          rotulo + " \u2014 " + v.pcs.length + " PC(s)"));
+
+      // No maximo 20 por versao: uma versao do Windows pode estar em
+      // centenas de maquinas, e despejar todas travaria a tela.
+      for (const pc of v.pcs.slice(0, 20)) {
+        bloco.append(el("div", {
+          class: "muted",
+          style: "font-size:12px;padding-left:10px",
+        }, (pc.hostname || "\u2014") + "  \u00b7  " + (pc.patrimonio || pc.numero_serie || "\u2014")));
+      }
+
+      if (v.pcs.length > 20) {
+        bloco.append(el("div", {
+          class: "muted",
+          style: "font-size:11.5px;padding-left:10px;margin-top:2px",
+        }, "+" + (v.pcs.length - 20) + " outra(s)"));
+      }
+
+      celula.append(bloco);
+    }
+  }
+
+  caixa.append(
+    el("div", { class: "row between wrap", style: "gap:10px;margin-bottom:14px" },
+      campoBusca,
+      el("span", { class: "muted", style: "font-size:12.5px" },
+        "Coleta feita pelo agente Nexus")),
+    lista
+  );
+
+  desenhar();
+}
+
 async function abaSoftware(caixa) {
   const lista = await api.get("/softwares");
   caixa.innerHTML = "";
