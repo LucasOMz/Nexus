@@ -147,3 +147,44 @@ def detalhar_instalado(
             for v, pcs in sorted(por_versao.items(), key=lambda kv: kv[0], reverse=True)
         ],
     }
+
+@router.get("/ativos/{ativo_id}/software")
+def software_do_ativo(
+    ativo_id: int,
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(require_module("software")),
+) -> dict:
+    """Programas instalados numa maquina especifica.
+
+    Alimenta o botao "Softwares" na ficha do ativo. A lista vem da ultima
+    coleta do agente — se estiver vazia, a maquina ainda nao reportou.
+
+    A data da coleta vai junto para a tela poder avisar quando o dado esta
+    velho: uma lista de tres meses atras engana quem le.
+    """
+    linhas = (
+        db.query(SoftwareInstalado)
+        .filter(
+            SoftwareInstalado.ativo_id == ativo_id,
+            SoftwareInstalado.deleted_at.is_(None),
+        )
+        .order_by(SoftwareInstalado.nome)
+        .all()
+    )
+
+    return {
+        "ativo_id": ativo_id,
+        "coletado_em": max(
+            (x.coletado_em for x in linhas if x.coletado_em), default=None
+        ),
+        "total": len(linhas),
+        "softwares": [
+            {
+                "nome": x.nome,
+                "versao": x.versao,
+                "fabricante": x.fabricante,
+                "origem": x.origem,
+            }
+            for x in linhas
+        ],
+    }

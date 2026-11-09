@@ -82,6 +82,7 @@ export async function abrirDetalhes(ativo) {
   let ficha = null;
   let historico = [];
   let usuarios = [];
+  let softwares = null;
   try {
     const dados = await api.get(`/ativos/${ativo.id}`);
     ficha = dados.ti || dados.impressora || null;
@@ -90,6 +91,9 @@ export async function abrirDetalhes(ativo) {
     // dias já foi removido pelo servidor.
     usuarios = await api.get(`/admin/agentes/usuarios-do-ativo/${ativo.id}`)
       .catch(() => []);
+    // Lista de programas da ultima coleta. `null` = falhou (mostra o aviso);
+    // `[]` = coletou e nao achou nada.
+    softwares = await api.get(`/ativos/${ativo.id}/software`).catch(() => null);
   } catch (e) {
     corpo.innerHTML = "";
     corpo.append(emptyState("ativos", "Não foi possível carregar", e.message));
@@ -206,6 +210,52 @@ export async function abrirDetalhes(ativo) {
           : el("span", {}, "")));
     }
     corpo.append(secao("Usuários desta máquina", lista) || el("div", {}));
+  }
+
+
+  // --- 2c. softwares instalados -----------------------------------------
+  //
+  // Mesmo botao que a tela de Software e Licencas mostra, mas para uma
+  // maquina so: aqui a pergunta e "o que tem neste PC", nao "quem tem este
+  // programa".
+  if (softwares) {
+    const linhas = softwares.softwares || [];
+
+    const quando = softwares.coletado_em
+      ? new Date(softwares.coletado_em).toLocaleString("pt-BR")
+      : null;
+
+    const caixa = el("div", {});
+
+    if (!linhas.length) {
+      caixa.append(el("p", { class: "muted", style: "margin:0;font-size:13px" },
+        "Nenhum programa reportado ainda. O agente envia a lista uma vez "
+        + "por dia — se a máquina acabou de ser instalada, aguarde a "
+        + "próxima coleta."));
+    } else {
+      caixa.append(el("p", { class: "muted", style: "margin:0 0 8px;font-size:12px" },
+        `${linhas.length} programa(s)`
+        + (quando ? ` · última coleta em ${quando}` : "")));
+
+      // Lista compacta: nome e versão na mesma linha. Uma tabela aqui
+      // competiria com o resto da ficha, que é só leitura.
+      for (const s of linhas) {
+        caixa.append(el("div", {
+          class: "row between",
+          style: "padding:5px 0;border-bottom:1px solid "
+            + "var(--md-sys-color-outline-variant);font-size:13px",
+        },
+          el("span", { style: "overflow:hidden;text-overflow:ellipsis" }, s.nome),
+          el("span", { class: "muted", style: "white-space:nowrap;margin-left:10px" },
+            s.versao || "—")));
+      }
+    }
+
+    corpo.append(secao("Softwares instalados", caixa) || el("div", {}));
+  } else {
+    corpo.append(secao("Softwares instalados",
+      el("p", { class: "muted", style: "margin:0;font-size:13px" },
+        "Não foi possível carregar a lista de programas.")) || el("div", {}));
   }
 
   // --- 3. histórico -----------------------------------------------------
