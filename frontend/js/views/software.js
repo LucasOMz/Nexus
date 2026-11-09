@@ -332,6 +332,10 @@ async function abaInstalados(caixa) {
     }
   }
 
+  // Limpa o skeleton que brir() colocou em caixa. Sem isto ele fica
+  // para sempre acima da lista — as barras cinzas da captura.
+  caixa.innerHTML = "";
+
   caixa.append(
     el("div", { class: "row between wrap", style: "gap:10px;margin-bottom:14px" },
       campoBusca,
