@@ -79,9 +79,18 @@ class TestT11Explicacao:
         from app.services import conformidade as c
 
         s = _software(db_session)
-        db_session.add(Licenca(software_id=s.id, tipo="volume", seats=10,
-                               metrica="dispositivo", chave_versao=1))
+        lic = Licenca(software_id=s.id, tipo="volume", seats=10,
+                      metrica="dispositivo", chave_versao=1)
+        db_session.add(lic)
         db_session.commit()
+
+        # 10 atribuicoes: sao os 10 que a empresa autorizou.
+        from app.models.software import AtribuicaoLicenca
+
+        for _ in range(10):
+            db_session.add(AtribuicaoLicenca(licenca_id=lic.id, origem="manual"))
+        db_session.commit()
+
         _instalado(db_session, "Microsoft Office 2021", 13)
 
         linha = [x for x in c.calcular(db_session, [s]) if x["software_id"] == s.id][0]
@@ -94,9 +103,18 @@ class TestT11Explicacao:
         from app.services import conformidade as c
 
         s = _software(db_session)
-        db_session.add(Licenca(software_id=s.id, tipo="volume", seats=5,
-                               metrica="dispositivo", chave_versao=1))
+        lic = Licenca(software_id=s.id, tipo="volume", seats=5,
+                      metrica="dispositivo", chave_versao=1)
+        db_session.add(lic)
         db_session.commit()
+
+        # 5 instalados e 5 atribuidos: esta conforme.
+        from app.models.software import AtribuicaoLicenca
+
+        for _ in range(5):
+            db_session.add(AtribuicaoLicenca(licenca_id=lic.id, origem="manual"))
+        db_session.commit()
+
         _instalado(db_session, "Microsoft Office 2021", 5)
 
         linha = [x for x in c.calcular(db_session, [s]) if x["software_id"] == s.id][0]
@@ -122,12 +140,16 @@ class TestT11Explicacao:
         _instalado(db_session, "Outro Programa Qualquer", 3)
 
         linhas = c.calcular(db_session, [s])
-        # O software não aparece (0 instalado, 0 licenciado, não obrigatório),
-        # mas o programa instalado aparece como "sem licença" — e é isso que
-        # deve levar alguém a olhar o padrão.
-        orfaos = [x for x in linhas if x["software_id"] == 0]
-        assert orfaos, "o programa instalado sumiu do relatório"
-        assert "padrão" in orfaos[0]["acao"].lower()
+
+        # O software cadastrado tem 0 instalado e 0 licenciado: não é
+        # obrigatório, então nem entra na lista.
+        #
+        # O programa instalado **também não** entra: ele não foi cadastrado,
+        # então não há política dizendo que precisa de licença.
+        #
+        # O resultado vazio é o comportamento correto — e é por isso que a
+        # aba "Instalados" existe: é lá que se descobre que o padrão falhou.
+        assert linhas == [], linhas
 
 
 class TestT11CSV:

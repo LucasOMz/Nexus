@@ -169,16 +169,26 @@ class TestCalcular:
         total = sum(x["instalado"] for x in linhas if x["software_id"] in (a.id, b.id))
         assert total == 2, "o mesmo software foi contado duas vezes"
 
-    def test_o_nao_reconhecido_vira_sem_licenca(self, db_session):
-        """Instalado e não cadastrado é uso irregular — e passa batido."""
+    def test_o_nao_reconhecido_nao_vira_inconformidade(self, db_session):
+        """Instalado e não cadastrado NÃO é inconformidade.
+
+        ## A regra mudou
+
+        Antes, todo programa instalado que nenhum cadastro reconhecia entrava
+        na lista como `sem_licenca`. Com 150 programas na máquina e 3 no
+        catálogo, a tela ficava inteira vermelha — e o técnico parava de
+        olhar.
+
+        Inconformidade é o que a empresa **decidiu** que precisa de licença.
+        Programa que ninguém cadastrou é inventário, e tem tela própria
+        (Softwares → Instalados).
+        """
         s = self._software(db_session, "Office", "office*")
         self._instalado(db_session, "WinRAR 6.24", 5)
 
         linhas = c.calcular(db_session, [s])
         orfaos = [x for x in linhas if x["software_id"] == 0]
-        assert orfaos, "o software sem licença não apareceu"
-        assert orfaos[0]["instalado"] == 5
-        assert orfaos[0]["situacao"] == c.SituacaoConformidade.SEM_LICENCA
+        assert not orfaos, [x["software"] for x in orfaos]
 
     def test_guarda_os_nomes_que_casaram(self, db_session):
         """Explicar POR QUE contou é o que permite corrigir o padrão."""

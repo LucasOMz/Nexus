@@ -694,10 +694,55 @@ function formAtribuir(caixa, licencas, softwares) {
     campos.licenca_id = Number(selLicenca.value);
   });
 
-  const entradaAtivo = el("input", { type: "number", placeholder: "ID do ativo" });
-  entradaAtivo.addEventListener("input", () => { campos.ativo_id = Number(entradaAtivo.value); });
-  const entradaUsuario = el("input", { type: "number", placeholder: "ID do usuário" });
-  entradaUsuario.addEventListener("input", () => { campos.usuario_id = Number(entradaUsuario.value); });
+  // ## Escolher em vez de digitar
+  //
+  // O campo era um `input type="number"` pedindo o id do ativo. O patrimônio
+  // é "TP98000011212" — ninguém sabe o id de cabeça, e digitar número errado
+  // atribuía a licença à máquina de outra pessoa.
+  //
+  // `datalist` resolve sem componente novo: o valor continua sendo o id, mas
+  // a lista mostra patrimônio e nome para escolher.
+  const listaAtivos = el("datalist", { id: "dl-ativos" });
+  const listaUsuarios = el("datalist", { id: "dl-usuarios" });
+
+  const entradaAtivo = el("input", {
+    type: "text",
+    list: "dl-ativos",
+    placeholder: "Buscar por patrimônio ou modelo…",
+    autocomplete: "off",
+  });
+  entradaAtivo.addEventListener("input", () => {
+    campos.ativo_id = Number(entradaAtivo.value) || undefined;
+  });
+
+  const entradaUsuario = el("input", {
+    type: "text",
+    list: "dl-usuarios",
+    placeholder: "Buscar por nome ou e-mail…",
+    autocomplete: "off",
+  });
+  entradaUsuario.addEventListener("input", () => {
+    campos.usuario_id = Number(entradaUsuario.value) || undefined;
+  });
+
+  // As opções chegam em segundo plano: o formulário abre na hora.
+  api.get("/ativos?limite=500").then((r) => {
+    const itens = Array.isArray(r) ? r : (r && (r.items || r.ativos)) || [];
+    for (const a of itens) {
+      const rotulo = [a.patrimonio, a.numero_serie].filter(Boolean).join(" · ");
+      const extra = a.modelo || a.descricao || "";
+      listaAtivos.append(el("option", { value: a.id },
+        rotulo + (extra ? ` — ${extra}` : "")));
+    }
+  }).catch(() => { /* digitar o id continua funcionando */ });
+
+  api.get("/usuarios").then((r) => {
+    const itens = Array.isArray(r) ? r : (r && r.items) || [];
+    for (const u of itens) {
+      listaUsuarios.append(el("option", { value: u.id },
+        `${u.nome}${u.email ? ` — ${u.email}` : ""}`));
+    }
+  }).catch(() => { /* idem */ });
 
   const selDono = el("select", {},
     el("option", { value: "ativo" }, "Máquina (ativo)"),
@@ -716,6 +761,10 @@ function formAtribuir(caixa, licencas, softwares) {
   dialog({
     title: "Atribuir seat",
     body: el("div", {},
+      // Os `datalist` vão no corpo, escondidos: é deles que sai a lista de
+      // patrimônios e de pessoas para escolher no campo de atribuição.
+      listaAtivos,
+      listaUsuarios,
       el("div", { class: "field" }, el("label", {}, "Licença *"), selLicenca),
       el("div", { class: "field" }, el("label", {}, "Tipo *"), selDono),
       campoDono,

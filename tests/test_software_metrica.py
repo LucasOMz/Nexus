@@ -59,6 +59,19 @@ def _licenca(db, software, metrica, seats=10):
     return lic
 
 
+def _atribuir(db, licenca, quantidade, maquinas=None):
+    """Cria atribuicoes vivas — é o que autoriza a instalação."""
+    from app.models.software import AtribuicaoLicenca
+
+    for i in range(quantidade):
+        db.add(AtribuicaoLicenca(
+            licenca_id=licenca.id,
+            ativo_id=maquinas[i].id if maquinas else None,
+            origem="manual",
+        ))
+    db.commit()
+
+
 def _instalado_em(db, ativo, nome):
     from app.models.software import SoftwareInstalado
 
@@ -144,11 +157,16 @@ class TestOCalculo:
 
         planta = _planta(db_session)
         s = _software(db_session)
-        _licenca(db_session, s, "dispositivo", seats=10)
+        lic = _licenca(db_session, s, "dispositivo", seats=10)
 
+        maquinas = []
         for i in range(11):
             a = _maquina(db_session, planta, f"MAQ-{i}")
+            maquinas.append(a)
             _instalado_em(db_session, a, "Microsoft 365")
+
+        # 10 seats comprados e 10 maquinas autorizadas: a 11a e o excedente.
+        _atribuir(db_session, lic, 10, maquinas)
 
         linha = [x for x in c.calcular(db_session, [s]) if x["software_id"] == s.id][0]
         assert linha["instalado"] == 11

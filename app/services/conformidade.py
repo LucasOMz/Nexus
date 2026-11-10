@@ -129,6 +129,58 @@ class Contagem:
     custo_mensal: Decimal = Decimal("0")
 
 
+def atribuicoes_por_software(db: Session, planta_id: int | None = None) -> dict[int, int]:
+    """Quantas atribuicoes vivas cada software tem.
+
+    Uma atribuicao e o ato de dizer "esta licenca vale para esta maquina (ou
+    esta pessoa)". E o que a empresa **autorizou**, e por isso e a base da
+    conformidade — nao a quantidade de seats comprada.
+    """
+    q = (
+        db.query(
+            Licenca.software_id,
+            func.count(func.distinct(AtribuicaoLicenca.id)),
+        )
+        .join(AtribuicaoLicenca, AtribuicaoLicenca.licenca_id == Licenca.id)
+        .filter(
+            Licenca.deleted_at.is_(None),
+            AtribuicaoLicenca.deleted_at.is_(None),
+        )
+    )
+
+    if planta_id is not None:
+        q = q.filter(Licenca.planta_id == planta_id)
+
+    return {software_id: total for software_id, total in q.group_by(Licenca.software_id).all()}
+
+
+def situacao_por_atribuicao(
+    licenciado: int, instalado: int, atribuido: int
+) -> SituacaoConformidade:
+    """Classifica usando o que foi **atribuido**, nao o que foi comprado.
+
+    A diferenca aparece no caso mais comum de descuido: 10 seats comprados,
+    5 maquinas com o programa, **nenhuma atribuicao registrada**. Pela conta
+    antiga isso era "conforme" — 5 < 10. Pela regra da empresa e o oposto:
+    ninguem autorizou aquelas 5 instalacoes.
+    """
+    if instalado == 0 and licenciado == 0:
+        return SituacaoConformidade.NAO_INSTALADO
+    if instalado == 0:
+        # Comprado e nao instalado em lugar nenhum.
+        return SituacaoConformidade.OCIOSO
+    if atribuido == 0:
+        # Instalado e nenhuma licenca atribuida a maquina ou pessoa alguma.
+        return SituacaoConformidade.SEM_LICENCA
+    if instalado > atribuido:
+        return SituacaoConformidade.EXCEDENTE
+    if licenciado > atribuido:
+        # Ha seat comprado e nao atribuido. Dinheiro parado, mas as maquinas
+        # que tem o programa estao cobertas.
+        return SituacaoConformidade.OCIOSO
+    return SituacaoConformidade.CONFORME
+
+
 def situacao(licenciado: int, instalado: int) -> SituacaoConformidade:
     """Classifica o cruzamento.
 
@@ -303,6 +355,10 @@ def calcular(db: Session, softwares: list[Software],
             consumo[s.id] = consumo.get(s.id, 0) + quantas
             origens.setdefault(s.id, []).append(nome)
 
+    # Atribuicoes por software, numa consulta so. Fazer isso dentro do laco
+    # seria uma consulta por software cadastrado.
+    atribuicoes = atribuicoes_por_software(db)
+
     linhas = []
     for s in softwares:
         vivas = _licencas_vivas(s)
@@ -312,6 +368,7 @@ def calcular(db: Session, softwares: list[Software],
             if lic.tipo == TipoLicenca.ASSINATURA
         )
         instalado = consumo.get(s.id, 0)
+        atribuido = atribuicoes.get(s.id, 0)
 
         # A MÉTRICA decide o que se compara.
         #
@@ -345,7 +402,8 @@ def calcular(db: Session, softwares: list[Software],
             "licenciado": licenciado,
             "instalado": instalado,
             "diferenca": instalado - licenciado,
-            "situacao": situacao(licenciado, instalado),
+            "situacao": situacao_por_atribuicao(licenciado, instalado, atribuido),
+        "atribuido": atribuido,
             "origens": origens.get(s.id, [])[:8],
             "obrigatorio": bool(s.obrigatorio),
             # Como esta linha foi contada. A tela mostra, para o número ser
@@ -355,24 +413,16 @@ def calcular(db: Session, softwares: list[Software],
             "custo_mensal": custo,
         })
 
-    # Instalado e NÃO reconhecido por nenhum software cadastrado. É o caso
-    # que nenhum relatório tradicional mostra: não há licença para comparar,
-    # então nada acusa — e é uso irregular.
-    for nome, quantas in instalados:
-        if nome in usados:
-            continue
-        linhas.append({
-            "software_id": 0,
-            "software": nome,
-            "fabricante": None,
-            "licenciado": 0,
-            "instalado": quantas,
-            "diferenca": quantas,
-            "situacao": SituacaoConformidade.SEM_LICENCA,
-            "origens": [nome],
-            "custo_mensal": Decimal("0"),
-            "obrigatorio": False,
-        })
+    # ## O que fica de fora, de propósito
+    #
+    # Programas instalados que **não** estão no catálogo não entram nesta
+    # lista. Antes entravam como `sem_licenca`, e o resultado era a tela
+    # inteira vermelha: 150 programas instalados contra 3 cadastrados viravam
+    # 147 "inconformidades".
+    #
+    # Inconformidade é o que a empresa decidiu que precisa de licença e não
+    # está licenciado. Programa que ninguém cadastrou é inventário — e o
+    # inventário tem tela própria (Softwares → Instalados).
 
     # --- T11: a explicação, que é o que faz o relatório decidir ---------
     #
