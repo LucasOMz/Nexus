@@ -5419,3 +5419,49 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
     font-size: 11.5px;
   }
 }
+
+/* =====================================================================
+   Janela de softwares do ativo
+   =====================================================================
+   A largura padrão do diálogo serve para formulário. Uma tabela de três
+   colunas com nomes de programa longos precisa de mais — e a barra
+   horizontal é pior que ocupar a tela. */
+
+.dialog.dialog-software {
+  width: min(1100px, 96vw);
+  max-width: min(1100px, 96vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.dialog-software .dialog-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* `table-layout: fixed` faz o nome quebrar em vez de esticar a tabela. */
+.dialog-software table.data {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.dialog-software table.data th:nth-child(1),
+.dialog-software table.data td:nth-child(1) {
+  width: auto;
+}
+
+.dialog-software table.data td:nth-child(1) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Em tela estreita, tudo encolhe junto. */
+@media (max-width: 720px) {
+  .dialog.dialog-software {
+    width: 96vw;
+    max-height: 92vh;
+  }
+}

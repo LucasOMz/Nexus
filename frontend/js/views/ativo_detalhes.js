@@ -81,12 +81,17 @@ export function abrirSoftwares(ativo) {
   const corpo = el("div", {});
   corpo.append(skeleton(4));
 
-  dialog({
+  const janela = dialog({
     title: `Softwares — ${ativo.patrimonio || ativo.numero_serie || "ativo"}`,
     body: corpo,
     wide: true,
     actions: [{ label: "Fechar", variant: "tonal", onClick: (fechar) => fechar() }],
   });
+
+  // Classe própria para esta janela: a lista tem três colunas com nomes
+  // longos ("Microsoft Visual C++ 2015-2022 Redistributable (x64)"), e na
+  // largura padrão do diálogo sobra rolagem horizontal.
+  janela.dlg.classList.add("dialog-software");
 
   api.get(`/ativos/${ativo.id}/software`).then((dados) => {
     corpo.innerHTML = "";
