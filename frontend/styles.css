@@ -5423,14 +5423,15 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
 /* =====================================================================
    Janela de softwares do ativo
    =====================================================================
-   A largura padrão do diálogo serve para formulário. Uma tabela de três
-   colunas com nomes de programa longos precisa de mais — e a barra
-   horizontal é pior que ocupar a tela. */
+   A lista tem nomes longos ("Microsoft Visual C++ 2015-2022
+   Redistributable (x64)") e fabricantes com várias palavras. Cortar com
+   reticências esconde justamente a parte que distingue um programa do
+   outro, então aqui o texto **quebra** e a linha cresce. */
 
 .dialog.dialog-software {
-  width: min(1100px, 96vw);
-  max-width: min(1100px, 96vw);
-  max-height: 88vh;
+  width: min(1080px, calc(100vw - 32px));
+  max-width: min(1080px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
   display: flex;
   flex-direction: column;
 }
@@ -5439,29 +5440,52 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
+  /* Folga à direita para a barra de rolagem não encostar no texto. */
+  padding-right: 14px;
 }
 
-/* `table-layout: fixed` faz o nome quebrar em vez de esticar a tabela. */
 .dialog-software table.data {
   width: 100%;
   table-layout: fixed;
 }
 
-.dialog-software table.data th:nth-child(1),
-.dialog-software table.data td:nth-child(1) {
-  width: auto;
+/* Todas as células quebram. `anywhere` cobre nome sem espaço, que senão
+   estoura a coluna e voltaria a criar rolagem horizontal. */
+.dialog-software table.data th,
+.dialog-software table.data td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  vertical-align: top;
+  padding-top: 7px;
+  padding-bottom: 7px;
 }
 
-.dialog-software table.data td:nth-child(1) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* Larguras: o nome fica com o que sobra; versão e fabricante têm teto. */
+.dialog-software table.data th:nth-child(2),
+.dialog-software table.data td:nth-child(2) {
+  width: 22%;
 }
 
-/* Em tela estreita, tudo encolhe junto. */
+.dialog-software table.data th:nth-child(3),
+.dialog-software table.data td:nth-child(3) {
+  width: 28%;
+}
+
 @media (max-width: 720px) {
   .dialog.dialog-software {
-    width: 96vw;
-    max-height: 92vh;
+    width: calc(100vw - 16px);
+    max-width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+  }
+
+  /* Em tela estreita, três colunas não cabem. Versão desce para o nome. */
+  .dialog-software table.data th:nth-child(2),
+  .dialog-software table.data td:nth-child(2) {
+    display: none;
+  }
+
+  .dialog-software table.data th:nth-child(3),
+  .dialog-software table.data td:nth-child(3) {
+    width: 40%;
   }
 }

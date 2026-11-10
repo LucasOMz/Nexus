@@ -118,8 +118,10 @@ export function abrirSoftwares(ativo) {
     const tabela = el("table", { class: "data" },
       el("thead", {}, el("tr", {},
         el("th", {}, "Programa"),
-        el("th", { style: "width:150px" }, "Versão"),
-        el("th", { style: "width:180px" }, "Fabricante"))));
+        // Larguras no CSS (.dialog-software). Inline aqui venceria a media
+        // query de tela estreita e voltaria a cortar o texto.
+        el("th", {}, "Versão"),
+        el("th", {}, "Fabricante"))));
 
     const tbody = el("tbody", {});
     for (const s of linhas) {
