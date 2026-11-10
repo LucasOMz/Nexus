@@ -364,7 +364,7 @@ function desenhar(root) {
   }
 
   if (vista === "quadro") {
-    for (const bucket of dados) trilho.append(coluna(root, bucket));
+    for (const bucket of dados) trilho.append(coluna(root, bucket, dados));
     wrap.append(trilho);
   } else {
     const acoes = {
@@ -388,7 +388,35 @@ function desenhar(root) {
   root.append(wrap);
 }
 
-function coluna(root, bucket) {
+/**
+ * Move um bucket para a posição de outro e salva a ordem.
+ *
+ * A lista enviada é a ordem **final** — o servidor só grava `ordem = posição`.
+ * Recalcular no servidor exigiria que ele soubesse o que estava na tela, e a
+ * tela é quem tem a lista atual.
+ */
+async function reordenarBuckets(root, todos, arrastadoId, alvoId) {
+  if (arrastadoId === alvoId) return;
+
+  const lista = [...todos];
+  const de = lista.findIndex((b) => b.id === arrastadoId);
+  const para = lista.findIndex((b) => b.id === alvoId);
+  if (de < 0 || para < 0) return;
+
+  const [movido] = lista.splice(de, 1);
+  lista.splice(para, 0, movido);
+
+  try {
+    await api.post("/kanban/buckets/ordem", { ids: lista.map((b) => b.id) });
+    await recarregar(root);
+  } catch (e) {
+    toast(e.message);
+    await recarregar(root);
+  }
+}
+
+
+function coluna(root, bucket, todos) {
   const recolhidas = colunasRecolhidas();
   const recolhida = recolhidas.has(String(bucket.id));
 
@@ -399,6 +427,17 @@ function coluna(root, bucket) {
     ondrop: async (ev) => {
       ev.preventDefault();
       col.classList.remove("alvo");
+
+      // Bucket primeiro: o `drop` recebe os dois tipos, e o de coluna tem
+      // prioridade porque a área de soltura é a mesma.
+      const bucketArrastado = Number(
+        ev.dataTransfer.getData("application/x-bucket"),
+      );
+      if (bucketArrastado) {
+        await reordenarBuckets(root, todos, bucketArrastado, bucket.id);
+        return;
+      }
+
       const id = Number(ev.dataTransfer.getData("text/plain"));
       if (id) await mover(root, id, bucket.id, { noFim: true });
     },
@@ -411,7 +450,22 @@ function coluna(root, bucket) {
     col.style.setProperty("--k-cor", bucket.cor);
   }
 
-  col.append(el("div", { class: "kb-cabecalho" },
+  // O cabeçalho é a alça de arrasto da coluna. `draggable` fica nele, e não
+  // na coluna: os cartões também são arrastáveis, e a coluna inteira
+  // arrastaria o cartão junto.
+  const cabecalho = el("div", {
+    class: "kb-cabecalho",
+    draggable: "true",
+    title: "Arraste para reordenar",
+    ondragstart: (ev) => {
+      ev.dataTransfer.setData("application/x-bucket", String(bucket.id));
+      ev.dataTransfer.effectAllowed = "move";
+      col.classList.add("arrastando");
+    },
+    ondragend: () => col.classList.remove("arrastando"),
+  });
+
+  cabecalho.append(
     el("button", {
       class: "kb-seta" + (recolhida ? " fechada" : ""),
       title: recolhida ? "Expandir" : "Recolher",
@@ -435,7 +489,10 @@ function coluna(root, bucket) {
         abrirMenuBucket(root, bucket, ev.currentTarget);
       },
       html: icon("mais", 17),
-    })));
+    }),
+  );
+
+  col.append(cabecalho);
 
   // Progresso da coluna: quantas daqui estão concluídas.
   const feitas = bucket.atividades.filter((a) => a.concluida).length;

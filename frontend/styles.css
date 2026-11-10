@@ -5489,3 +5489,17 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
     width: 40%;
   }
 }
+
+/* Arrasto do bucket: o cabeçalho é a alça. */
+.kb-cabecalho {
+  cursor: grab;
+}
+
+.kb-cabecalho:active {
+  cursor: grabbing;
+}
+
+/* A coluna de origem fica esmaecida enquanto se arrasta. */
+.kb-coluna.arrastando {
+  opacity: 0.4;
+}
