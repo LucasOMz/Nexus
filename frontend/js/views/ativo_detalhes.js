@@ -88,9 +88,6 @@ export function abrirSoftwares(ativo) {
     actions: [{ label: "Fechar", variant: "tonal", onClick: (fechar) => fechar() }],
   });
 
-  // Classe própria para esta janela: a lista tem três colunas com nomes
-  // longos ("Microsoft Visual C++ 2015-2022 Redistributable (x64)"), e na
-  // largura padrão do diálogo sobra rolagem horizontal.
   janela.dlg.classList.add("dialog-software");
 
   api.get(`/ativos/${ativo.id}/software`).then((dados) => {
@@ -111,28 +108,66 @@ export function abrirSoftwares(ativo) {
       ? new Date(dados.coletado_em).toLocaleString("pt-BR")
       : null;
 
-    corpo.append(el("p", { class: "muted", style: "margin:0 0 10px;font-size:12.5px" },
-      `${linhas.length} programa(s)`
-      + (quando ? ` · última coleta em ${quando}` : "")));
+    const campoBusca = el("input", {
+      class: "field",
+      type: "search",
+      placeholder: "Filtrar programa…",
+      style: "width:100%;margin-bottom:10px;box-sizing:border-box",
+    });
 
-    const tabela = el("table", { class: "data" },
-      el("thead", {}, el("tr", {},
-        el("th", {}, "Programa"),
-        // Larguras no CSS (.dialog-software). Inline aqui venceria a media
-        // query de tela estreita e voltaria a cortar o texto.
-        el("th", {}, "Versão"),
-        el("th", {}, "Fabricante"))));
+    const contagem = el("p", {
+      class: "muted",
+      style: "margin:0 0 10px;font-size:12.5px",
+    }, `${linhas.length} programa(s)` + (quando ? ` · última coleta em ${quando}` : ""));
 
-    const tbody = el("tbody", {});
-    for (const s of linhas) {
-      tbody.append(el("tr", {},
-        el("td", {}, s.nome),
-        el("td", { class: "muted" }, s.versao || "—"),
-        el("td", { class: "muted" }, s.fabricante || "—")));
-    }
+    // Lista em duas linhas por programa. Sem tabela: nao existe coluna para
+    // cortar, e o nome longo quebra sozinho.
+    const lista = el("div", { style: "display:flex;flex-direction:column;gap:0" });
 
-    tabela.append(tbody);
-    corpo.append(tabela);
+    const desenhar = (filtro) => {
+      lista.innerHTML = "";
+      const alvo = (filtro || "").trim().toLowerCase();
+
+      const visiveis = alvo
+        ? linhas.filter((s) =>
+            s.nome.toLowerCase().includes(alvo)
+            || (s.fabricante || "").toLowerCase().includes(alvo)
+            || (s.versao || "").toLowerCase().includes(alvo))
+        : linhas;
+
+      if (!visiveis.length) {
+        lista.append(el("p", { class: "muted", style: "margin:12px 0;font-size:13px" },
+          "Nenhum programa corresponde ao filtro."));
+        return;
+      }
+
+      for (const s of visiveis) {
+        const detalhe = [s.versao, s.fabricante].filter(Boolean).join("  ·  ");
+
+        lista.append(el("div", {
+          style: "padding:9px 2px;border-bottom:1px solid "
+            + "var(--md-sys-color-outline-variant)",
+        },
+          // `min-width:0` + `overflow-wrap` garantem que o texto quebre em
+          // vez de empurrar a caixa.
+          el("div", {
+            style: "font-size:13.5px;font-weight:500;min-width:0;"
+              + "overflow-wrap:anywhere;word-break:break-word",
+          }, s.nome),
+          detalhe
+            ? el("div", {
+                class: "muted",
+                style: "font-size:12px;margin-top:2px;min-width:0;"
+                  + "overflow-wrap:anywhere;word-break:break-word",
+              }, detalhe)
+            : el("span", {})));
+      }
+    };
+
+    campoBusca.addEventListener("input", () => desenhar(campoBusca.value));
+
+    corpo.append(campoBusca, contagem, lista);
+    desenhar("");
   }).catch((e) => {
     corpo.innerHTML = "";
     corpo.append(el("div", { class: "card" },
