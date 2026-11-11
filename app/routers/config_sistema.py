@@ -1,10 +1,10 @@
-﻿"""Configuração do sistema (Administração → Autenticação AD/LDAP)."""
+"""Configuração do sistema (Administração → Autenticação AD/LDAP)."""
 from __future__ import annotations
 
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -19,6 +19,9 @@ from app.services.ldap_service import autenticar, testar_conexao
 router = APIRouter(prefix="/admin/config", tags=["configuracao"])
 
 # Campos que o frontend pode enviar.
+# Campos simples (nao-LDAP) que o PUT grava direto.
+_CAMPOS_SIMPLES = ("intervalo_software_horas",)
+
 _CAMPOS_LOGRADOS = (
     "ldap_ativo", "ldap_servidor", "ldap_porta", "ldap_tls", "ldap_base_dn",
     "ldap_bind_dn", "ldap_filtro_usuario", "ldap_grupo_acesso", "ldap_grupo_admin",
@@ -44,6 +47,9 @@ class ConfigUpdate(BaseModel):
     ldap_grupos_aninhados: bool | None = None
     ldap_ignorar_certificado: bool | None = None
     ldap_admin_por_cargo: bool | None = None
+    # De quantas em quantas horas o agente envia a lista de programas.
+    # 1 a 168 (uma semana). O agente consulta a cada ciclo.
+    intervalo_software_horas: int | None = Field(default=None, ge=1, le=168)
 
 
 class TesteLogin(BaseModel):
@@ -102,6 +108,9 @@ def buscar_ad(
 
 def _serializar(cfg) -> dict[str, Any]:
     dados = {campo: getattr(cfg, campo) for campo in _CAMPOS_LOGRADOS}
+    # Quantas horas entre coletas de software. O agente lê isto na resposta
+    # do inventário; a tela mostra para poder editar.
+    dados["intervalo_software_horas"] = getattr(cfg, "intervalo_software_horas", 1) or 1
     dados["ldap_bind_senha_definida"] = bool(cfg.ldap_bind_senha)
     dados["ldap_bind_senha_cifrada"] = esta_cifrado(cfg.ldap_bind_senha)
     dados["ldap_ultimo_teste_ok"] = cfg.ldap_ultimo_teste_ok
@@ -187,6 +196,7 @@ def diagnostico(db: Session = Depends(get_db), _: Usuario = Depends(require_admi
 
     return {
         "ldap_ativo": cfg.ldap_ativo,
+        "intervalo_software_horas": getattr(cfg, "intervalo_software_horas", 1) or 1,
         "servidor": cfg.ldap_servidor,
         "porta": cfg.ldap_porta,
         "tls": cfg.ldap_tls,

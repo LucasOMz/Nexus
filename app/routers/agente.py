@@ -105,7 +105,15 @@ def inventario(
     r = servico.aplicar_inventario(db, token, payload)
     if not r["ok"]:
         raise HTTPException(r["status"], r["motivo"])
-    return {"ok": True}
+    from app.services import config_service
+
+    cfg = config_service.obter_config(db)
+    horas = getattr(cfg, "intervalo_software_horas", 1) or 1
+
+    # O intervalo vai na resposta do inventario: o agente ja esta conectado
+    # neste instante, e uma rota separada seria uma segunda ida ao servidor
+    # por ciclo.
+    return {"ok": True, "intervalo_software_horas": max(1, min(168, int(horas)))}
 
 
 # ---------------------------------------------------------------------------

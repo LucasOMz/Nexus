@@ -53,6 +53,7 @@ export async function renderAgente(root) {
     let pendentes = [];
     let tokens = [];
     let senhaDefinida = false;
+    let config = null;
     try {
       const [c, p, t, s] = await Promise.all([
         api.get("/admin/agentes/codigos").catch(() => []),
@@ -60,6 +61,7 @@ export async function renderAgente(root) {
         api.get("/admin/agentes/tokens").catch(() => []),
         api.get("/admin/agentes/senha").catch(() => ({ definida: false })),
       ]);
+      config = await api.get("/admin/config").catch(() => null);
       codigos = c; pendentes = p; tokens = t;
       senhaDefinida = !!(s && s.definida);
     } catch (e) {
@@ -69,6 +71,49 @@ export async function renderAgente(root) {
     }
 
     alvo.innerHTML = "";
+
+
+    // ---------------------------------------------------- intervalo de coleta
+    //
+    // O agente consulta este número a cada ciclo. Mudar aqui vale para toda a
+    // frota no próximo ciclo — sem reinstalar nada, que era o incômodo.
+    const campoHoras = el("input", {
+      class: "field",
+      type: "number",
+      min: "1",
+      max: "168",
+      value: String((config && config.intervalo_software_horas) || 1),
+      style: "max-width:120px",
+    });
+
+    const salvarHoras = el("button", {
+      class: "btn tonal",
+      onclick: async (ev) => {
+        const bt = ev.currentTarget;
+        bt.disabled = true;
+        try {
+          const horas = Number(campoHoras.value) || 1;
+          await api.put("/admin/config", { intervalo_software_horas: horas });
+          toast(`Agente vai enviar softwares a cada ${horas} h`);
+          await desenhar();
+        } catch (e) {
+          mostrarErro(e);
+        } finally {
+          bt.disabled = false;
+        }
+      },
+    }, "Salvar");
+
+    alvo.append(el("div", { class: "card", style: "margin-bottom:16px" },
+      el("h3", { style: "margin:0 0 6px;font-size:15px" }, "Coleta de softwares"),
+      el("p", { class: "muted", style: "margin:0 0 12px;font-size:13px" },
+        "De quantas em quantas horas cada máquina envia a lista de programas. "
+        + "O agente consulta a cada ciclo, então a mudança vale na próxima "
+        + "hora — sem reinstalar."),
+      el("div", { class: "row", style: "gap:8px;align-items:center" },
+        campoHoras,
+        el("span", { class: "muted", style: "font-size:13px" }, "hora(s)"),
+        salvarHoras)));
 
     // ------------------------------------------------------------ gerar
     const campoRotulo = el("input", {

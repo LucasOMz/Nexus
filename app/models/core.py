@@ -822,6 +822,15 @@ class ConfiguracaoSistema(BaseModel, Base):
     #
     # Guardada com hash, como qualquer senha. Nula = fechamento livre, para
     # que uma instalacao nova nao fique impossivel de encerrar.
+    # De quantas em quantas horas o agente envia a lista de programas.
+    #
+    # Fica no servidor, e nao no binario, porque mudar exige reinstalar o
+    # agente na frota inteira — caro demais para um numero.
+    #
+    # 1 hora e o padrao: software muda mais que hardware, e o ciclo do
+    # servico ja e de hora em hora.
+    intervalo_software_horas: Mapped[int] = mapped_column(Integer, default=1)
+
     senha_fechamento_hash: Mapped[str | None] = mapped_column(String(200))
 
 
