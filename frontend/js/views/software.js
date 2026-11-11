@@ -208,8 +208,6 @@ async function abaConformidade(caixa) {
  * 119 e precisa atualizar" sem exportar planilha.
  */
 async function abaInstalados(caixa) {
-  const aberto = { nome: null };
-
   const campoBusca = el("input", {
     class: "field",
     type: "search",
@@ -246,8 +244,8 @@ async function abaInstalados(caixa) {
     if (!itens.length) {
       lista.append(vazio(
         "Nenhum programa coletado",
-        "O agente envia a lista uma vez por dia. Se acabou de instalar, "
-          + "aguarde a proxima coleta ou rode o envio manual no agente."
+        "O agente envia a lista junto com o inventário. Se acabou de "
+          + "instalar, use \"Atualizar agora\" no agente."
       ));
       return;
     }
@@ -255,30 +253,15 @@ async function abaInstalados(caixa) {
     const corpo = el("tbody", {});
 
     for (const item of itens) {
-      const expandido = aberto.nome === item.nome;
-
       corpo.append(el("tr", {
         style: "cursor:pointer",
-        onclick: () => {
-          aberto.nome = expandido ? null : item.nome;
-          desenhar();
-        },
+        onclick: () => abrirDetalheSoftware(item.nome),
       },
         el("td", {},
-          el("span", { style: "margin-right:6px;opacity:.6" },
-            expandido ? "\u25be" : "\u25b8"),
+          el("span", { style: "margin-right:6px;opacity:.6" }, "\u25b8"),
           el("span", {}, item.nome)),
         el("td", {}, String(item.versoes)),
         el("td", {}, String(item.pcs))));
-
-      if (expandido) {
-        const detalhe = el("tr", {},
-          el("td", { colspan: "3", style: "padding:0 0 8px 22px" },
-            el("div", { class: "muted", style: "font-size:12.5px" },
-              "Carregando versoes...")));
-        corpo.append(detalhe);
-        carregarDetalhe(detalhe, item.nome);
-      }
     }
 
     lista.append(el("table", { class: "data" },
@@ -289,51 +272,7 @@ async function abaInstalados(caixa) {
       corpo));
   }
 
-  async function carregarDetalhe(linha, nome) {
-    let dados;
-    try {
-      dados = await api.get("/softwares/instalados/" + encodeURIComponent(nome));
-    } catch (e) {
-      linha.querySelector("div").textContent = e.message;
-      return;
-    }
-
-    const celula = linha.querySelector("td");
-    celula.innerHTML = "";
-
-    if (!dados.versoes.length) {
-      celula.append(el("div", { class: "muted" }, "Sem versoes registradas."));
-      return;
-    }
-
-    for (const v of dados.versoes) {
-      const rotulo = v.versao || "sem versao";
-      const bloco = el("div", { style: "margin:8px 0" },
-        el("div", { style: "font-weight:600;font-size:13px;margin-bottom:4px" },
-          rotulo + " \u2014 " + v.pcs.length + " PC(s)"));
-
-      // No maximo 20 por versao: uma versao do Windows pode estar em
-      // centenas de maquinas, e despejar todas travaria a tela.
-      for (const pc of v.pcs.slice(0, 20)) {
-        bloco.append(el("div", {
-          class: "muted",
-          style: "font-size:12px;padding-left:10px",
-        }, (pc.hostname || "\u2014") + "  \u00b7  " + (pc.patrimonio || pc.numero_serie || "\u2014")));
-      }
-
-      if (v.pcs.length > 20) {
-        bloco.append(el("div", {
-          class: "muted",
-          style: "font-size:11.5px;padding-left:10px;margin-top:2px",
-        }, "+" + (v.pcs.length - 20) + " outra(s)"));
-      }
-
-      celula.append(bloco);
-    }
-  }
-
-  // Limpa o skeleton que brir() colocou em caixa. Sem isto ele fica
-  // para sempre acima da lista — as barras cinzas da captura.
+  // Limpa o skeleton que `abrir()` colocou em `caixa`.
   caixa.innerHTML = "";
 
   caixa.append(
@@ -345,6 +284,73 @@ async function abaInstalados(caixa) {
   );
 
   desenhar();
+}
+
+/**
+ * Janela com as versões de um programa e as máquinas de cada uma.
+ *
+ * ## Por que janela e não expansão na lista
+ *
+ * Expandir exigia redesenhar a lista, e redesenhar zera a rolagem. Numa lista
+ * de 150 programas, abrir o último obrigava a descer tudo outra vez.
+ *
+ * Aqui a lista fica intacta atrás: fechar a janela devolve a pessoa ao mesmo
+ * ponto.
+ */
+async function abrirDetalheSoftware(nome) {
+  const corpo = el("div", {}, skeleton(3));
+
+  const janela = dialog({
+    title: nome,
+    body: corpo,
+    wide: true,
+    actions: [{ label: "Fechar", variant: "tonal", onClick: (fechar) => fechar() }],
+  });
+
+  janela.dlg.classList.add("dialog-software");
+
+  let dados;
+  try {
+    dados = await api.get("/softwares/instalados/" + encodeURIComponent(nome));
+  } catch (e) {
+    corpo.innerHTML = "";
+    corpo.append(el("p", { class: "text-error", style: "margin:0" }, e.message));
+    return;
+  }
+
+  corpo.innerHTML = "";
+
+  if (!dados.versoes.length) {
+    corpo.append(el("p", { class: "muted", style: "margin:0" },
+      "Sem versões registradas."));
+    return;
+  }
+
+  for (const v of dados.versoes) {
+    const bloco = el("div", { style: "margin-bottom:16px" },
+      el("div", { style: "font-weight:600;font-size:13.5px;margin-bottom:6px" },
+        (v.versao || "sem versão") + " — " + v.pcs.length + " PC(s)"));
+
+    // No máximo 40 por versão: uma versão do Windows pode estar em centenas
+    // de máquinas, e despejar todas trava a janela.
+    for (const pc of v.pcs.slice(0, 40)) {
+      bloco.append(el("div", {
+        class: "muted",
+        style: "font-size:12.5px;padding:3px 0 3px 10px;"
+          + "border-left:2px solid var(--md-sys-color-outline-variant)",
+      }, (pc.hostname || "—") + "  \u00b7  "
+        + (pc.patrimonio || pc.numero_serie || "—")));
+    }
+
+    if (v.pcs.length > 40) {
+      bloco.append(el("div", {
+        class: "muted",
+        style: "font-size:12px;padding-left:10px;margin-top:4px",
+      }, "+" + (v.pcs.length - 40) + " outra(s)"));
+    }
+
+    corpo.append(bloco);
+  }
 }
 
 async function abaSoftware(caixa) {
