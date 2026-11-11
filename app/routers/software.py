@@ -39,7 +39,7 @@ from app.core.deps import (
 from app.core.planta import aplicar_filtro, exigir_planta_do_usuario, planta_ativa
 from app.database import get_db
 from app.models.core import Ativo, Usuario
-from app.models.enums import SituacaoConformidade, SituacaoLicenca
+from app.models.enums import Dominio, SituacaoConformidade, SituacaoLicenca
 from app.models.software import AtribuicaoLicenca, Licenca, Software
 from app.schemas.software import (
     AtribuicaoIn,
@@ -503,6 +503,18 @@ def atribuir(licenca_id: int, dados: AtribuicaoIn, db: Session = Depends(get_db)
 
     if dados.ativo_id and not db.get(Ativo, dados.ativo_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Ativo não encontrado.")
+
+    # Licença de software é para computador. Impressora não instala programa:
+    # aceitar aqui criaria uma atribuição que nunca casa com nenhum
+    # `SoftwareInstalado`, e a conformidade mostraria um seat ocupado por nada.
+    if dados.ativo_id:
+        alvo = db.get(Ativo, dados.ativo_id)
+        if alvo is not None and alvo.dominio == Dominio.IMPRESSORA:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "Impressora não recebe licença de software. Escolha um computador.",
+            )
+
     if dados.usuario_id and not db.get(Usuario, dados.usuario_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Usuário não encontrado.")
 

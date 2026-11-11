@@ -735,6 +735,10 @@ function formAtribuir(caixa, licencas, softwares) {
   api.get("/ativos?limite=500").then((r) => {
     const itens = Array.isArray(r) ? r : (r && (r.items || r.ativos)) || [];
     for (const a of itens) {
+      // Licença de software é para computador. Impressora não instala
+      // programa — e aparecer aqui só confundia na hora de escolher.
+      if (a.dominio === "impressora") continue;
+
       const rotulo = [a.patrimonio, a.numero_serie].filter(Boolean).join(" · ");
       const extra = a.modelo || a.descricao || "";
       listaAtivos.append(el("option", { value: a.id },

@@ -554,9 +554,11 @@ function openDetail(ativo, lookups) {
         { label: "Status", variant: "outlined", onClick: () => alterarStatus(ativo) },
         { label: "Atribuir", variant: "outlined", onClick: () => atribuir(ativo, lookups) },
         { label: "Detalhes", variant: "outlined", onClick: () => abrirDetalhes(ativo) },
-        // A lista de programas saiu de "Detalhes": sao ~150 linhas que so
-        // interessam quando alguem quer ver os programas daquela maquina.
-        { label: "Softwares", variant: "outlined", onClick: () => abrirSoftwares(ativo) },
+        // A lista de programas só existe para computador: impressora não tem
+        // software instalado, e o botão abriria uma janela sempre vazia.
+        ...(ativo.dominio === "ti"
+          ? [{ label: "Softwares", variant: "outlined", onClick: () => abrirSoftwares(ativo) }]
+          : []),
         { label: "Editar", variant: "tonal", onClick: () => openForm(ativo, lookups) },
       ] : []),
       ...(state.canDelete ? [{ label: "Excluir", variant: "danger", onClick: () => excluirAtivo(ativo) }] : []),
