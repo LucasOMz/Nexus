@@ -16,10 +16,10 @@ técnico da planta A não veja o quadro da B — a mesma regra de ativos.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, selectinload
 
@@ -696,3 +696,121 @@ def definir_responsaveis(
     db.commit()
     db.refresh(atividade)
     return _serializar(atividade, {})
+
+
+@router.get("/exportar")
+def exportar(
+    request: Request,
+    formato: str = Query(default="pdf", pattern="^(pdf|csv)$"),
+    de: date | None = Query(default=None),
+    ate: date | None = Query(default=None),
+    bucket_id: int | None = Query(default=None),
+    status: str = Query(default="todas", pattern="^(todas|concluidas|abertas)$"),
+    por: str = Query(default="prazo", pattern="^(prazo|conclusao)$"),
+    campos: str = Query(default=""),
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(get_current_user),
+) -> Response:
+    """Exporta as atividades em PDF ou CSV.
+
+    ## Filtros
+
+    `de`/`ate` recortam o período, e `por` decide **qual data** é recortada:
+    `prazo` (quando vence) ou `conclusao` (quando saiu). São listas
+    diferentes — "atividades do mês" pode significar as duas.
+
+    `campos` é uma lista separada por vírgula: `descricao,responsaveis,prazo`.
+    O padrão traz só o essencial, porque cada campo opcional aperta a coluna
+    do título.
+
+    ## Escopo
+
+    Sai apenas o que o usuário enxerga: o quadro da planta ativa. Sem isso,
+    um usuário de filial exportaria o trabalho das outras.
+    """
+    from app.core.planta import resolver_planta_id
+    from app.models.kanban import Bucket
+    from app.services import kanban_export
+
+    planta_id = resolver_planta_id(user, request)
+
+    consulta = (
+        db.query(Atividade)
+        .join(Bucket, Bucket.id == Atividade.bucket_id)
+        .filter(
+            Atividade.arquivada_em.is_(None),
+            Bucket.arquivado_em.is_(None),
+            Bucket.deleted_at.is_(None),
+        )
+        .options(
+            selectinload(Atividade.bucket),
+            selectinload(Atividade.responsaveis),
+            selectinload(Atividade.itens),
+        )
+    )
+
+    if planta_id is not None:
+        consulta = consulta.filter(Bucket.planta_id == planta_id)
+
+    consulta = kanban_export.aplicar_filtros(
+        consulta, de=de, ate=ate, bucket_id=bucket_id, status=status, por=por
+    )
+
+    atividades = consulta.order_by(Atividade.prazo, Atividade.id).all()
+
+    # Nomes dos responsáveis numa consulta só. `AtividadeResponsavel` guarda
+    # apenas o id; buscar um a um seria uma ida ao banco por atividade.
+    ids = {r.usuario_id for a in atividades for r in (a.responsaveis or [])}
+    nomes: dict[int, str] = {}
+    if ids:
+        from app.models.core import Usuario as _U
+
+        for uid, nome in db.query(_U.id, _U.nome).filter(_U.id.in_(ids)).all():
+            nomes[uid] = nome
+
+    pedidos = {c.strip() for c in campos.split(",") if c.strip()}
+    pedidos &= set(kanban_export.CAMPOS)
+
+    # Texto dos filtros, para o cabeçalho do PDF dizer o que foi recortado.
+    partes = []
+    if de or ate:
+        partes.append(
+            f"{'prazo' if por == 'prazo' else 'conclusão'} "
+            f"de {de.strftime('%d/%m/%Y') if de else '...'} "
+            f"a {ate.strftime('%d/%m/%Y') if ate else '...'}"
+        )
+    if bucket_id is not None:
+        b = db.get(Bucket, bucket_id)
+        partes.append("coluna " + (b.nome if b else str(bucket_id)))
+    if status != "todas":
+        partes.append(
+            {"concluidas": "somente concluídas", "abertas": "somente abertas"}[status]
+        )
+
+    carimbo = datetime.now().strftime("%Y%m%d-%H%M")
+    nome = f"kanban-{carimbo}"
+
+    if formato == "csv":
+        conteudo = kanban_export.para_csv(atividades, pedidos, nomes)
+        return Response(
+            content=conteudo,
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{nome}.csv"'},
+        )
+
+    conteudo = kanban_export.para_pdf(
+        atividades,
+        pedidos,
+        titulo="Relatório de atividades — Kanban",
+        periodo=(
+            f"{de.strftime('%d/%m/%Y') if de else 'início'} a "
+            f"{ate.strftime('%d/%m/%Y') if ate else 'hoje'}"
+        ),
+        filtros="; ".join(partes),
+        nomes=nomes,
+    )
+    return Response(
+        content=conteudo,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{nome}.pdf"'},
+    )

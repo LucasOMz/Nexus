@@ -22,7 +22,7 @@
 import { api } from "../api.js";
 import { state } from "../state.js";
 import { ctx } from "../context.js";
-import { el, icon, toast, skeleton, emptyState, mostrarErro } from "../ui.js";
+import { el, icon, toast, skeleton, emptyState, mostrarErro, dialog } from "../ui.js";
 import { grade, calendario, graficos, linhaDoTempo } from "./kanban_views.js";
 
 let dados = [];
@@ -334,6 +334,13 @@ function desenhar(root) {
     },
       el("span", { html: icon("arquivo", 15) }),
       el("span", {}, "Arquivados")),
+    el("button", {
+      class: "kb-btn pequeno",
+      title: "Exportar atividades em PDF ou CSV",
+      onclick: () => abrirExportar(dados),
+    },
+      el("span", { html: icon("download", 15) }),
+      el("span", {}, "Exportar")),
     el("button", { class: "kb-btn cheio", onclick: () => criarBucket(root) },
       el("span", { html: icon("plus", 17) }),
       el("span", {}, "Nova coluna"))));
@@ -395,6 +402,153 @@ function desenhar(root) {
  * Recalcular no servidor exigiria que ele soubesse o que estava na tela, e a
  * tela é quem tem a lista atual.
  */
+/**
+ * Janela de exportação: período, filtros e o que aparece no arquivo.
+ *
+ * ## Por que tantas opções
+ *
+ * Um PDF com tudo vira ilegível — descrição longa aperta a coluna do título
+ * até sobrar uma palavra por linha. Quem exporta escolhe o que precisa: o
+ * relatório de prestação de contas quer título e data; a planilha de análise
+ * quer descrição e responsáveis.
+ *
+ * ## O download
+ *
+ * `window.open` num endereço da API manda o cookie/authorization do
+ * navegador e o `Content-Disposition: attachment` faz o resto. Não há blob
+ * nem base64 no caminho.
+ */
+function abrirExportar(buckets) {
+  const hoje = new Date();
+  const iso = (d) => d.toISOString().slice(0, 10);
+  const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+
+  const campoDe = el("input", {
+    class: "field", type: "date", value: iso(inicioMes),
+  });
+  const campoAte = el("input", {
+    class: "field", type: "date", value: iso(hoje),
+  });
+
+  const selPor = el("select", { class: "field" },
+    el("option", { value: "prazo" }, "Pelo prazo (quando vence)"),
+    el("option", { value: "conclusao" }, "Pela conclusão (quando saiu)"));
+
+  const selStatus = el("select", { class: "field" },
+    el("option", { value: "todas" }, "Todas"),
+    el("option", { value: "concluidas" }, "Somente concluídas"),
+    el("option", { value: "abertas" }, "Somente abertas"));
+
+  const selBucket = el("select", { class: "field" },
+    el("option", { value: "" }, "Todas as colunas"),
+    ...(buckets || []).map((b) => el("option", { value: String(b.id) }, b.nome)));
+
+  // Atalhos: o caso comum em dois cliques.
+  const atalho = (rotulo, de, ate) => el("button", {
+    class: "kb-btn pequeno",
+    onclick: () => {
+      campoDe.value = iso(de);
+      campoAte.value = iso(ate);
+    },
+  }, rotulo);
+
+  const seteDias = new Date(hoje.getTime() - 6 * 86400000);
+  const trintaDias = new Date(hoje.getTime() - 29 * 86400000);
+
+  const marcadores = {};
+  const caixaCampos = el("div", { style: "display:flex;flex-wrap:wrap;gap:14px" });
+  for (const [chave, rotulo, padrao] of [
+    ["prazo", "Prazo", true],
+    ["prioridade", "Prioridade", true],
+    ["responsaveis", "Responsáveis", false],
+    ["checklist", "Checklist", false],
+    ["descricao", "Descrição", false],
+  ]) {
+    const cx = el("label", {
+      style: "display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer",
+    },
+      el("input", { type: "checkbox", checked: padrao ? "checked" : undefined }),
+      el("span", {}, rotulo));
+    cx.querySelector("input").addEventListener("change", (ev) => {
+      marcadores[chave] = ev.currentTarget.checked;
+    });
+    marcadores[chave] = padrao;
+    caixaCampos.append(cx);
+  }
+
+  const baixar = (formato) => {
+    const q = new URLSearchParams();
+    q.set("formato", formato);
+    if (campoDe.value) q.set("de", campoDe.value);
+    if (campoAte.value) q.set("ate", campoAte.value);
+    q.set("por", selPor.value);
+    q.set("status", selStatus.value);
+    if (selBucket.value) q.set("bucket_id", selBucket.value);
+
+    const campos = Object.entries(marcadores)
+      .filter(([, on]) => on)
+      .map(([k]) => k);
+    if (campos.length) q.set("campos", campos.join(","));
+
+    // window.open nao manda o cabecalho Authorization — o servidor
+    // responderia 401 e o arquivo nunca apareceria. pi.blob faz a busca
+    // com o token e devolve uma URL local.
+    api.blob("/kanban/exportar?" + q.toString())
+      .then((url) => {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "kanban-" + new Date().toISOString().slice(0, 10) + "." + formato;
+        document.body.append(a);
+        a.click();
+        a.remove();
+        // Libera a memoria do blob — sem isto, cada exportacao fica residente.
+        URL.revokeObjectURL(url);
+        toast("Exportacao gerada");
+      })
+      .catch((e) => toast(e.message));
+
+    fechar();
+  };
+
+  const fechar = () => janela.close();
+
+  const janela = dialog({
+    title: "Exportar atividades",
+    body: el("div", {},
+      el("div", { class: "row", style: "gap:8px;margin-bottom:10px;flex-wrap:wrap" },
+        atalho("Hoje", hoje, hoje),
+        atalho("Últimos 7 dias", seteDias, hoje),
+        atalho("Últimos 30 dias", trintaDias, hoje),
+        atalho("Este mês", inicioMes, hoje)),
+
+      el("div", { class: "row", style: "gap:10px;margin-bottom:10px;flex-wrap:wrap" },
+        el("div", { class: "field", style: "flex:1;min-width:150px" },
+          el("label", {}, "De"), campoDe),
+        el("div", { class: "field", style: "flex:1;min-width:150px" },
+          el("label", {}, "Até"), campoAte)),
+
+      el("div", { class: "row", style: "gap:10px;margin-bottom:10px;flex-wrap:wrap" },
+        el("div", { class: "field", style: "flex:1;min-width:180px" },
+          el("label", {}, "Recortar por"), selPor),
+        el("div", { class: "field", style: "flex:1;min-width:150px" },
+          el("label", {}, "Situação"), selStatus)),
+
+      el("div", { class: "field", style: "margin-bottom:14px" },
+        el("label", {}, "Coluna"), selBucket),
+
+      el("label", { style: "display:block;margin-bottom:8px;font-size:13px" },
+        "O que incluir"),
+      caixaCampos),
+
+    actions: [
+      { label: "Cancelar", variant: "text", onClick: () => fechar() },
+      { label: "CSV", variant: "outlined", onClick: () => baixar("csv") },
+      { label: "PDF", variant: "tonal", onClick: () => baixar("pdf") },
+    ],
+  });
+}
+
+
 async function reordenarBuckets(root, todos, arrastadoId, alvoId) {
   if (arrastadoId === alvoId) return;
 
