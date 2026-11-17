@@ -50,6 +50,7 @@ from app.routers import (
     lgpd,
     manutencao_admin,
     manutencoes,
+    mapa,
     mfa,
     monitor_impressoras,
     movimentacoes,
@@ -282,6 +283,7 @@ app.include_router(notificacoes_admin.router, prefix=API)
 app.include_router(manutencao_admin.router, prefix=API)
 app.include_router(agente.router, prefix=API)
 app.include_router(kanban.router, prefix=API)
+app.include_router(mapa.router, prefix=API)
 app.include_router(reportes.router, prefix=API)
 app.include_router(banco.router, prefix=API)
 app.include_router(busca.router, prefix=API)

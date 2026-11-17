@@ -915,6 +915,31 @@ CREATE INDEX IF NOT EXISTS ix_departamentos_planta_id ON departamentos(planta_id
 CREATE INDEX IF NOT EXISTS ix_localizacoes_planta_id  ON localizacoes(planta_id);
 CREATE INDEX IF NOT EXISTS ix_fornecedores_planta_id  ON fornecedores(planta_id);
 CREATE INDEX IF NOT EXISTS ix_categorias_planta_id    ON categorias(planta_id);
+/* =====================================================================
+   Mapa 3D: projeto da planta e posicao dos ativos
+   ===================================================================== */
 
+CREATE TABLE IF NOT EXISTS mapas_projeto (
+	id SERIAL NOT NULL,
+	planta_id INTEGER NOT NULL,
+	imagem VARCHAR(300),
+	largura_px INTEGER,
+	altura_px INTEGER,
+	escala_metros_por_pixel FLOAT NOT NULL,
+	paredes TEXT,
+	observacoes TEXT,
+	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+	updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+	deleted_at TIMESTAMP WITH TIME ZONE,
+	PRIMARY KEY (id),
+	UNIQUE (planta_id),
+	FOREIGN KEY(planta_id) REFERENCES plantas (id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS ix_mapas_projeto_planta_id ON mapas_projeto (planta_id);
+
+ALTER TABLE ativos ADD COLUMN IF NOT EXISTS mapa_x FLOAT;
+ALTER TABLE ativos ADD COLUMN IF NOT EXISTS mapa_z FLOAT;
+ALTER TABLE ativos ADD COLUMN IF NOT EXISTS mapa_rotacao FLOAT;
 
 COMMIT;

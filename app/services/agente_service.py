@@ -193,6 +193,7 @@ def _criar_ativo_do_payload(
     payload: dict,
     hostname: str | None,
     codigo=None,
+    planta_sigla: str | None = None,
 ):
     """Cria o ativo a partir do que o agente enviou.
 
@@ -216,7 +217,20 @@ def _criar_ativo_do_payload(
     # A planta do código tem prioridade: é a escolha explícita de quem montou
     # o pacote de implantação. Sem ela, cai na primeira ativa (legado).
     planta = None
-    if codigo is not None and getattr(codigo, "planta_id", None) is not None:
+
+    # **O registro do Windows ganha de tudo.** É o que o MDM controla
+    # (Tanium, GPO) e o que o técnico corrige sem reinstalar o agente.
+    if planta_sigla:
+        planta = (
+            db.query(Planta)
+            .filter(
+                func.upper(Planta.sigla) == str(planta_sigla).strip().upper(),
+                Planta.deleted_at.is_(None),
+            )
+            .first()
+        )
+
+    if planta is None and codigo is not None and getattr(codigo, "planta_id", None) is not None:
         planta = db.get(Planta, codigo.planta_id)
 
     if planta is None:
@@ -262,7 +276,8 @@ def _criar_ativo_do_payload(
 
 
 def registrar(
-    db: Session, *, codigo: str, serial: str | None, hostname: str | None, payload: dict
+    db: Session, *, codigo: str, serial: str | None, hostname: str | None, payload: dict,
+    planta_sigla: str | None = None,
 ) -> dict:
     """Troca o código de instalação pelo token da máquina.
 
@@ -306,7 +321,8 @@ def registrar(
         # `codigo` aqui é o texto que o agente mandou; o registro — que tem a
         # planta — é `registro`, devolvido por `buscar_codigo`.
         ativo = _criar_ativo_do_payload(
-            db, serial, payload, hostname, codigo=registro
+            db, serial, payload, hostname, codigo=registro,
+            planta_sigla=planta_sigla,
         )
         criado = ativo is not None
 

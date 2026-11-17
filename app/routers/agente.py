@@ -39,6 +39,9 @@ class RegistroEntrada(BaseModel):
     codigo: str = Field(min_length=4, max_length=64)
     serial: str | None = Field(default=None, max_length=120)
     hostname: str | None = Field(default=None, max_length=120)
+    # Sigla da planta lida do registro do Windows (`HKLM\SOFTWARE\Nexus\Agente`).
+    # O Tanium/GPO escreve; o agente repassa. Quando presente, decide a planta.
+    planta_sigla: str | None = Field(default=None, max_length=20)
     # O payload inteiro é opaco para o servidor no registro: serve para
     # preencher a fila de pendências quando a máquina não é reconhecida.
     basico: dict | None = None
@@ -74,6 +77,9 @@ def registrar(entrada: RegistroEntrada, db: Session = Depends(get_db)) -> Regist
         serial=entrada.serial,
         hostname=entrada.hostname,
         payload=payload,
+        # Sigla lida do registro do Windows pelo agente. O MDM a escreve;
+        # quando presente, ela decide a planta da máquina.
+        planta_sigla=entrada.planta_sigla,
     )
     if not r["ok"]:
         raise HTTPException(r["status"], r["motivo"])
@@ -110,10 +116,27 @@ def inventario(
     cfg = config_service.obter_config(db)
     horas = getattr(cfg, "intervalo_software_horas", 1) or 1
 
+    # A sigla da planta vai de volta para o agente gravar no registro. É a
+    # mão de volta do item 21: mover a máquina no painel atualiza a máquina
+    # física sem ninguém tocar nela.
+    sigla = None
+    if token.ativo_id:
+        from app.models.core import Ativo as _A
+        from app.models.core import Planta as _P
+
+        _ativo = db.get(_A, token.ativo_id)
+        if _ativo is not None and _ativo.planta_id:
+            _p = db.get(_P, _ativo.planta_id)
+            sigla = _p.sigla if _p is not None else None
+
     # O intervalo vai na resposta do inventario: o agente ja esta conectado
     # neste instante, e uma rota separada seria uma segunda ida ao servidor
     # por ciclo.
-    return {"ok": True, "intervalo_software_horas": max(1, min(168, int(horas)))}
+    return {
+        "ok": True,
+        "intervalo_software_horas": max(1, min(168, int(horas))),
+        "planta_sigla": sigla,
+    }
 
 
 # ---------------------------------------------------------------------------

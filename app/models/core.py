@@ -14,6 +14,7 @@ from sqlalchemy import (
     Boolean,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -477,6 +478,19 @@ class Ativo(BaseModel, Base):
     # A lista de quem JÁ usou fica em usuarios_do_ativo.
     ultimo_usuario: Mapped[str | None] = mapped_column(String(120))
     ultimo_usuario_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # --- posicao no mapa 3D ---------------------------------------------
+    #
+    # Nulo = o ativo ainda nao foi posicionado. O mapa mostra os pendentes
+    # numa lista lateral, para o tecnico arrastar.
+    #
+    # Fica aqui, e nao em tabela propria, porque o mapa le exatamente os
+    # mesmos ativos da tela normal — um JOIN a mais em toda listagem custaria
+    # por tres numeros.
+    mapa_x: Mapped[float | None] = mapped_column(Float)
+    mapa_z: Mapped[float | None] = mapped_column(Float)
+    # Em graus, 0 a 359. Guardar em graus evita conversao na tela.
+    mapa_rotacao: Mapped[float | None] = mapped_column(Float)
 
     contrato: Mapped[Contrato | None] = relationship(back_populates="ativos")
     suprimentos: Mapped[list[SuprimentoImpressora]] = relationship(

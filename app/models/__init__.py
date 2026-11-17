@@ -52,6 +52,7 @@ from app.models.kanban import (
     AtividadeResponsavel,
     Bucket,
 )
+from app.models.mapa import MapaProjeto
 from app.models.notificacao import (
     ConfiguracaoSMTP,
     EmailEnviado,
@@ -102,6 +103,7 @@ __all__ = [
     "HistoricoInventario",
     "Imagem",
     "LeituraContador",
+    "MapaProjeto",
     "Licenca",
     "Localizacao",
     "LogAuditoria",

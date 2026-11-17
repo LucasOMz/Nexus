@@ -18,6 +18,7 @@ import { renderAtivos } from "./js/views/ativos.js";
 import { renderImpressao } from "./js/views/impressao.js";
 import { renderCalendario } from "./js/views/calendario.js";
 import { renderKanban } from "./js/views/kanban.js";
+import { renderMapa } from "./js/views/mapa.js";
 import { renderReporte } from "./js/views/reporte.js";
 import { renderProdutos } from "./js/views/produtos.js";
 import { renderMovimentacoes } from "./js/views/movimentacoes.js";
@@ -58,6 +59,7 @@ const MODULOS = {
   relatorios: { rotulo: "Relatórios", icone: "relatorios" },
   calendario: { rotulo: "Calendário", icone: "calendario" },
   kanban: { rotulo: "Kanban", icone: "kanban" },
+  mapa: { rotulo: "Mapa 3D", icone: "grade" },
   impressao: { rotulo: "Impressão", icone: "print" },
   cadastros: { rotulo: "Cadastros", icone: "cadastros" },
   reporte: { rotulo: "Reporte de Erro", icone: "reporte" },
@@ -84,6 +86,7 @@ const VIEWS = {
   relatorios: renderRelatorios,
   calendario: renderCalendario,
   kanban: renderKanban,
+  mapa: renderMapa,
   impressao: renderImpressao,
   cadastros: renderCadastros,
   reporte: renderReporte,

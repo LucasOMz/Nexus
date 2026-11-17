@@ -32,6 +32,7 @@ const TILES = [
   { path: "calendario", modulo: "calendario", rotulo: "Calendário", icone: "calendario", desc: "Agenda de empréstimos, devoluções e contratos" },
   // Quadro de tarefas. Liberado por usuário, como as demais telas.
   { path: "kanban", modulo: "kanban", rotulo: "Kanban", icone: "kanban", desc: "Tarefas em colunas, com checklist e prazos" },
+  { path: "mapa", modulo: "mapa", rotulo: "Mapa 3D", icone: "grade", desc: "Planta da unidade com os ativos posicionados" },
   { path: "cadastros", modulo: "cadastros", rotulo: "Cadastros", icone: "cadastros", desc: "Departamentos, locais e fornecedores" },
   // Canal de retorno da implantação — some do menu quando desativado.
   { path: "reporte", modulo: "reporte", rotulo: "Reporte de Erro", icone: "reporte", desc: "Encontrou um problema? Avise a equipe de TI" },
