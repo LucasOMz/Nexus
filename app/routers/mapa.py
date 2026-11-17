@@ -243,10 +243,14 @@ def ativos_do_mapa(
             "status": a.status.value if hasattr(a.status, "value") else a.status,
             "departamento": a.departamento.nome if a.departamento else None,
             "localizacao": a.localizacao.nome if a.localizacao else None,
-            "hostname": a.ti.hostname if a.ti else None,
+            "hostname": a.ti.hostname if a.ti else (a.impressora.hostname if a.impressora else None),
             "ip": a.ti.ip if a.ti else None,
             "impressora_ip": a.impressora.ip if a.impressora else None,
-            "modelo_impressora": a.impressora.modelo if a.impressora else None,
+            # Impressora não tem `modelo` na extensão: o modelo é o campo
+            # base do ativo. `driver` e `colorida` existem e podem interessar
+            # ao mapa — vão como extras.
+            "driver": a.impressora.driver if a.impressora else None,
+            "colorida": a.impressora.colorida if a.impressora else None,
         }
 
         if a.mapa_x is not None and a.mapa_z is not None:

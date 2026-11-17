@@ -315,7 +315,7 @@ export async function renderMapa(root) {
       title: rotulo,
       body: el("div", {},
         linhaInfo("Tipo", item.dominio === "impressora" ? "Impressora" : "Computador"),
-        linhaInfo("Modelo", item.modelo || item.modelo_impressora),
+        linhaInfo("Modelo", item.modelo),
         linhaInfo("Marca", item.marca),
         linhaInfo("Status", item.status),
         linhaInfo("Departamento", item.departamento),
