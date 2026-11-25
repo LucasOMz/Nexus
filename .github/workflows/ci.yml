@@ -61,15 +61,16 @@ jobs:
       - name: Verificar migração sem perda de arquivos
         run: |
           docker compose run --rm --no-deps --build -T --entrypoint /bin/sh ajustar-volumes -ec \
-            'printf legado > /app/media/legado; printf segredo > /app/segredos/legado.txt; chmod 600 /app/segredos/legado.txt'
-          docker compose run --rm --no-deps -T ajustar-volumes
-          docker compose run --rm --no-deps -T api python - <<'PY'
+            'printf legado > /app/media/legado; printf segredo > /app/segredos/legado.txt; chmod 600 /app/segredos/legado.txt; chown 0:0 /app/segredos'
+          docker compose up -d --build api
+          docker compose exec -T api python - <<'PY'
           from pathlib import Path
 
           for caminho, esperado in (("/app/media/legado", "legado"), ("/app/segredos/legado.txt", "segredo")):
               arquivo = Path(caminho)
               assert arquivo.read_text() == esperado
               assert arquivo.stat().st_uid == 10001
+          assert Path("/app/segredos/legado.txt").stat().st_mode & 0o777 == 0o600
           PY
       - name: Verificar HTTPS após recriar os containers
         run: |

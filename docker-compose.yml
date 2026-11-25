@@ -52,6 +52,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      ajustar-volumes:
+        condition: service_completed_successfully
     environment:
       # --- Banco de dados ------------------------------------------------
       #
@@ -156,8 +158,8 @@ services:
       - proxy_socket:/run/nexus
 
   ajustar-volumes:
-    profiles: [manutencao]
     build: .
+    restart: "no"
     user: "0:0"
     network_mode: none
     read_only: true
@@ -170,9 +172,11 @@ services:
     entrypoint: ["/bin/sh", "-ec"]
     command:
       - |
-        chown -hR -- 10001:10001 /app/media /app/segredos
+        find -P /app/media /app/segredos -xdev \( ! -uid 10001 -o ! -gid 10001 \) \
+          -exec chown -h -- 10001:10001 {} +
         chmod 750 /app/media
         chmod 700 /app/segredos
+        echo "Nexus: permissões de mídia e segredos conferidas."
 
   nginx:
     image: nginx:stable-alpine

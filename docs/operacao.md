@@ -241,23 +241,19 @@ recebem as permissões da imagem.
 sudo install -d -o 10001 -g 10001 -m 0750 /srv/nexus/backups
 ```
 
-Para atualizar uma instalação que rodava com root, confirme o caminho
-exclusivo de backups do Nexus e use o mesmo projeto Compose da instalação.
-Na janela de atualização, siga esta ordem.
+Em instalações existentes, atualize o mesmo projeto Compose. O serviço
+`ajustar-volumes` corrige a propriedade dos arquivos de mídia e segredos e
+encerra. A API aguarda a conclusão com sucesso e então inicia como
+`10001:10001`. No Portainer, o status **Exited (0)** para esse serviço é normal.
 
-1. Pare a API com `docker compose stop api`.
-2. Ajuste a propriedade dos volumes de mídia e segredos com
-   `docker compose run --rm --no-deps --build ajustar-volumes`.
-3. Ajuste a pasta e os backups existentes no host para `10001:10001`. No
-   caminho do exemplo, use `sudo chown -hR 10001:10001 /srv/nexus/backups`.
-   Se o Kopia usa outra conta, mantenha acesso de leitura à pasta e aos dumps
-   por grupo ou ACL.
-4. Suba a nova imagem com `docker compose up -d --build`. Confira a API com
-   `docker compose exec api id`, depois valide o download de um anexo e a
-   criação de um backup.
+A pasta de backups é um diretório do host. Se ela e os dumps existentes
+pertencem ao usuário anterior, confirme que o caminho é exclusivo do Nexus
+e ajuste a propriedade para `10001:10001`. No caminho do exemplo, use
+`sudo chown -hR 10001:10001 /srv/nexus/backups`. Se o Kopia usa outra conta,
+mantenha o acesso de leitura à pasta e aos arquivos por grupo ou ACL.
 
-O serviço `ajustar-volumes` é de manutenção. Ele altera a propriedade dos
-arquivos existentes de mídia e segredos e encerra após o ajuste.
+Se precisar executar o ajuste dos volumes separadamente, use
+`docker compose run --rm --no-deps --build ajustar-volumes` no mesmo projeto.
 
 > Migrações: o `AUTO_CREATE_TABLES=true` cria o schema no boot (prático para o
 > 1º deploy). Para fluxo versionado, gere a migração inicial e aplique:

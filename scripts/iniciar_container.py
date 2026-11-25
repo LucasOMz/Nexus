@@ -30,7 +30,7 @@ def main() -> None:
         except OSError as exc:
             raise SystemExit(
                 f"Nexus: sem acesso a {arquivo.name} no volume de segredos. "
-                "Execute o ajuste de permissões dos volumes antes de atualizar."
+                "Confira os logs do serviço ajustar-volumes no mesmo projeto Compose."
             ) from exc
     conferir_volume("MEDIA_DIR")
     conferir_volume("BACKUP_DIR")
