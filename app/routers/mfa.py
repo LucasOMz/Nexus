@@ -97,7 +97,7 @@ def iniciar(
     **Não ativa nada.** O segredo fica pendente até alguém provar que o
     aplicativo está configurado, confirmando um código.
     """
-    db.refresh(user, with_for_update=True)
+    db.refresh(user, with_for_update={"of": Usuario})
     if user.senha_temporaria:
         raise HTTPException(401, "Troque a senha antes de configurar a segunda etapa.")
     if user.mfa_ativo:
@@ -125,7 +125,7 @@ def confirmar(
     user: Usuario = Depends(usuario_para_configurar_mfa),
 ):
     """Confirma o código e **então** ativa. Devolve os códigos de recuperação."""
-    db.refresh(user, with_for_update=True)
+    db.refresh(user, with_for_update={"of": Usuario})
     if user.senha_temporaria:
         raise HTTPException(401, "Troque a senha antes de configurar a segunda etapa.")
     if user.mfa_ativo:
@@ -174,7 +174,7 @@ def desativar(
     Exigir o código (e não só a sessão) evita que alguém que encontrou uma
     máquina destravada desligue a proteção da conta.
     """
-    db.refresh(user, with_for_update=True)
+    db.refresh(user, with_for_update={"of": Usuario})
     if not user.mfa_ativo:
         raise HTTPException(400, "A segunda etapa não está ativa.")
 

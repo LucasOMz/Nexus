@@ -7,10 +7,13 @@ códigos de recuperação.
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import event
+from sqlalchemy.dialects import postgresql
 
 from app.core import cripto
 from app.models.core import Usuario
 from app.services import plataforma
+from tests.conftest import engine
 
 
 @pytest.fixture
@@ -33,6 +36,38 @@ def _segredo_no_banco(uid):
     valor = (cripto.decifrar(u.mfa_segredo), u.mfa_ativo, list(u.mfa_recuperacao or []))
     db.close()
     return valor
+
+
+def test_alteracoes_de_senha_e_mfa_bloqueiam_somente_usuarios_no_postgresql(client, auth_headers):
+    bloqueios = []
+
+    def capturar(_conn, statement, _multiparams, _params, _options):
+        sql = str(statement.compile(dialect=postgresql.dialect()))
+        if "FOR UPDATE" in sql:
+            bloqueios.append(sql)
+
+    event.listen(engine, "before_execute", capturar)
+    try:
+        senha = "NovaSenhaSegura2026"
+        troca = client.post("/api/v1/auth/trocar-senha", headers=auth_headers, json={
+            "senha_atual": "admin123", "senha_nova": senha, "confirmacao": senha,
+        })
+        assert troca.status_code == 200, troca.text
+        login = client.post("/api/v1/auth/login", data={"username": "admin@teste.com", "password": senha})
+        assert login.status_code == 200, login.text
+        headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        inicio = client.post("/api/v1/mfa/iniciar", json={}, headers=headers)
+        assert inicio.status_code == 200, inicio.text
+        segredo = inicio.json()["segredo"]
+        sessao = _confirmar(client, headers, segredo)
+        fim = client.post("/api/v1/mfa/desativar", headers=sessao, json={"codigo": plataforma.gerar_codigo(segredo)})
+        assert fim.status_code == 200, fim.text
+    finally:
+        event.remove(engine, "before_execute", capturar)
+
+    assert len(bloqueios) == 4
+    assert all(sql.endswith("FOR UPDATE OF usuarios") for sql in bloqueios), bloqueios
+    assert any("LEFT OUTER JOIN plantas" in sql for sql in bloqueios)
 
 
 class TestCadastro:

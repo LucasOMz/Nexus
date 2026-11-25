@@ -298,7 +298,7 @@ def trocar_senha(
     para a troca voluntária. Nas duas, exige a senha atual: sessão aberta numa
     máquina destravada não pode virar troca de senha.
     """
-    db.refresh(user, with_for_update=True)
+    db.refresh(user, with_for_update={"of": Usuario})
     if body.senha_nova != body.confirmacao:
         raise HTTPException(400, "A confirmação não confere com a senha nova.")
     if not verify_password(body.senha_atual, user.senha_hash):
