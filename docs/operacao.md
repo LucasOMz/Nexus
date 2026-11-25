@@ -207,10 +207,20 @@ pytest -q
    certificado confiável pelos navegadores e pelos agentes que chamam o Nexus.
 3. Execute `docker compose up -d --build` e abra a URL HTTPS com o DNS configurado.
 
-A porta 80 redireciona para 443. A porta 4545 da API fica dentro do Docker. A
-API confia nos cabeçalhos encaminhados somente pelo IP do Nginx na rede de
-ingresso. Em caso de conflito de sub-rede, ajuste `NEXUS_PROXY_SUBNET` e
-`NEXUS_PROXY_IP` juntos.
+A porta 80 redireciona para 443. O Nginx acessa a API por um socket Unix
+compartilhado apenas entre esses dois serviços. No Compose, a API não abre
+porta TCP. O Nginx substitui os cabeçalhos de protocolo e endereço do cliente
+antes de encaminhar a requisição.
+
+Se outra aplicação já publica as portas 80 ou 443, ajuste
+`NEXUS_HTTP_PORT` e `NEXUS_HTTPS_PORT`. Com HTTPS na porta 8443, por exemplo,
+acesse `https://nexus.suaempresa.com:8443`. O redirecionamento inclui a porta
+escolhida.
+
+Se o redeploy de uma versão anterior falhou por conflito no endereço da rede
+`ingresso`, atualize o Compose e reconstrua a imagem da API. O novo Compose
+usa o socket e dispensa `NEXUS_PROXY_IP` e `NEXUS_PROXY_SUBNET`. Os volumes
+existentes de banco, mídia, segredos e backups continuam no mesmo lugar.
 
 Ao atualizar uma instalação, troque os endereços HTTP antigos em agentes,
 monitores (inclusive `/health`) e integrações para o novo endereço HTTPS antes

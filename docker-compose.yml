@@ -47,9 +47,8 @@ services:
     security_opt: ["no-new-privileges:true"]
     tmpfs:
       - /tmp:rw,nosuid,nodev,noexec,mode=1777
-    networks:
-      - default
-      - ingresso
+    # Só o Nginx monta o volume do socket. A API não abre uma porta TCP.
+    command: ["uvicorn", "app.main:app", "--uds", "/run/nexus/uvicorn.sock", "--proxy-headers", "--forwarded-allow-ips=*"]
     depends_on:
       db:
         condition: service_healthy
@@ -92,14 +91,13 @@ services:
       # O frontend é servido pela mesma aplicação que serve a API, e chama
       # `/api/v1/...` em caminho relativo — o navegador nunca faz requisição
       # cross-origin. Isso vale também atrás de proxy reverso: o navegador vê
-      # o domínio, o proxy encaminha para a 4545, e a origem continua a mesma.
+      # o domínio, o proxy encaminha pelo socket, e a origem continua a mesma.
       #
       # O default antigo (`https://seu-dominio.com`) era pior que vazio: não
       # quebrava nada, mas fazia parecer que havia uma origem configurada — e
       # quem fosse procurar por que algo era bloqueado perderia tempo ali.
       CORS_ORIGINS: ${CORS_ORIGINS:-}
       ENV: production
-      FORWARDED_ALLOW_IPS: ${NEXUS_PROXY_IP:-172.30.254.2}
       LDAP_CA_FILE: ${LDAP_CA_FILE:-}
       AUTO_CREATE_TABLES: "true"
       PRINT_AGENT_URL: ${PRINT_AGENT_URL:-https://raspberry:9100}
@@ -155,6 +153,7 @@ services:
         bind:
           create_host_path: false
       - ${NEXUS_LDAP_CA_DIR:-./ldap-ca}:/etc/nexus/ldap-ca:ro
+      - proxy_socket:/run/nexus
 
   ajustar-volumes:
     profiles: [manutencao]
@@ -182,22 +181,20 @@ services:
       - api
     environment:
       NEXUS_PUBLIC_HOST: ${NEXUS_PUBLIC_HOST:?Defina o nome DNS que consta no certificado do Nexus}
-      NGINX_ENVSUBST_FILTER: ^NEXUS_PUBLIC_HOST$
-    networks:
-      ingresso:
-        ipv4_address: ${NEXUS_PROXY_IP:-172.30.254.2}
+      NEXUS_HTTPS_PORT: ${NEXUS_HTTPS_PORT:-443}
+      NGINX_ENVSUBST_FILTER: ^NEXUS_(PUBLIC_HOST|HTTPS_PORT)$
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/templates/default.conf.template:ro
       - ${NEXUS_TLS_DIR:-./tls}:/etc/nginx/nexus-tls:ro
+      - type: volume
+        source: proxy_socket
+        target: /run/nexus
+        read_only: true
+        volume:
+          nocopy: true
     ports:
-      - "80:80"
-      - "443:443"
-
-networks:
-  ingresso:
-    ipam:
-      config:
-        - subnet: ${NEXUS_PROXY_SUBNET:-172.30.254.0/29}
+      - "${NEXUS_HTTP_PORT:-80}:80"
+      - "${NEXUS_HTTPS_PORT:-443}:443"
 
 # =====================================================================
 # VOLUMES — bind mounts, não volumes nomeados
@@ -229,3 +226,4 @@ volumes:
   pgdata:
   media:
   segredos:
+  proxy_socket:
