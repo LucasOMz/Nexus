@@ -73,6 +73,7 @@ from app.routers import (
     print as print_router,
 )
 from app.services import notificacoes_agendador
+from app.services.audit_service import AuditoriaIndisponivel
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
@@ -202,6 +203,14 @@ async def limite_de_requisicoes(request: Request, call_next):
 # ---------------------------------------------------------------------------
 # Erros tratados de forma clara (em vez de "Internal Server Error").
 # ---------------------------------------------------------------------------
+@app.exception_handler(AuditoriaIndisponivel)
+async def tratar_falha_na_auditoria(_request: Request, _exc: AuditoriaIndisponivel) -> JSONResponse:
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Não foi possível registrar a operação na auditoria. Tente novamente."},
+    )
+
+
 @app.exception_handler(IntegrityError)
 async def tratar_integridade(request: Request, exc: IntegrityError) -> JSONResponse:
     """Violação de unicidade/chave estrangeira vira 409 com mensagem legível."""

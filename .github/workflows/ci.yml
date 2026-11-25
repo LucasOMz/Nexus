@@ -9,6 +9,15 @@ jobs:
   test:
     runs-on: ubuntu-latest
     services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: teste
+          POSTGRES_PASSWORD: teste
+          POSTGRES_DB: teste
+        ports:
+          - 5432/tcp
+        options: --health-cmd "pg_isready -U teste -d teste" --health-interval 5s --health-timeout 3s --health-retries 5
       redis:
         image: redis:7.4-alpine
         ports:
@@ -27,6 +36,7 @@ jobs:
       - name: Tests (pytest)
         env:
           NEXUS_TEST_REDIS_URL: redis://127.0.0.1:${{ job.services.redis.ports[6379] }}/0
+          NEXUS_TEST_POSTGRES_URL: postgresql+psycopg://teste:teste@127.0.0.1:${{ job.services.postgres.ports[5432] }}/teste
         run: pytest --cov=app --cov-report=term-missing
 
   container:

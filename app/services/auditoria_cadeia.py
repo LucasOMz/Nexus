@@ -67,17 +67,15 @@ def registro(
 ) -> dict[str, Any]:
     """Monta o dicionário que é hasheado — a forma canônica da entrada.
 
-    `created_at` vira texto de segundos, SEM fuso, de propósito.
-
-    O valor gravado é consciente do fuso (`+00:00`), mas o SQLite devolve a
-    data **sem** fuso — e o `isoformat()` das duas formas não bate. O hash
-    então acusaria "conteúdo alterado" em toda a cadeia, logo depois de
-    gravada. `strftime` ignora o fuso e dá o mesmo texto nos dois sentidos,
-    e nos dois bancos.
+    `created_at` vira texto de segundos em UTC. PostgreSQL pode devolver o
+    instante no fuso da conexão. SQLite devolve sem fuso a data já gravada
+    em UTC. A escrita dos hashes sempre partiu de datas em UTC.
 
     Os segundos bastam: o que se detecta aqui é troca de conteúdo, e a
     identidade da linha já vem do `id`.
     """
+    if isinstance(created_at, datetime) and created_at.tzinfo is not None:
+        created_at = created_at.astimezone(timezone.utc)
     return {
         "usuario_id": usuario_id,
         "acao": acao,
@@ -147,7 +145,8 @@ def verificar(registros: list[dict[str, Any]]) -> dict[str, Any]:
                 "motivo": "encadeamento quebrado",
                 "detalhe": (
                     "Este registro aponta para um hash anterior diferente do "
-                    "registro que vem antes dele — houve remoção ou reordenação."
+                    "registro que vem antes dele. Confira lacunas, reordenação "
+                    "e falhas anteriores de gravação."
                 ),
                 "verificados": i,
             }

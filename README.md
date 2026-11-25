@@ -112,9 +112,9 @@ usuário.
 **Nada é apagado de verdade.** Uma exclusão fica registrada com autor e data,
 e o registro original é preservado.
 
-**A auditoria não pode ser editada.** Cada lançamento é encadeado
-matematicamente ao anterior — alterar uma linha quebra a corrente, e a
-verificação acusa.
+**A auditoria verifica o histórico.** Cada lançamento é encadeado ao
+anterior na mesma transação da operação. A verificação indica o primeiro
+ponto de falha na sequência ou no conteúdo.
 
 **Chaves de licença são tratadas como senha.** Ficam cifradas, aparecem
 mascaradas na tela, e revelar uma exige permissão própria — com registro de

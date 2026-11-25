@@ -71,9 +71,7 @@ function painelIntegridade() {
 
   caixa.append(
     el("p", { class: "muted", style: "font-size:12.5px;margin:0 0 10px" },
-      "Confere se algum registro foi alterado ou apagado depois de gravado. "
-      + "Cada entrada carrega a assinatura da anterior — mudar uma linha "
-      + "quebra a cadeia a partir dela."),
+      "Confere a sequência e o conteúdo dos registros assinados e indica o primeiro ponto de falha."),
     botao,
   );
   return caixa;
@@ -81,15 +79,9 @@ function painelIntegridade() {
 
 function resultadoIntegridade(d) {
   if (d.integra) {
-    return el("div", { class: "recado ok" },
-      el("b", {}, "Cadeia íntegra."),
-      ` ${d.verificados} entrada(s) conferida(s)`,
-      d.sem_assinatura
-        // Não esconder a lacuna: instalação que já existia tem log gravado
-        // antes deste recurso, e essas linhas não participam da cadeia.
-        ? ` · ${d.sem_assinatura} anterior(es) a este recurso, sem assinatura`
-        : "",
-      ".");
+    return el("div", { class: d.verificados ? "recado ok" : "recado" },
+      el("b", {}, d.mensagem),
+      d.sem_assinatura ? ` ${d.sem_assinatura} entrada(s) sem assinatura.` : "");
   }
 
   const e = d.entrada;
@@ -103,8 +95,7 @@ function resultadoIntegridade(d) {
           + (e.created_at ? ` · ${fmtDate(e.created_at, true)}` : ""))
       : null,
     el("div", { style: "margin-top:8px;font-size:12.5px" },
-      `${d.confirmados ?? 0} entrada(s) antes dela estão íntegras — `
-      + "a alteração começa neste ponto."),
+      `${d.confirmados ?? 0} entrada(s) anteriores verificadas.`),
   );
 }
 

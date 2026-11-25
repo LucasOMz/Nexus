@@ -11,8 +11,8 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import ConfigDict
-from sqlalchemy import String, cast, or_
-from sqlalchemy.orm import Session
+from sqlalchemy import String, cast, func, or_, select, true
+from sqlalchemy.orm import Session, aliased
 
 from app.core.deps import require_admin
 from app.database import get_db
@@ -221,29 +221,26 @@ def integridade(
     """
     from app.services import auditoria_cadeia as cadeia
 
-    q = (
-        db.query(LogAuditoria)
-        # Só as linhas COM hash: as anteriores a este recurso não participam
-        # da cadeia, e incluí-las acusaria violação onde só houve atualização
-        # de versão.
-        .filter(LogAuditoria.hash.isnot(None))
+    consulta = (
+        select(LogAuditoria)
+        .where(LogAuditoria.hash.is_not(None))
         .order_by(LogAuditoria.id)
     )
     if limite:
-        q = q.limit(limite)
-    logs = q.all()
-
-    if not logs:
-        return {
-            "integra": True,
-            "total": 0,
-            "verificados": 0,
-            "motivo": None,
-            "mensagem": (
-                "Nenhuma entrada com assinatura ainda. A cadeia começa a "
-                "partir do próximo registro de auditoria."
-            ),
-        }
+        consulta = consulta.limit(limite)
+    amostra = aliased(LogAuditoria, consulta.subquery())
+    contagem = select(func.count(LogAuditoria.id).label("total"),
+                      func.count(LogAuditoria.hash).label("assinados")).subquery()
+    # A amostra e as contagens usam a mesma leitura, inclusive com gravações simultâneas.
+    linhas = db.execute(
+        select(amostra, contagem.c.total, contagem.c.assinados)
+        .select_from(contagem)
+        .outerjoin(amostra, true())
+        .order_by(amostra.id)
+    ).all()
+    logs = [linha[0] for linha in linhas if linha[0] is not None]
+    _, total, assinados = linhas[0]
+    cobertura = {"total": total, "sem_assinatura": total - assinados, "parcial": len(logs) < assinados}
 
     registros = [
         {**cadeia.registro_do_log(x), "hash": x.hash, "hash_anterior": x.hash_anterior}
@@ -251,19 +248,15 @@ def integridade(
     ]
     r = cadeia.verificar(registros)
 
-    # Quantas entradas existem no total, incluindo as sem hash — a tela
-    # precisa dizer que a cobertura não é tudo.
-    total_geral = db.query(LogAuditoria).count()
-
     if r.get("integra"):
+        mensagem = (
+            f"Cadeia íntegra no trecho verificado: {len(logs)} entrada(s) conferida(s)."
+            if logs else "Nenhuma entrada com assinatura para verificar."
+        )
         return {
             **r,
-            "total": total_geral,
-            "sem_assinatura": total_geral - len(logs),
-            "mensagem": (
-                f"Cadeia íntegra: {len(logs)} entrada(s) conferida(s). "
-                "Nenhum registro foi alterado desde que foi gravado."
-            ),
+            **cobertura,
+            "mensagem": mensagem,
         }
 
     # Quando rompe, diz QUAL entrada — e o que ela continha, para a
@@ -272,8 +265,7 @@ def integridade(
     quebrada = logs[i] if i < len(logs) else None
     return {
         **r,
-        "total": total_geral,
-        "sem_assinatura": total_geral - len(logs),
+        **cobertura,
         "confirmados": i,
         "entrada": (
             {
@@ -289,6 +281,6 @@ def integridade(
         "mensagem": (
             f"A CADEIA FOI ROMPIDA na entrada {r.get('registro_id') or quebrada.id if quebrada else '?'}. "
             f"{r.get('detalhe') or ''} "
-            f"As {i} entrada(s) anteriores estão íntegras — a alteração começa aqui."
+            f"Entradas anteriores verificadas: {i}."
         ),
     }

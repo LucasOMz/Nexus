@@ -8,9 +8,21 @@ confere, e que a adulteração é detectada apontando a linha exata.
 """
 from __future__ import annotations
 
+import os
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+from uuid import uuid4
+
+import pytest
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session
+from sqlalchemy.schema import CreateSchema, DropSchema
+
 from app.database import get_db
 from app.main import app
-from app.models.core import LogAuditoria
+from app.models import Base
+from app.models.core import Ativo, LogAuditoria, Usuario
+from app.services import audit_service
 from app.services import auditoria_cadeia as cadeia
 from app.services.audit_service import audit
 
@@ -62,6 +74,45 @@ class TestGravacao:
         logs = db.query(LogAuditoria).order_by(LogAuditoria.id).all()
         assert logs[1].hash_anterior == logs[0].hash
         assert logs[3].hash_anterior == logs[2].hash
+
+    def test_savepoints_preservam_a_ordem_e_descartam_auditoria_revertida(self, client):
+        with _db(client) as db:
+            audit(db, None, "primeiro", "ativo")
+            with db.begin_nested():
+                audit(db, None, "segundo", "ativo")
+            savepoint = db.begin_nested()
+            audit(db, None, "revertido", "ativo")
+            savepoint.rollback()
+            audit(db, None, "terceiro", "ativo")
+            assert db.query(LogAuditoria).count() == 0
+            db.commit()
+            assert list(db.scalars(select(LogAuditoria.acao).order_by(LogAuditoria.id))) == [
+                "primeiro", "segundo", "terceiro",
+            ]
+
+    def test_rollback_descarta_auditorias_pendentes(self, client):
+        with _db(client) as db:
+            audit(db, None, "cancelado", "ativo")
+            db.rollback()
+            audit(db, None, "confirmado", "ativo")
+            db.commit()
+            assert list(db.scalars(select(LogAuditoria.acao))) == ["confirmado"]
+
+    def test_falha_na_auditoria_bloqueia_operacao_e_gera_log(self, client, auth_headers, monkeypatch, caplog):
+        def falhar(*_):
+            raise ValueError("conteúdo sensível de teste")
+
+        monkeypatch.setattr(audit_service, "calcular_hash", falhar)
+        resposta = client.post("/api/v1/ativos", headers=auth_headers, json={
+            "dominio": "ti", "patrimonio": "TESTE-AUDITORIA", "numero_serie": "SN-AUDITORIA",
+        })
+        assert resposta.status_code == 500
+        assert "auditoria" in resposta.json()["detail"]
+        assert "Falha na auditoria" in caplog.text
+        assert "conteúdo sensível de teste" not in caplog.text
+        with _db(client) as db:
+            assert db.query(Ativo).filter_by(patrimonio="TESTE-AUDITORIA").count() == 0
+            assert db.query(LogAuditoria).count() == 0
 
     def test_o_diff_entra_no_hash(self, client):
         """Alterar o diff (o que a pessoa fez) precisa ser detectado."""
@@ -161,29 +212,77 @@ class TestEndpoointDeIntegridade:
         d = self._integridade(client, auth_headers, limite=5)
         assert d["verificados"] == 5
         assert d["total"] == 10
+        assert d["parcial"] is True
+        assert d["sem_assinatura"] == 0
+
+    def test_historico_apenas_legado_informa_quantidade_real(self, client, auth_headers):
+        with _db(client) as db:
+            db.add(LogAuditoria(acao="legado", entidade="ativo"))
+            db.commit()
+        d = self._integridade(client, auth_headers)
+        assert d["total"] == d["sem_assinatura"] == 1
+        assert d["verificados"] == 0
 
     def test_exige_admin(self, client):
         r = client.get("/api/v1/admin/auditoria/integridade")
         assert r.status_code == 401
 
 
+def test_postgres_preserva_cadeia_entre_transacoes_simultaneas():
+    url = os.getenv("NEXUS_TEST_POSTGRES_URL")
+    if not url:
+        pytest.skip("Configure NEXUS_TEST_POSTGRES_URL para testar com PostgreSQL descartável.")
+    schema = f"nexus_qa_{uuid4().hex}"
+    servidor = create_engine(url)
+    motor = create_engine(url, connect_args={"options": f"-c search_path={schema} -c timezone=America/Sao_Paulo"})
+    encontro = Barrier(8, timeout=10)
+
+    def gravar(numero):
+        with Session(motor) as db:
+            # Simula uma operação de negócio que alterou outra tabela antes do commit.
+            db.add(Usuario(nome=f"Usuário {numero}", email=f"teste{numero}@local", senha_hash="teste"))
+            db.flush()
+            for ordem in range(2):
+                audit(db, None, "create", "usuario", entidade_id=numero, diff={"ordem": ordem})
+            encontro.wait()
+            db.commit()
+
+    try:
+        with servidor.begin() as conexao:
+            conexao.execute(CreateSchema(schema))
+        Base.metadata.create_all(motor)
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            list(executor.map(gravar, range(8)))
+        with Session(motor) as db:
+            logs = list(db.scalars(select(LogAuditoria).order_by(LogAuditoria.id)))
+            assert len(logs) == 16
+            registros = [
+                {**cadeia.registro_do_log(row), "hash": row.hash, "hash_anterior": row.hash_anterior} for row in logs
+            ]
+            resultado = cadeia.verificar(registros)
+            assert resultado["integra"] is True, resultado
+            assert db.query(Usuario).count() == 8
+    finally:
+        motor.dispose()
+        with servidor.begin() as conexao:
+            conexao.execute(DropSchema(schema, if_exists=True, cascade=True))
+        servidor.dispose()
+
+
 class TestRegistroCanonico:
     """A forma canônica — se ela variar entre gravar e verificar, toda a
     cadeia pareceria adulterada."""
 
-    def test_a_data_ignora_fuso(self):
-        """SQLite devolve a data sem fuso; o valor gravado tinha +00:00.
-
-        Sem o `strftime`, o hash acusaria "conteúdo alterado" logo após
-        gravar — em toda a cadeia.
-        """
-        from datetime import datetime, timezone
+    def test_a_data_e_normalizada_para_utc(self):
+        from datetime import datetime, timedelta, timezone
 
         com_fuso = datetime(2025, 6, 15, 10, 30, 0, tzinfo=timezone.utc)
         sem_fuso = datetime(2025, 6, 15, 10, 30, 0)
+        fuso_local = datetime(2025, 6, 15, 7, 30, 0, tzinfo=timezone(timedelta(hours=-3)))
         a = cadeia.registro(None, "x", "y", None, None, None, com_fuso)
         b = cadeia.registro(None, "x", "y", None, None, None, sem_fuso)
         assert a["created_at"] == b["created_at"]
+        assert a["created_at"] == cadeia.registro(None, "x", "y", None, None, None, fuso_local)["created_at"]
 
     def test_os_segundos_bastam(self):
         from datetime import datetime

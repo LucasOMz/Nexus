@@ -13,7 +13,6 @@
 """
 from __future__ import annotations
 
-import logging
 import warnings
 
 from sqlalchemy import create_engine
@@ -24,7 +23,6 @@ from app.models.enums import Dominio, StatusAtivo, TipoItem
 from app.services import software_agente
 
 warnings.filterwarnings("ignore")
-logging.disable(logging.CRITICAL)
 
 
 def _banco():

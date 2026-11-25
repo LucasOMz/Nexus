@@ -411,7 +411,12 @@ fornecidos para download, com acesso vinculado à unidade do registro.
 - **Permissões por usuário** (`inventarios`, `modulos`, `pode_escrever`, `pode_excluir`) aplicadas no backend por `require_module` / `require_escrita` / `require_exclusao` — não é só ocultação visual.
 - **Papéis** (`admin | ti | leitor | auditor`) definem o padrão; o admin pode ajustar caso a caso.
 - **Rate limit** em `/auth/login` e `/scanner/buscar` (janela deslizante em memória).
-- **Auditoria append-only** (`logs_auditoria`) com diff JSON e IP em toda mutação.
+- **Auditoria com cadeia de hashes** (`logs_auditoria`) para as operações
+  auditadas. No PostgreSQL, a gravação final usa uma trava transacional e o
+  isolamento padrão `READ COMMITTED`. Se o evento falhar, a transação da
+  operação é interrompida e o servidor registra `Falha na auditoria`.
+  **Administração → Logs → Conferir integridade** indica o primeiro registro
+  em que a verificação falhou e informa a quantidade de entradas sem assinatura.
 - **Headers** HSTS/CSP/X-Frame-Options/X-Content-Type-Options.
 - **LGPD**: soft delete em tudo + exportação de dados via relatórios.
 

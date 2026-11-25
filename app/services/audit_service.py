@@ -1,26 +1,27 @@
-"""Serviço de auditoria — registra mutações com diff JSON e IP (append-only).
-
-A coluna `diff` é JSON. Valores que vêm de dentro do Python (`date`, `datetime`,
-`Decimal`, enums, `UUID`) **não** são serializáveis pelo `json.dumps` que o
-SQLAlchemy usa — e a falha só aparece no `commit`, já fora do `try` daqui, o que
-derrubava o request inteiro com erro 500.
-
-Foi exatamente o que acontecia ao salvar a **data de garantia**: o diff levava
-um objeto `date` e a gravação da auditoria estourava. Por isso todo diff passa
-por `json_safe` antes de ser gravado.
-"""
+"""Registra eventos de auditoria na mesma transação da operação."""
 from __future__ import annotations
 
 import enum
+import logging
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy import event, false, func, insert, select, update
+from sqlalchemy.orm import Session, SessionTransaction
 
 from app.models.core import LogAuditoria, Usuario
 from app.services.auditoria_cadeia import GENESIS, calcular_hash, registro
+
+log = logging.getLogger(__name__)
+_PENDENTES = "nexus.auditoria_pendente"
+# Identificador estável do bloqueio da cadeia em todas as instâncias da API.
+_TRAVA_AUDITORIA = 0x4E45585553415544
+
+
+class AuditoriaIndisponivel(RuntimeError):
+    """A transação não pode ser confirmada sem seu registro de auditoria."""
 
 # Campos que NUNCA entram no diff da auditoria.
 #
@@ -89,69 +90,95 @@ def audit(
     ip: str | None = None,
     diff: dict[str, Any] | None = None,
 ) -> None:
-    """Grava uma entrada de auditoria, encadeada à anterior.
-
-    Nunca lança exceção (fail-safe) — mas isso significa que, se a cadeia
-    não puder ser calculada, a entrada entra **sem** hash. É o mal menor:
-    derrubar um cadastro porque a auditoria falhou seria pior, e a
-    verificação sinaliza a lacuna em vez de escondê-la.
-    """
+    """Prepara um evento para ser gravado no commit da transação atual."""
+    transacao = db.get_nested_transaction() or db.get_transaction() or db.begin()
+    evento = {
+        "usuario_id": usuario.id if usuario else None,
+        "acao": acao,
+        "entidade": entidade,
+        "entidade_id": entidade_id,
+        "ip": ip,
+        "created_at": datetime.now(timezone.utc),
+    }
     try:
-        seguro = json_safe(diff) if diff is not None else None
+        evento["diff"] = json_safe(diff)
+    except Exception as exc:
+        _avisar_falha(evento, exc)
+        raise AuditoriaIndisponivel() from None
+    db.info.setdefault(_PENDENTES, {}).setdefault(transacao, []).append(evento)
 
-        # Hash da última entrada COM hash. Ordena por `id`, e não por
-        # `created_at`: duas gravações no mesmo segundo empatariam, e a
-        # ordem da cadeia passaria a depender do banco.
-        #
-        # `hash IS NOT NULL` também ignora as linhas gravadas antes deste
-        # recurso existir — a cadeia começa na primeira com hash, sem
-        # acusar violação onde só houve atualização de versão.
-        ultima = (
-            db.query(LogAuditoria.hash)
-            .filter(LogAuditoria.hash.isnot(None))
-            .order_by(LogAuditoria.id.desc())
-            .first()
-        )
-        anterior = (ultima[0] if ultima else None) or GENESIS
 
-        # A data é fixada aqui, e não pelo `server_default`: o valor precisa
-        # ser o MESMO que entra no hash e o que vai para a coluna.
-        agora = datetime.now(timezone.utc)
+def _avisar_falha(evento: dict, erro: Exception) -> None:
+    # Exceções do banco podem incluir diff e parâmetros sensíveis.
+    log.error(
+        "Falha na auditoria. acao=%s entidade=%s entidade_id=%s usuario_id=%s erro=%s",
+        evento["acao"], evento["entidade"], evento["entidade_id"], evento["usuario_id"], type(erro).__name__,
+    )
 
-        linha = LogAuditoria(
-            usuario_id=usuario.id if usuario else None,
-            acao=acao,
-            entidade=entidade,
-            entidade_id=entidade_id,
-            ip=ip,
-            diff=seguro,
-            created_at=agora,
-        )
-        db.add(linha)
-        # O flush vem ANTES do hash: o `id` faz parte do que é hasheado, e
-        # ele só existe depois que o banco atribui. Hashear sem o id faria a
-        # verificação acusar "conteúdo alterado" em toda a cadeia.
-        db.flush()
 
-        linha.hash_anterior = anterior
-        linha.hash = calcular_hash(
-            {
-                "id": linha.id,
-                **registro(
-                    usuario_id=usuario.id if usuario else None,
-                    acao=acao, entidade=entidade, entidade_id=entidade_id,
-                    ip=ip, diff=seguro, created_at=agora,
-                ),
-            },
-            anterior,
-        )
-        # Segundo flush: grava o hash e deixa a PRÓXIMA chamada enxergá-lo.
-        # Sem ele, duas auditorias no mesmo request encadeariam no mesmo
-        # hash anterior e a cadeia nasceria quebrada.
-        db.flush()
-        # commit é responsabilidade do chamador.
-    except Exception:  # pragma: no cover - auditoria nunca deve derrubar o request
-        pass
+@event.listens_for(Session, "before_commit")
+def _gravar_auditoria(db: Session) -> None:
+    if db.in_nested_transaction():
+        return
+    eventos = db.info.get(_PENDENTES, {}).get(db.get_transaction())
+    if not eventos:
+        return
+
+    # Finaliza as escritas da operação antes de bloquear a cadeia. A trava
+    # fica reservada somente durante a gravação final e o commit.
+    db.flush()
+    tabela = LogAuditoria.__table__
+    evento = eventos[0]
+    try:
+        conexao = db.connection()
+        if conexao.dialect.name == "postgresql":
+            _, isolamento = conexao.execute(select(
+                func.pg_advisory_xact_lock(_TRAVA_AUDITORIA), func.current_setting("transaction_isolation"),
+            )).one()
+            if isolamento not in {"read committed", "read uncommitted"}:
+                log.error("A auditoria exige READ COMMITTED no PostgreSQL para ler o topo atualizado da cadeia.")
+                raise AuditoriaIndisponivel()
+        elif conexao.dialect.name == "sqlite":
+            # Abre a transação de escrita antes de ler o topo. Também evita
+            # que o primeiro SAVEPOINT do driver funcione como transação raiz.
+            conexao.execute(update(tabela).where(false()).values(hash=tabela.c.hash))
+
+        with conexao.begin_nested():
+            ultima = conexao.execute(
+                select(tabela.c.id, tabela.c.hash).where(tabela.c.hash.is_not(None)).order_by(tabela.c.id.desc()).limit(1)
+            ).first()
+            id_anterior, anterior = ultima if ultima else (None, GENESIS)
+            for evento in eventos:
+                resultado = conexao.execute(insert(tabela).values(**evento, hash_anterior=anterior))
+                id_log = resultado.inserted_primary_key[0]
+                if id_anterior is not None and id_log <= id_anterior:
+                    log.error("A sequência de IDs da auditoria produziu um valor anterior ao topo da cadeia.")
+                    raise AuditoriaIndisponivel()
+                anterior = calcular_hash({"id": id_log, **registro(**evento)}, anterior)
+                conexao.execute(update(tabela).where(tabela.c.id == id_log).values(hash=anterior))
+                id_anterior = id_log
+    except Exception as exc:
+        _avisar_falha(evento, exc)
+        raise AuditoriaIndisponivel() from None
+
+
+@event.listens_for(Session, "after_commit")
+def _promover_auditoria_do_savepoint(db: Session) -> None:
+    savepoint = db.get_nested_transaction()
+    pendentes = db.info.get(_PENDENTES)
+    if savepoint is not None and pendentes is not None:
+        eventos = pendentes.pop(savepoint, [])
+        if eventos:
+            pendentes.setdefault(savepoint.parent, []).extend(eventos)
+
+
+@event.listens_for(Session, "after_transaction_end")
+def _descartar_auditoria_da_transacao(db: Session, transacao: SessionTransaction) -> None:
+    pendentes = db.info.get(_PENDENTES)
+    if pendentes is not None:
+        pendentes.pop(transacao, None)
+        if not pendentes:
+            db.info.pop(_PENDENTES)
 
 
 def serialize_entity(entity: object) -> dict[str, Any]:

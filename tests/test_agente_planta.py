@@ -13,7 +13,6 @@ a filial X, distribui, e toda maquina registrada com ele nasce em X.
 """
 from __future__ import annotations
 
-import logging
 import warnings
 
 from sqlalchemy import create_engine
@@ -23,7 +22,6 @@ from app.models import Base, Planta
 from app.services import agente_service as s
 
 warnings.filterwarnings("ignore")
-logging.disable(logging.CRITICAL)
 
 
 def _novo_banco():
