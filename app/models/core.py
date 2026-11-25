@@ -65,6 +65,21 @@ class Planta(BaseModel, Base):
     uf: Mapped[str | None] = mapped_column(String(2))
     observacoes: Mapped[str | None] = mapped_column(Text)
     ativa: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    localidades_hostname: Mapped[list[PlantaLocalidade]] = relationship(
+        back_populates="planta", cascade="all, delete-orphan", order_by="PlantaLocalidade.codigo",
+    )
+
+    @property
+    def codigos_localidade(self) -> list[str]:
+        return [localidade.codigo for localidade in self.localidades_hostname]
+
+
+class PlantaLocalidade(Base):
+    __tablename__ = "plantas_localidades_hostname"
+
+    codigo: Mapped[str] = mapped_column(String(3), primary_key=True)
+    planta_id: Mapped[int] = mapped_column(ForeignKey("plantas.id", ondelete="CASCADE"), nullable=False, index=True)
+    planta: Mapped[Planta] = relationship(back_populates="localidades_hostname")
 
 
 class Departamento(BaseModel, Base):

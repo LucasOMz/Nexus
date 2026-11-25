@@ -26,6 +26,10 @@ function abrirPlanta(planta) {
         <input name="sigla" required maxlength="20" value="${esc(p.sigla)}" placeholder="Ex.: CPS">
         <span class="hint">É o que aparece na coluna <b>Planta</b> da tela de Ativos. Use algo curto.</span></div>
       <div class="field"><label>CNPJ</label><input name="cnpj" value="${esc(p.cnpj)}" placeholder="00.000.000/0000-00"></div>
+      <div class="field span-2"><label for="planta-localidades-hostname">Códigos de localidade no hostname</label>
+        <input id="planta-localidades-hostname" name="codigos_localidade" value="${esc((p.codigos_localidade || []).join(", "))}"
+          placeholder="TAT, MTZ" autocapitalize="characters" spellcheck="false" aria-describedby="planta-localidades-ajuda">
+        <span class="hint" id="planta-localidades-ajuda">Use três letras por código. Separe por vírgulas. Em DTAT0020, NTAT0020 e RTAT0020, a localidade é TAT.</span></div>
       <div class="field span-2"><label>Endereço</label><input name="endereco" value="${esc(p.endereco)}"></div>
       <div class="field"><label>Cidade</label><input name="cidade" value="${esc(p.cidade)}"></div>
       <div class="field"><label>UF</label><input name="uf" maxlength="2" value="${esc(p.uf)}" placeholder="SP"></div>
@@ -44,6 +48,7 @@ function abrirPlanta(planta) {
         const dados = {
           nome: (fd.get("nome") || "").trim(),
           sigla: (fd.get("sigla") || "").trim().toUpperCase(),
+          codigos_localidade: String(fd.get("codigos_localidade") || "").split(/[,\s]+/).filter(Boolean),
           cnpj: fd.get("cnpj") || null,
           endereco: fd.get("endereco") || null,
           cidade: fd.get("cidade") || null,
@@ -94,7 +99,8 @@ export async function renderPlantas(root) {
         el("div", { class: "list-title" }, `${p.sigla} — ${p.nome}${p.ativa ? "" : " (inativa)"}`),
         el("div", { class: "list-sub" },
           `${p.total_ativos} ativo(s) · ${p.total_usuarios} usuário(s)`
-          + (p.cidade ? ` · ${p.cidade}${p.uf ? `/${p.uf}` : ""}` : "")),
+          + (p.cidade ? ` · ${p.cidade}${p.uf ? `/${p.uf}` : ""}` : "")
+          + (p.codigos_localidade?.length ? ` · Hostnames ${p.codigos_localidade.join(", ")}` : "")),
       ),
       el("div", { class: "row" },
         el("button", { class: "iconbtn", title: "Editar", onclick: () => abrirPlanta(p), html: icon("edit", 20) }),

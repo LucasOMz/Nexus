@@ -1,0 +1,223 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Instalador MSI do Agente Nexus.
+
+  ## Por que MSI e nao um .exe que extrai
+
+  MSI e o formato que o Windows reconhece como instalacao de verdade:
+
+    * aparece em "Aplicativos e recursos" com nome, versao e editor
+    * o Windows guarda o que foi instalado e sabe remover
+    * GPO e SCCM distribuem nativamente (`msiexec /i pacote.msi /qn`)
+    * `msiexec /x` desinstala sem precisar do nosso script
+
+  O autoextraivel anterior fazia tudo isso "na mao", com chaves de registro
+  escritas por script. Funcionava, mas era uma imitacao — e o Windows nunca
+  soube que o programa existia.
+
+  ## O que ele instala
+
+    C:\Program Files\Nexus\Agente\agente.exe
+
+  E cria:
+
+    * servico `NexusAgente` (automatico)
+    * chave Run para a bandeja no logon
+    * atalho no Menu Iniciar
+
+  ## Configuracao: depois, pela bandeja
+
+  O MSI roda como SYSTEM e nao tem como abrir uma janela para o usuario que
+  esta instalando. Por isso a configuracao fica para o primeiro uso: a
+  bandeja detecta que nao ha configuracao e abre a tela sozinha.
+
+  Instalacao e configuracao separadas — que e justamente a ordem que o
+  usuario pediu.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+
+  <Product Id="*"
+           Name="Nexus Agente"
+           Language="1046"
+           Version="1.0.0"
+           Manufacturer="Nexus"
+           UpgradeCode="8F3A2C41-7B6E-4D92-A1F5-3C8E9D2B6A47">
+
+    <Package InstallerVersion="500"
+             Compressed="yes"
+             InstallScope="perMachine"
+             Description="Agente de inventario Nexus"
+             Comments="Coleta o inventario desta maquina e envia ao servidor Nexus." />
+
+    <!-- Atualizacao: remove a versao anterior antes de instalar esta.
+         `AllowSameVersionUpgrades` permite reinstalar por cima sem erro. -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="Uma versao mais nova do Agente Nexus ja esta instalada." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Icone em "Aplicativos e recursos" -->
+    <Icon Id="NexusIcon" SourceFile="$(var.Icone)" />
+    <Property Id="ARPPRODUCTICON" Value="NexusIcon" />
+    <Property Id="ARPHELPLINK" Value="http://nexus.local" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <!-- Necessario para o ExeCommand do schtasks. -->
+      <Directory Id="SystemFolder" />
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="Nexus">
+          <Directory Id="AgenteFolder" Name="Agente" />
+        </Directory>
+      </Directory>
+
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="MenuFolder" Name="Nexus" />
+      </Directory>
+
+      <Directory Id="CommonAppDataFolder">
+        <Directory Id="DadosFolder" Name="Nexus" />
+      </Directory>
+    </Directory>
+
+    <!-- ============================================================
+         Binario + servico
+         ============================================================ -->
+    <DirectoryRef Id="AgenteFolder">
+      <Component Id="CompAgente" Guid="B7E4C1A2-9F3D-4E68-8A21-5C7D0F3B9E14">
+
+        <File Id="ArquivoAgente"
+              Source="$(var.AgenteExe)"
+              Name="agente.exe"
+              KeyPath="yes" />
+
+        <!-- O servico e criado junto com o arquivo. `Start="auto"` garante
+             que ele suba no boot, antes de qualquer login. -->
+        <ServiceInstall Id="ServicoNexus"
+                        Name="NexusAgente"
+                        DisplayName="Nexus Agente"
+                        Description="Coleta o inventario desta maquina e envia ao servidor Nexus."
+                        Type="ownProcess"
+                        Start="auto"
+                        ErrorControl="normal"
+                        Arguments="--servico" />
+
+        <!-- Para o servico ao desinstalar, antes de remover o arquivo. -->
+        <ServiceControl Id="ControleServico"
+                        Name="NexusAgente"
+                        Start="install"
+                        Stop="both"
+                        Remove="uninstall"
+                        Wait="yes" />
+
+        <!-- ## Logon: tarefa agendada, nao chave Run
+             A chave Run inicia o app com o token do usuario comum. Como o
+             agente exige elevacao (manifesto requireAdministrator), o Windows
+             mostraria **UAC a cada login** — inviavel numa frota.
+
+             A tarefa agendada com RunLevel=Highest inicia elevada e sem
+             prompt. E o unico mecanismo do Windows que faz isso. -->
+        <RegistryValue Root="HKLM"
+                       Key="Software\Nexus\Agente"
+                       Name="Instalado"
+                       Type="integer"
+                       Value="1" />
+
+      </Component>
+    </DirectoryRef>
+
+    <!-- ============================================================
+         Atalho no Menu Iniciar
+         ============================================================ -->
+    <DirectoryRef Id="MenuFolder">
+      <Component Id="CompAtalho" Guid="*">
+        <Shortcut Id="AtalhoMenu"
+                  Name="Nexus Agente"
+                  Description="Status e configuracao do agente"
+                  Target="[AgenteFolder]agente.exe"
+                  WorkingDirectory="AgenteFolder" />
+        <RemoveFolder Id="RemoverMenu" On="uninstall" />
+        <RegistryValue Root="HKCU"
+                       Key="Software\Nexus\Agente"
+                       Name="AtalhoInstalado"
+                       Type="integer"
+                       Value="1" />
+      </Component>
+    </DirectoryRef>
+
+    <!-- ============================================================
+         Pasta de dados
+         ============================================================
+         Criada aqui para que a configuracao encontre o lugar pronto. O
+         token e gravado com DPAPI pelo proprio agente. -->
+    <DirectoryRef Id="DadosFolder">
+      <Component Id="CompDados" Guid="*">
+        <CreateFolder />
+        <RegistryValue Root="HKLM"
+                       Key="Software\Nexus\Agente"
+                       Name="PastaDados"
+                       Type="string"
+                       Value="[DadosFolder]"
+                       KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <Feature Id="Principal" Title="Agente Nexus" Level="1">
+      <ComponentRef Id="CompAgente" />
+      <ComponentRef Id="CompAtalho" />
+      <ComponentRef Id="CompDados" />
+    </Feature>
+
+  <!-- ============================================================
+       ACL do serviço: usuários podem parar
+       ============================================================
+       O agente roda sem elevação para não pedir UAC a cada logon.
+       `ServiceController.Stop()` exige privilégio — sem esta ACL, "Sair"
+       falha com "não é possível abrir o serviço".
+
+       `RP` = iniciar, `WP` = parar. O resto da ACL padrão do Windows fica
+       intacto: SYSTEM e Administradores continuam com controle total. -->
+  <CustomAction Id="AjustarAclServico"
+                Directory="SystemFolder"
+                ExeCommand="sc sdset NexusAgente D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWRPWPLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)"
+                Execute="deferred"
+                Impersonate="no"
+                Return="ignore" />
+
+<InstallExecuteSequence>
+    <Custom Action="AjustarAclServico" After="InstallServices">
+      NOT Installed AND NOT REMOVE
+    </Custom>
+    <Custom Action="AbrirAgente" After="InstallFinalize">
+      WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed
+    </Custom>
+  </InstallExecuteSequence>
+
+  <!-- ============================================================
+       Abrir o agente ao concluir
+       ============================================================
+       Nao e conveniencia: e o passo que **cria a tarefa agendada**.
+
+       A tarefa exige elevacao, e a custom action do MSI roda com o token
+       nao elevado do usuario. A bandeja, aberta com administrador, cria a
+       tarefa — e a partir dai o agente sobe elevado em todo logon. -->
+  <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT"
+            Value="Abrir o Nexus Agente agora (necessario para iniciar com o Windows)" />
+  <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
+  <Property Id="WixShellExecTarget" Value="[#ArquivoAgente]" />
+
+  <CustomAction Id="AbrirAgente"
+                BinaryKey="WixCA"
+                DllEntry="WixShellExec"
+                Impersonate="yes"
+                Return="ignore" />
+
+  <!-- Interface: sem isto o MSI roda em silencio e o usuario acha que nada
+       aconteceu. Ele ve boas-vindas, barra de progresso e a tela de conclusao
+       com o botao Concluir. -->
+  <UIRef Id="WixUI_Minimal" />
+  <WixVariable Id="WixUILicenseRtf" Value="installer\licenca.rtf" />
+
+
+  </Product>
+</Wix>

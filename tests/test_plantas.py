@@ -81,6 +81,25 @@ class TestCadastroDePlantas:
         r = client.post("/api/v1/admin/plantas", json={"nome": "X", "sigla": "A"}, headers=auth_headers)
         assert r.status_code == 422
 
+    def test_codigos_de_localidade_sao_unicos_e_podem_ser_reatribuidos(self, client, auth_headers):
+        rota = "/api/v1/admin/plantas"
+        base = {"nome": "Unidade TAT", "sigla": "U01"}
+        criada = client.post(rota, headers=auth_headers, json={**base, "codigos_localidade": [" tat ", "mtz", "TAT"]})
+        assert criada.status_code == 201, criada.text
+        assert criada.json()["codigos_localidade"] == ["MTZ", "TAT"]
+        id_ = criada.json()["id"]
+        atualizada = client.put(f"{rota}/{id_}", headers=auth_headers, json=base)
+        assert atualizada.json()["codigos_localidade"] == ["MTZ", "TAT"]
+        outra = {"nome": "Outra", "sigla": "U02", "codigos_localidade": ["tat"]}
+        assert client.post(rota, headers=auth_headers, json=outra).status_code == 409
+        assert client.post(rota, headers=auth_headers, json={**outra, "codigos_localidade": ["T1"]}).status_code == 422
+        limpa = client.put(f"{rota}/{id_}", headers=auth_headers, json={**base, "codigos_localidade": []})
+        assert limpa.json()["codigos_localidade"] == []
+        outra = client.post(rota, headers=auth_headers, json=outra)
+        assert outra.status_code == 201
+        assert client.delete(f"{rota}/{outra.json()['id']}", headers=auth_headers).status_code == 204
+        assert client.put(f"{rota}/{id_}", headers=auth_headers, json={**base, "codigos_localidade": ["TAT"]}).status_code == 200
+
     def test_atualiza(self, client, auth_headers):
         p = _criar_planta(client, auth_headers, "Campinas", "CPS")
         r = client.put(

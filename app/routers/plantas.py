@@ -6,14 +6,17 @@ todas e escolhe qual está vendo pelo seletor do topo.
 """
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, require_admin
 from app.database import get_db
-from app.models.core import Ativo, Planta, QRZerado, Usuario
+from app.models.core import Ativo, Planta, PlantaLocalidade, QRZerado, Usuario
 from app.models.enums import PapelUsuario
 from app.services.audit_service import audit
 
@@ -31,6 +34,15 @@ class PlantaBase(BaseModel):
     uf: str | None = Field(default=None, max_length=2)
     observacoes: str | None = None
     ativa: bool = True
+    codigos_localidade: list[str] = Field(default_factory=list, max_length=100)
+
+    @field_validator("codigos_localidade")
+    @classmethod
+    def normalizar_codigos(cls, valores: list[str]) -> list[str]:
+        codigos = [valor.strip() for valor in valores]
+        if any(re.fullmatch(r"[A-Za-z]{3}", codigo) is None for codigo in codigos):
+            raise ValueError("Cada código de localidade deve ter três letras, como TAT ou MTZ.")
+        return sorted({codigo.upper() for codigo in codigos})
 
 
 class PlantaCreate(PlantaBase):
@@ -61,6 +73,26 @@ def _serializar(db: Session, planta: Planta) -> PlantaOut:
     return dados
 
 
+def _atribuir_localidades(db: Session, planta: Planta, codigos: list[str]) -> None:
+    if codigos:
+        conflito = db.query(PlantaLocalidade).filter(PlantaLocalidade.codigo.in_(codigos))
+        if planta.id is not None:
+            conflito = conflito.filter(PlantaLocalidade.planta_id != planta.id)
+        outra = conflito.first()
+        if outra:
+            raise HTTPException(409, f"O código de localidade {outra.codigo} já está vinculado à planta {outra.planta.sigla}.")
+    atuais = {localidade.codigo: localidade for localidade in planta.localidades_hostname}
+    planta.localidades_hostname = [atuais[codigo] if codigo in atuais else PlantaLocalidade(codigo=codigo) for codigo in codigos]
+
+
+def _gravar_planta(db: Session) -> None:
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "A sigla ou um código de localidade já está em uso. Reabra a planta para conferir.") from exc
+
+
 @router.get("/admin/plantas", response_model=list[PlantaOut])
 def listar(db: Session = Depends(get_db), _: Usuario = Depends(require_admin)) -> list[PlantaOut]:
     """Todas as plantas, com quantos ativos e usuários cada uma tem."""
@@ -76,11 +108,12 @@ def criar(
     if db.query(Planta).filter(func.upper(Planta.sigla) == sigla).first():
         raise HTTPException(409, f"Já existe uma planta com a sigla {sigla}.")
 
-    planta = Planta(**{**body.model_dump(), "sigla": sigla})
+    planta = Planta(**{**body.model_dump(exclude={"codigos_localidade"}), "sigla": sigla})
+    _atribuir_localidades(db, planta, body.codigos_localidade)
     db.add(planta)
-    db.flush()
+    _gravar_planta(db)
     audit(db, user, "create", "planta", planta.id, ip=request.client.host if request.client else None,
-          diff={"nome": planta.nome, "sigla": planta.sigla})
+          diff={"nome": planta.nome, "sigla": planta.sigla, "codigos_localidade": body.codigos_localidade})
     db.commit()
     db.refresh(planta)
     return _serializar(db, planta)
@@ -91,7 +124,7 @@ def atualizar(
     planta_id: int, body: PlantaUpdate, request: Request,
     db: Session = Depends(get_db), user: Usuario = Depends(require_admin),
 ) -> PlantaOut:
-    planta = db.get(Planta, planta_id)
+    planta = db.query(Planta).filter(Planta.id == planta_id).with_for_update().first()
     if planta is None:
         raise HTTPException(404, "Planta não encontrada")
 
@@ -104,11 +137,14 @@ def atualizar(
     if conflito:
         raise HTTPException(409, f"Já existe outra planta com a sigla {sigla}.")
 
-    for chave, valor in {**body.model_dump(), "sigla": sigla}.items():
+    if "codigos_localidade" in body.model_fields_set:
+        _atribuir_localidades(db, planta, body.codigos_localidade)
+    for chave, valor in {**body.model_dump(exclude={"codigos_localidade"}), "sigla": sigla}.items():
         setattr(planta, chave, valor)
 
+    _gravar_planta(db)
     audit(db, user, "update", "planta", planta.id,
-          ip=request.client.host if request.client else None, diff=body.model_dump(mode="json"))
+          ip=request.client.host if request.client else None, diff=body.model_dump(mode="json", exclude_unset=True))
     db.commit()
     db.refresh(planta)
     return _serializar(db, planta)

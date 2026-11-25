@@ -303,16 +303,20 @@ export async function renderAgente(root) {
         + "tem ativo correspondente."));
     } else {
       cartaoPend.append(el("p", { class: "muted", style: "font-size:12.5px;margin:4px 0 10px" },
-        "Máquinas que apareceram e não foram reconhecidas — normalmente por não "
-        + "terem serial de fábrica. Escolha o identificador de cada uma."));
+        "Confira o motivo de cada pendência para concluir a vinculação."));
       for (const p of pendentes) {
         const campo = el("input", {
           class: "field", placeholder: "Patrimônio ou serial correto",
           style: "margin-bottom:8px",
         });
-        const motivo = p.motivo === "sem_serial"
-          ? "sem serial de fábrica"
-          : "serial não cadastrado";
+        const motivosLocalidade = {
+          localidade_nao_cadastrada: "Localidade do hostname sem planta vinculada",
+          localidade_inativa: "Planta da localidade está inativa",
+          localidade_conflitante: "Localidade do hostname difere da planta do código de instalação",
+        };
+        const pendenciaLocalidade = motivosLocalidade[p.motivo];
+        const motivo = pendenciaLocalidade || ({ sem_serial: "sem serial de fábrica", sem_planta: "sem planta cadastrada" }[p.motivo]
+          || "serial não cadastrado");
         cartaoPend.append(el("div", {
           class: "card", style: "margin-top:8px;background:transparent",
         },
@@ -322,9 +326,11 @@ export async function renderAgente(root) {
           el("div", { class: "list-sub", style: "margin-top:4px" },
             [p.basico?.fabricante, p.basico?.modelo, p.basico?.cpu]
               .filter(Boolean).join(" · ")),
-          el("div", { style: "margin-top:10px" }, campo),
+          pendenciaLocalidade
+            ? el("p", { class: "muted" }, "Confira os códigos em Administração → Plantas e o código de instalação. O agente tenta vincular novamente no próximo ciclo.")
+            : el("div", { style: "margin-top:10px" }, campo),
           el("div", { class: "row", style: "gap:8px;flex-wrap:wrap" },
-            el("button", {
+            pendenciaLocalidade ? null : el("button", {
               class: "btn small",
               onclick: async (ev) => {
                 const valor = campo.value.trim();

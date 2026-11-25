@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Manifesto do agente.
+
+  ## Exige administrador
+
+  Aberto pelo Menu Iniciar, pelo instalador ou pela chave Run, o Windows
+  pede UAC. Isso garante que o agente sempre tenha o privilegio necessário
+  para:
+
+    * parar o serviço ao sair
+    * gravar a configuração em %ProgramData%\Nexus
+    * ler o token protegido por DPAPI de máquina
+
+  ## O custo, que é alto
+
+  A chave `HKLM\...\Run` inicia o agente no logon **sem elevação**. Com
+  `requireAdministrator`, o Windows mostra um **prompt de UAC a cada login**.
+
+  Numa frota de 3.000 máquinas isso é chamado de suporte garantido. Foi
+  por isso que a versão anterior usava `asInvoker`.
+
+  ## Por que voltou
+
+  Sem exigir, `ServiceController.Stop()` falhava e o botão "Sair" não
+  parava a coleta. O usuário pediu explicitamente que a abertura pedisse
+  administrador.
+
+  ## A alternativa, se o UAC no logon incomodar
+
+  Trocar a chave Run por uma **tarefa agendada** com `RunLevel=Highest`:
+  sobe elevada sem prompt. O preço é que ela não aparece em Gerenciador de
+  Tarefas > Inicializar.
+-->
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+  <assemblyIdentity version="1.0.0.0" name="Nexus.Agente"/>
+
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
+    <security>
+      <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
+        <requestedExecutionLevel level="requireAdministrator" uiAccess="false" />
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
+    </application>
+  </compatibility>
+
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <!-- Sem isto, os controles arredondados ficam serrilhados. -->
+      <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true</dpiAware>
+    </windowsSettings>
+  </application>
+</assembly>

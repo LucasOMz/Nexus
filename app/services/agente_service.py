@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -33,7 +34,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.agente import CodigoInstalacao, EquipamentoPendente, TokenAgente
-from app.models.core import Ativo
+from app.models.core import Ativo, Planta, PlantaLocalidade
 from app.models.ti import AtivoTI
 
 # Serial que não identifica nada. Mesma lista do coletor, e aqui também —
@@ -42,6 +43,7 @@ SERIAL_INVALIDO = {
     "", "0", "00000000", "to be filled by o.e.m.", "default string",
     "none", "system serial number", "not specified", "n/a", "unknown",
 }
+MOTIVOS_LOCALIDADE = frozenset({"localidade_nao_cadastrada", "localidade_inativa", "localidade_conflitante"})
 
 
 def serial_valido(serial: str | None) -> bool:
@@ -145,6 +147,9 @@ def _registrar_pendente(
     agora = datetime.now(timezone.utc)
     if existente is not None:
         existente.ultima_vez_em = agora
+        existente.motivo = motivo
+        existente.serial_bruto = serial
+        existente.hostname = hostname
         existente.payload_json = json.dumps(payload, ensure_ascii=False)
         db.commit()
         return existente
@@ -187,39 +192,25 @@ def fabricante_valido(valor) -> str | None:
     return texto[:80]
 
 
-def _criar_ativo_do_payload(
+def _planta_do_registro(
     db: Session,
-    serial: str,
-    payload: dict,
     hostname: str | None,
-    codigo=None,
-    planta_sigla: str | None = None,
-):
-    """Cria o ativo a partir do que o agente enviou.
+    codigo: CodigoInstalacao,
+    planta_sigla: str | None,
+) -> tuple[Planta | None, str | None]:
+    nome = (hostname or "").strip().partition(".")[0]
+    padrao = re.fullmatch(r"[A-Za-z]([A-Za-z]{3})[0-9]{4}", nome)
+    if padrao:
+        localidade = db.get(PlantaLocalidade, padrao[1].upper())
+        if localidade is not None:
+            planta = localidade.planta
+            if not planta.ativa or planta.deleted_at is not None:
+                return None, "localidade_inativa"
+            if codigo.planta_id is not None and codigo.planta_id != planta.id:
+                return None, "localidade_conflitante"
+            return planta, None
 
-    ## De quem é a máquina
-
-    A planta vem do **código de instalação** usado no registro. Quem gera o
-    código escolhe a planta, e toda máquina registrada com ele nasce lá — o
-    agente não tem sessão, então ele não teria como saber.
-
-    Códigos antigos (sem planta) caem na primeira planta ativa, que era o
-    comportamento anterior. Continuam funcionando, e o administrador pode
-    mover a máquina depois.
-
-    O `numero_serie` é o que veio do agente — inclusive o `OEM-...` derivado
-    do MachineGuid. É por ele que as próximas coletas vão casar.
-    """
-    from app.models.core import Planta
-    from app.models.enums import Dominio, StatusAtivo, TipoItem
-    from app.models.ti import AtivoTI
-
-    # A planta do código tem prioridade: é a escolha explícita de quem montou
-    # o pacote de implantação. Sem ela, cai na primeira ativa (legado).
-    planta = None
-
-    # **O registro do Windows ganha de tudo.** É o que o MDM controla
-    # (Tanium, GPO) e o que o técnico corrige sem reinstalar o agente.
+    # Mantém a configuração legada para hostnames sem mapeamento.
     if planta_sigla:
         planta = (
             db.query(Planta)
@@ -229,16 +220,24 @@ def _criar_ativo_do_payload(
             )
             .first()
         )
+        if planta is not None:
+            return planta, None
 
-    if planta is None and codigo is not None and getattr(codigo, "planta_id", None) is not None:
+    if codigo.planta_id is not None:
         planta = db.get(Planta, codigo.planta_id)
+        if planta is not None:
+            return planta, None
 
-    if planta is None:
-        planta = db.query(Planta).filter(Planta.ativa.is_(True), Planta.deleted_at.is_(None)).first()
-    if planta is None:
-        planta = db.query(Planta).filter(Planta.deleted_at.is_(None)).first()
-    if planta is None:
-        return None
+    if padrao and db.query(PlantaLocalidade.codigo).first() is not None:
+        return None, "localidade_nao_cadastrada"
+
+    plantas = db.query(Planta).filter(Planta.deleted_at.is_(None)).order_by(Planta.id)
+    planta = plantas.filter(Planta.ativa.is_(True)).first() or plantas.first()
+    return planta, None if planta is not None else "sem_planta"
+
+
+def _criar_ativo_do_payload(db: Session, serial: str, payload: dict, hostname: str | None, planta: Planta) -> Ativo:
+    from app.models.enums import Dominio, StatusAtivo, TipoItem
 
     # O serial pode estar preso em uma linha EXCLUIDA — o indice unico nao
     # ignora deleted_at. Liberar antes de criar, senao a insercao viola a
@@ -313,27 +312,22 @@ def registrar(
         return {"ok": False, "status": 422, "motivo": "sem_serial"}
 
     ativo = _achar_ativo_por_serial(db, serial)
-    criado = False
-    if ativo is None:
-        # Registro automático. Com `OEM-<MachineGuid>` o identificador é único
-        # por máquina, então criar não gera duplicata — e o técnico não
-        # precisa esperar aprovação nenhuma.
-        # `codigo` aqui é o texto que o agente mandou; o registro — que tem a
-        # planta — é `registro`, devolvido por `buscar_codigo`.
-        ativo = _criar_ativo_do_payload(
-            db, serial, payload, hostname, codigo=registro,
-            planta_sigla=planta_sigla,
-        )
-        criado = ativo is not None
+    criado = ativo is None
+    if criado:
+        planta, motivo = _planta_do_registro(db, hostname, registro, planta_sigla)
+        if planta is None:
+            _registrar_pendente(
+                db, serial=serial, hostname=hostname, mac=_mac_do_payload(payload), ip=_ip_do_payload(payload),
+                payload=payload, motivo=motivo or "sem_planta",
+            )
+            return {"ok": False, "status": 409, "motivo": motivo or "sem_planta"}
+        ativo = _criar_ativo_do_payload(db, serial, payload, hostname, planta)
 
-    if ativo is None:
-        # Só chega aqui sem planta cadastrada — instalação sem `Planta`.
-        _registrar_pendente(
-            db, serial=serial, hostname=hostname,
-            mac=_mac_do_payload(payload), ip=_ip_do_payload(payload),
-            payload=payload, motivo="sem_planta",
-        )
-        return {"ok": False, "status": 409, "motivo": "sem_planta"}
+    db.query(EquipamentoPendente).filter(
+        EquipamentoPendente.resolvido_em.is_(None),
+        EquipamentoPendente.motivo.in_(MOTIVOS_LOCALIDADE),
+        func.lower(func.trim(EquipamentoPendente.serial_bruto)) == serial.strip().lower(),
+    ).update({"resolvido_em": agora, "ativo_criado_id": ativo.id}, synchronize_session=False)
 
     # Reaproveita o token se a máquina já estava registrada: reinstalar o
     # agente não deve deixar tokens órfãos acumulando.

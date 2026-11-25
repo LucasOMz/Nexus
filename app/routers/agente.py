@@ -40,7 +40,7 @@ class RegistroEntrada(BaseModel):
     serial: str | None = Field(default=None, max_length=120)
     hostname: str | None = Field(default=None, max_length=120)
     # Sigla da planta lida do registro do Windows (`HKLM\SOFTWARE\Nexus\Agente`).
-    # O Tanium/GPO escreve; o agente repassa. Quando presente, decide a planta.
+    # O Tanium/GPO escreve; o servidor usa como alternativa ao hostname.
     planta_sigla: str | None = Field(default=None, max_length=20)
     # O payload inteiro é opaco para o servidor no registro: serve para
     # preencher a fila de pendências quando a máquina não é reconhecida.
@@ -77,8 +77,6 @@ def registrar(entrada: RegistroEntrada, db: Session = Depends(get_db)) -> Regist
         serial=entrada.serial,
         hostname=entrada.hostname,
         payload=payload,
-        # Sigla lida do registro do Windows pelo agente. O MDM a escreve;
-        # quando presente, ela decide a planta da máquina.
         planta_sigla=entrada.planta_sigla,
     )
     if not r["ok"]:
@@ -148,11 +146,8 @@ class CodigoEntrada(BaseModel):
     rotulo: str | None = Field(default=None, max_length=120)
     dias: int = Field(default=7, ge=1, le=365)
     usos_max: int = Field(default=1, ge=1, le=100000)
-    # Planta dona das máquinas registradas com este código.
-    #
-    # O agente não tem sessão: sem isto, todas as máquinas da frota nascem na
-    # primeira planta ativa. Quem monta o pacote de implantação é que sabe
-    # para qual filial ele vai.
+    # Planta vinculada ao código. Quando informada, deve coincidir com a
+    # planta de um hostname reconhecido.
     planta_id: int | None = None
 
 
@@ -360,6 +355,9 @@ def resolver_pendente(
         pendente.resolvido_por_id = user.id
         db.commit()
         return {"ok": True, "ignorado": True}
+
+    if pendente.motivo in servico.MOTIVOS_LOCALIDADE:
+        raise HTTPException(409, "Corrija a localidade da planta ou o código de instalação e aguarde a próxima tentativa do agente.")
 
     from app.core.planta import exigir_planta
     from app.models.core import Ativo
