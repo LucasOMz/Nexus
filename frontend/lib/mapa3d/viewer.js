@@ -8,6 +8,9 @@ import { EQUIPMENT_TYPES, categoryOf, getType, statusOf } from './catalog.js';
 import { buildModel, createSelectionRing } from './models.js';
 
 const ACCENT = '#22d3ee';
+const DAYLIGHT_BACKGROUND = 0xe8f0eb;
+const FLOOR_EDGE = 0x789087;
+const SHADOW_COLOR = 0x3d5149;
 
 function disposeGeometries(root) {
   root.traverse((o) => {
@@ -104,8 +107,8 @@ export class Viewer extends Emitter {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x060a12);
-    this.scene.fog = new THREE.Fog(0x060a12, 75, 240);
+    this.scene.background = new THREE.Color(DAYLIGHT_BACKGROUND);
+    this.scene.fog = new THREE.Fog(DAYLIGHT_BACKGROUND, 110, 330);
 
     this.camera = new THREE.PerspectiveCamera(50, width / height, 0.05, 500);
     this.camera.position.set(30, 32, 38);
@@ -152,10 +155,10 @@ export class Viewer extends Emitter {
     }
     pmrem.dispose();
 
-    this.hemi = new THREE.HemisphereLight(0xbfdbfe, 0x0b1220, 0.45);
+    this.hemi = new THREE.HemisphereLight(0xf8fcff, 0xc4cfc6, 1.45);
     this.scene.add(this.hemi);
 
-    this.keyLight = new THREE.DirectionalLight(0xfff7ed, 1.7);
+    this.keyLight = new THREE.DirectionalLight(0xfff9ef, 2.05);
     this.keyLight.position.set(22, 36, 18);
     this.keyLight.castShadow = true;
     this.keyLight.shadow.mapSize.set(2048, 2048);
@@ -166,29 +169,16 @@ export class Viewer extends Emitter {
     this.scene.add(this.keyLight);
     this.scene.add(this.keyLight.target);
 
-    this.fillLight = new THREE.DirectionalLight(0x38bdf8, 0.75);
+    this.fillLight = new THREE.DirectionalLight(0xf2f8ff, 0.65);
     this.fillLight.position.set(-26, 16, -18);
     this.scene.add(this.fillLight);
 
-    this.rimLight = new THREE.DirectionalLight(0x34d399, 0.4);
-    this.rimLight.position.set(12, 10, -30);
-    this.scene.add(this.rimLight);
-
-    // Piso geral
-    const groundMat = new THREE.MeshStandardMaterial({ color: 0x070b13, roughness: 0.97, metalness: 0 });
+    const groundMat = new THREE.ShadowMaterial({ color: SHADOW_COLOR, opacity: 0.16, depthWrite: false, fog: false });
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), groundMat);
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = -0.17;
     ground.receiveShadow = true;
     this.scene.add(ground);
-    this.ground = ground;
-
-    this.worldGrid = new THREE.GridHelper(240, 120, 0x1e293b, 0x0f172a);
-    this.worldGrid.position.y = -0.16;
-    this.worldGrid.material.transparent = true;
-    this.worldGrid.material.opacity = 0.32;
-    this.worldGrid.material.depthWrite = false;
-    this.scene.add(this.worldGrid);
 
     this.floorGroup = new THREE.Group();
     this.wallsGroup = new THREE.Group();
@@ -351,7 +341,7 @@ export class Viewer extends Emitter {
     const W = plan.widthM;
     const H = plan.heightM;
 
-    const slabMat = new THREE.MeshStandardMaterial({ color: 0x0b1320, roughness: 0.92, metalness: 0.05 });
+    const slabMat = new THREE.MeshStandardMaterial({ color: 0xb6c5bf, roughness: 0.92 });
     const slab = new THREE.Mesh(new THREE.BoxGeometry(W + 0.9, 0.14, H + 0.9), slabMat);
     slab.position.y = -0.075;
     slab.receiveShadow = true;
@@ -372,7 +362,7 @@ export class Viewer extends Emitter {
     // Sombra suave dos equipamentos sobre a planta, sem lavar as cores do PDF.
     const shadowCatcher = new THREE.Mesh(
       new THREE.PlaneGeometry(W, H),
-      new THREE.ShadowMaterial({ color: 0x050a12, opacity: 0.32, transparent: true, depthWrite: false }),
+      new THREE.ShadowMaterial({ color: SHADOW_COLOR, opacity: 0.18, depthWrite: false }),
     );
     shadowCatcher.rotation.x = -Math.PI / 2;
     shadowCatcher.position.y = 0.007;
@@ -387,7 +377,7 @@ export class Viewer extends Emitter {
       new THREE.Vector3(-W / 2, 0.02, H / 2),
       new THREE.Vector3(-W / 2, 0.02, -H / 2),
     ]);
-    const border = new THREE.Line(borderGeo, new THREE.LineBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.4 }));
+    const border = new THREE.Line(borderGeo, new THREE.LineBasicMaterial({ color: FLOOR_EDGE, transparent: true, opacity: 0.6 }));
     this.floorGroup.add(border);
 
     this.floorGrid = this._makeGrid(W, H);
@@ -403,13 +393,13 @@ export class Viewer extends Emitter {
     this.planH = H;
     this.planMesh = null;
 
-    const slabMat = new THREE.MeshStandardMaterial({ color: 0x0a1322, roughness: 0.9, metalness: 0.08 });
+    const slabMat = new THREE.MeshStandardMaterial({ color: 0xb6c5bf, roughness: 0.9 });
     const slab = new THREE.Mesh(new THREE.BoxGeometry(W, 0.14, H), slabMat);
     slab.position.y = -0.07;
     slab.receiveShadow = true;
     this.floorGroup.add(slab);
 
-    const topMat = new THREE.MeshStandardMaterial({ color: 0x0c1727, roughness: 0.95, metalness: 0.02 });
+    const topMat = new THREE.MeshStandardMaterial({ color: 0xe8eee9, roughness: 0.95 });
     const top = new THREE.Mesh(new THREE.PlaneGeometry(W, H), topMat);
     top.rotation.x = -Math.PI / 2;
     top.position.y = 0.001;
@@ -424,7 +414,7 @@ export class Viewer extends Emitter {
         new THREE.Vector3(-W / 2, 0.02, H / 2),
         new THREE.Vector3(-W / 2, 0.02, -H / 2),
       ]),
-      new THREE.LineBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.22 }),
+      new THREE.LineBasicMaterial({ color: FLOOR_EDGE, transparent: true, opacity: 0.6 }),
     );
     this.floorGroup.add(border);
 
@@ -439,14 +429,14 @@ export class Viewer extends Emitter {
     c.height = 256;
     const ctx = c.getContext('2d');
     ctx.clearRect(0, 0, 1024, 256);
-    ctx.strokeStyle = 'rgba(34,211,238,.35)';
+    ctx.strokeStyle = '#8da59b';
     ctx.lineWidth = 2;
     ctx.strokeRect(8, 8, 1008, 240);
-    ctx.fillStyle = 'rgba(34,211,238,.65)';
+    ctx.fillStyle = '#255b50';
     ctx.font = '600 64px "Segoe UI", system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('Importe sua planta baixa', 512, 116);
-    ctx.fillStyle = 'rgba(148,163,184,.55)';
+    ctx.fillStyle = '#46635a';
     ctx.font = '400 36px "Segoe UI", system-ui, sans-serif';
     ctx.fillText('PDF ou imagem · depois posicione os equipamentos', 512, 178);
     const tex = new THREE.CanvasTexture(c);
@@ -476,7 +466,7 @@ export class Viewer extends Emitter {
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
-    const mat = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.13, depthWrite: false });
+    const mat = new THREE.LineBasicMaterial({ color: FLOOR_EDGE, transparent: true, opacity: 0.18, depthWrite: false });
     const grid = new THREE.LineSegments(geo, mat);
     grid.renderOrder = 1;
     return grid;
@@ -676,10 +666,10 @@ export class Viewer extends Emitter {
     ctx.arcTo(x, y + h, x, y, r);
     ctx.arcTo(x, y, x + w, y, r);
     ctx.closePath();
-    ctx.fillStyle = 'rgba(6, 12, 22, 0.9)';
+    ctx.fillStyle = '#fbfdfa';
     ctx.fill();
     ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(148, 163, 184, 0.32)';
+    ctx.strokeStyle = '#8ca498';
     ctx.stroke();
 
     ctx.save();
@@ -699,7 +689,7 @@ export class Viewer extends Emitter {
     ctx.arc(44, 54, 9, 0, Math.PI * 2);
     ctx.fillStyle = status.color;
     ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,.25)';
+    ctx.strokeStyle = 'rgba(25, 57, 48, .45)';
     ctx.lineWidth = 2;
     ctx.stroke();
 
@@ -707,12 +697,12 @@ export class Viewer extends Emitter {
     ctx.font = '600 34px "Segoe UI", system-ui, sans-serif';
     while (ctx.measureText(name).width > 440 && name.length > 4) name = name.slice(0, -2);
     if (name !== item.name) name = name.trimEnd() + '…';
-    ctx.fillStyle = '#f1f5f9';
+    ctx.fillStyle = '#203d34';
     ctx.textBaseline = 'middle';
     ctx.fillText(name, 66, 54);
 
     ctx.font = '600 18px "Segoe UI", system-ui, sans-serif';
-    ctx.fillStyle = status.color;
+    ctx.fillStyle = '#36574c';
     const statusText = (item.statusLabel || status.label).toUpperCase();
     ctx.textAlign = 'right';
     ctx.fillText(statusText, 610, 54);
@@ -724,13 +714,13 @@ export class Viewer extends Emitter {
     if (!subParts.length) subParts.push(type.label);
     let sub = subParts.join('  ·  ');
     ctx.font = '400 21px "Segoe UI", system-ui, sans-serif';
-    ctx.fillStyle = 'rgba(148, 163, 184, 0.9)';
+    ctx.fillStyle = '#36574c';
     while (ctx.measureText(sub).width > 530 && sub.length > 6) sub = sub.slice(0, -2);
     if (sub.length < subParts.join('  ·  ').length) sub = sub.trimEnd() + '…';
     ctx.fillText(sub, 66, 104);
 
     ctx.font = '400 17px "Segoe UI", system-ui, sans-serif';
-    ctx.fillStyle = 'rgba(100, 116, 139, 0.9)';
+    ctx.fillStyle = '#476359';
     const extra = item.ip ? `IP ${item.ip}` : type.desc;
     ctx.fillText(extra, 66, 144);
 
@@ -863,7 +853,7 @@ export class Viewer extends Emitter {
         const dz = z2 - z1;
         const len = Math.hypot(dx, dz);
         if (len < 0.01) continue;
-        const mat = new THREE.MeshStandardMaterial({ color: 0x4b5d73, roughness: 0.8, metalness: 0.12 });
+        const mat = new THREE.MeshStandardMaterial({ color: 0x9bafa6, roughness: 0.8 });
         const mesh = new THREE.Mesh(new THREE.BoxGeometry(len + wall.thickness, wall.height, wall.thickness), mat);
         mesh.position.set((x1 + x2) / 2, wall.height / 2, (z1 + z2) / 2);
         mesh.rotation.y = -Math.atan2(dz, dx);
@@ -874,7 +864,7 @@ export class Viewer extends Emitter {
         meshes.push(mesh);
         this.wallMeshes.push(mesh);
 
-        const capMat = new THREE.MeshStandardMaterial({ color: 0xa7b6c9, roughness: 0.55, metalness: 0.25 });
+        const capMat = new THREE.MeshStandardMaterial({ color: 0xd2ded6, roughness: 0.7 });
         const cap = new THREE.Mesh(
           new THREE.BoxGeometry(len + wall.thickness + 0.02, 0.055, wall.thickness + 0.025),
           capMat,
@@ -1104,7 +1094,7 @@ export class Viewer extends Emitter {
       this.orbit.enabled = true;
       this.camera.fov = 50;
       this.camera.updateProjectionMatrix();
-      this.scene.fog = new THREE.Fog(0x060a12, 75, 240);
+      this.scene.fog = new THREE.Fog(DAYLIGHT_BACKGROUND, 110, 330);
       if (this._savedPersp) {
         this.camera.position.copy(this._savedPersp.pos);
         this.orbit.target.copy(this._savedPersp.target);
@@ -1120,7 +1110,7 @@ export class Viewer extends Emitter {
     } else if (mode === 'walk') {
       this.orbit.enabled = false;
       this.orbitTop.enabled = false;
-      this.scene.fog = new THREE.Fog(0x060a12, 60, 220);
+      this.scene.fog = new THREE.Fog(DAYLIGHT_BACKGROUND, 90, 280);
       this.camera.fov = 72;
       this.camera.updateProjectionMatrix();
       this.camera.rotation.order = 'YXZ';
