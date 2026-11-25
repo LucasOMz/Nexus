@@ -373,6 +373,10 @@ h1, h2, h3, h4 { letter-spacing: -0.01em; }
 }
 .form-section { border-top: 1px solid var(--md-sys-color-outline-variant); margin: 22px 0 18px; padding-top: 18px; }
 .form-section > h4 { margin: 0 0 16px; font-size: 14px; color: var(--md-sys-color-primary); font-weight: 600; }
+.usuario-seguranca > summary { cursor: pointer; font-weight: 600; color: var(--md-sys-color-primary); }
+.usuario-seguranca > div { margin-top: 12px; }
+.usuario-seguranca:not([open]) > div, .usuario-seguranca [hidden] { display: none; }
+.usuario-seguranca .recado p { margin: 0 0 12px; }
 
 /* ------------------------------------------------------------------ */
 /* Segmented / Tabs                                                   */
