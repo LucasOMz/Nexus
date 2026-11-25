@@ -444,7 +444,7 @@ export async function abaDispositivos(root, aoAtualizar) {
 // Banco de fotos
 // ---------------------------------------------------------------------------
 function abrirUploadFoto() {
-  const file = el("input", { type: "file", accept: "image/*" });
+  const file = el("input", { type: "file", accept: "image/png,image/jpeg,image/webp,image/gif" });
   const nome = el("input", { placeholder: "Ex.: Notebook Dell Latitude" });
   const tags = el("input", { placeholder: "notebook, dell, ti" });
   const dominio = el("select", {}, el("option", { value: "" }, "Ambos"), el("option", { value: "ti" }, "TI"), el("option", { value: "impressora" }, "Impressoras"));
@@ -453,7 +453,8 @@ function abrirUploadFoto() {
   dialog({
     title: "Salvar foto no banco",
     body: el("div", {},
-      el("div", { class: "field" }, el("label", {}, "Arquivo de imagem *"), file),
+      el("div", { class: "field" }, el("label", {}, "Arquivo de imagem *"), file,
+        el("span", { class: "hint" }, "PNG, JPG, WebP ou GIF. Limite de 12 MB.")),
       el("div", { class: "field" }, el("label", {}, "Nome *"), nome),
       el("div", { class: "form-grid" },
         el("div", { class: "field" }, el("label", {}, "Etiquetas (tags)"), tags),
@@ -465,6 +466,7 @@ function abrirUploadFoto() {
       { label: "Cancelar", variant: "text" },
       { label: "Enviar", variant: "filled", onClick: async (close) => {
         if (!file.files.length || !nome.value.trim()) { toast("Informe o arquivo e o nome"); return; }
+        if (file.files[0].size > 12 * 1024 * 1024) { toast("A foto pode ter até 12 MB"); return; }
         const fd = new FormData();
         fd.append("file", file.files[0]);
         fd.append("nome", nome.value.trim());

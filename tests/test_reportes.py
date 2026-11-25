@@ -8,15 +8,10 @@ from __future__ import annotations
 import io
 
 import pytest
+from PIL import Image
 
 from app.core.rate_limit import login_limiter, scan_limiter
 from tests.conftest import marcar_primeiro_acesso_concluido
-
-# PNG 1x1 válido, para o upload do print.
-PNG_1PX = bytes.fromhex(
-    "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
-    "1f15c4890000000a49444154789c6360000002000154a24f5f0000000049454e44ae426082"
-)
 
 
 @pytest.fixture(autouse=True)
@@ -43,7 +38,9 @@ def _enviar(client, headers, **extra):
     dados = {"titulo": "Erro no filtro", "descricao": "Ao filtrar, a lista some.", "tela": "Ativos", **extra}
     files = None
     if dados.pop("com_print", False):
-        files = {"arquivo": ("print.png", io.BytesIO(PNG_1PX), "image/png")}
+        png = io.BytesIO()
+        Image.new("RGB", (10, 10), "white").save(png, format="PNG")
+        files = {"arquivo": ("print.png", png.getvalue(), "image/png")}
     return client.post("/api/v1/reportes", data=dados, files=files, headers=headers)
 
 

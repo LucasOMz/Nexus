@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
@@ -19,6 +20,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.config import settings
 from app.core.deps import get_current_user, require_admin
 from app.core.planta import planta_ativa
+from app.core.uploads import MAX_PRINT, ler_arquivo, validar_imagem
 from app.database import get_db
 from app.models.core import ReporteErro, Usuario
 from app.services.audit_service import audit
@@ -26,8 +28,6 @@ from app.services.audit_service import audit
 router = APIRouter(prefix="/reportes", tags=["reportes"])
 
 REPORTES_DIR = os.path.join(settings.media_dir, "reportes")
-TIPOS_IMAGEM = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"}
-TAMANHO_MAX = 8 * 1024 * 1024  # 8 MB
 
 STATUS_VALIDOS = ("aberto", "em_analise", "resolvido", "descartado")
 ROTULO_STATUS = {
@@ -70,7 +70,7 @@ def disponivel(_: Usuario = Depends(get_current_user)) -> dict:
 
 
 @router.post("", status_code=201)
-async def criar(
+def criar(
     request: Request,
     titulo: str = Form(..., min_length=3, max_length=200),
     descricao: str = Form(..., min_length=5),
@@ -83,19 +83,14 @@ async def criar(
     """Registra um reporte de erro. Disponível para QUALQUER usuário."""
     _exigir_ativo()
 
-    nome_arquivo = None
-    mime = None
+    destino = None
+    formato = None
     if arquivo is not None and arquivo.filename:
-        if arquivo.content_type not in TIPOS_IMAGEM:
-            raise HTTPException(400, "O print precisa ser uma imagem (PNG, JPG, WEBP ou GIF).")
-        conteudo = await arquivo.read()
-        if len(conteudo) > TAMANHO_MAX:
-            raise HTTPException(400, "O print é grande demais (limite de 8 MB).")
-        os.makedirs(REPORTES_DIR, exist_ok=True)
-        nome_arquivo = f"{uuid.uuid4().hex}_{os.path.basename(arquivo.filename)}"
-        with open(os.path.join(REPORTES_DIR, nome_arquivo), "wb") as fh:
-            fh.write(conteudo)
-        mime = arquivo.content_type
+        conteudo = ler_arquivo(arquivo, MAX_PRINT)
+        formato = validar_imagem(conteudo)
+        pasta = Path(REPORTES_DIR)
+        pasta.mkdir(parents=True, exist_ok=True)
+        destino = pasta / f"{uuid.uuid4().hex}{formato.extensao}"
 
     reporte = ReporteErro(
         usuario_id=user.id,
@@ -103,18 +98,24 @@ async def criar(
         titulo=titulo.strip(),
         descricao=descricao.strip(),
         tela=(tela or "").strip() or None,
-        imagem=nome_arquivo,
-        mime_type=mime,
+        imagem=destino.name if destino else None,
+        mime_type=formato.mime if formato else None,
         status="aberto",
     )
-    db.add(reporte)
-    db.flush()
-
-    # O próprio autor não precisa ver a lista, mas fica o registro de quem foi.
-    audit(db, user, "reporte_erro", "reporte", reporte.id,
-          ip=request.client.host if request.client else None,
-          diff={"titulo": reporte.titulo, "tela": reporte.tela, "com_print": bool(nome_arquivo)})
-    db.commit()
+    try:
+        if destino is not None:
+            destino.write_bytes(conteudo)
+        db.add(reporte)
+        db.flush()
+        audit(db, user, "reporte_erro", "reporte", reporte.id,
+              ip=request.client.host if request.client else None,
+              diff={"titulo": reporte.titulo, "tela": reporte.tela, "com_print": destino is not None})
+        db.commit()
+    except Exception:
+        db.rollback()
+        if destino is not None:
+            destino.unlink(missing_ok=True)
+        raise
     db.refresh(reporte)
     return _serializar(reporte)
 
@@ -189,7 +190,8 @@ def imagem(
     caminho = os.path.join(REPORTES_DIR, r.imagem)
     if not os.path.exists(caminho):
         raise HTTPException(404, "Arquivo do print não encontrado.")
-    return FileResponse(caminho, media_type=r.mime_type or "image/png")
+    return FileResponse(caminho, media_type=r.mime_type or "image/png",
+                        headers={"Cache-Control": "private, no-store"})
 
 
 @router.patch("/{reporte_id}")

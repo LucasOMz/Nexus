@@ -23,6 +23,7 @@ from app import __version__
 from app.config import settings
 from app.core.deps import require_module
 from app.core.rate_limit import api_limiter, chave_do_cliente
+from app.core.uploads import LimiteDeUpload
 from app.database import SessionLocal, init_db
 from app.routers import (
     admin,
@@ -119,6 +120,7 @@ app = FastAPI(
 # ---------------------------------------------------------------------------
 # CORS restrito (origens configuráveis via .env).
 # ---------------------------------------------------------------------------
+app.add_middleware(LimiteDeUpload)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,

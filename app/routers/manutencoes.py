@@ -20,6 +20,7 @@ from app.config import settings
 from app.core.deps import get_current_user, require_delete, require_write
 from app.core.pagination import paginate
 from app.core.planta import aplicar_filtro, planta_ativa_obrigatoria
+from app.core.uploads import MAX_ANEXO, ler_arquivo, validar_anexo
 from app.database import get_db
 from app.models.core import Anexo, Ativo, Manutencao, Movimentacao, Usuario
 from app.models.enums import StatusAtivo, StatusManut, TipoMov
@@ -176,7 +177,7 @@ def delete_manutencao(
 # Anexos
 # ---------------------------------------------------------------------------
 @router.post("/{manut_id}/anexos")
-async def upload_anexo(
+def upload_anexo(
     manut_id: int,
     request: Request,
     file: UploadFile = File(...),
@@ -186,23 +187,25 @@ async def upload_anexo(
 ):
     _buscar_manutencao(db, manut_id, planta)
 
+    conteudo = ler_arquivo(file, MAX_ANEXO)
+    nome = (file.filename or "arquivo").replace("\\", "/").rsplit("/", 1)[-1]
+    mime, extensao = validar_anexo(conteudo, nome)
+    radical = "".join(c for c in Path(nome).stem if c.isprintable()).strip(" .") or "arquivo"
     pasta = Path(settings.media_dir) / "anexos"
     pasta.mkdir(parents=True, exist_ok=True)
     destino = pasta / uuid4().hex
-    conteudo = await file.read()
     anexo = Anexo(
         entidade="manutencao",
         entidade_id=manut_id,
-        nome_arquivo=file.filename or "arquivo",
+        nome_arquivo=f"{radical[:240]}{extensao}",
         caminho=str(destino),
-        mime_type=file.content_type,
+        mime_type=mime,
         tamanho=len(conteudo),
         uploaded_by=user.id,
     )
-    db.add(anexo)
-    db.flush()
     try:
         destino.write_bytes(conteudo)
+        db.add(anexo)
         audit(db, user, "anexo", "manutencao", manut_id, ip=_ip(request), diff={"arquivo": anexo.nome_arquivo})
         db.commit()
     except Exception:
@@ -235,4 +238,5 @@ def download_anexo(
     )
     if anexo is None or not os.path.exists(anexo.caminho):
         raise HTTPException(404, "Anexo não encontrado")
-    return FileResponse(anexo.caminho, media_type=anexo.mime_type or "application/octet-stream", filename=anexo.nome_arquivo)
+    return FileResponse(anexo.caminho, media_type=anexo.mime_type or "application/octet-stream",
+                        filename=anexo.nome_arquivo, headers={"Cache-Control": "private, no-store"})

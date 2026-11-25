@@ -138,14 +138,16 @@ function concluirManutencao(m) {
 }
 
 async function anexar(m) {
-  const input = el("input", { type: "file" });
+  const input = el("input", { type: "file", accept: ".pdf,.txt,image/png,image/jpeg,image/webp,image/gif" });
   dialog({
     title: "Anexar arquivo",
-    body: el("div", { class: "field" }, el("label", {}, "Arquivo"), input),
+    body: el("div", { class: "field" }, el("label", {}, "Arquivo"), input,
+      el("span", { class: "hint" }, "PDF, TXT, PNG, JPG, WebP ou GIF. Limite de 20 MB.")),
     actions: [
       { label: "Cancelar", variant: "text" },
       { label: "Enviar", variant: "filled", onClick: async (close) => {
         if (!input.files.length) { toast("Selecione um arquivo"); return; }
+        if (input.files[0].size > 20 * 1024 * 1024) { toast("O anexo pode ter até 20 MB"); return; }
         const fd = new FormData();
         fd.append("file", input.files[0]);
         try {

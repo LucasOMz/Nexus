@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -20,6 +21,7 @@ from app.config import settings
 from app.core.deps import get_current_user, require_admin
 from app.core.permissoes import INVENTARIOS, MODULOS
 from app.core.planta import aplicar_filtro, exigir_planta, planta_ativa
+from app.core.uploads import MAX_FOTO, ler_arquivo, validar_imagem
 from app.database import get_db
 from app.models.core import DispositivoImpressao, Imagem, Planta, Usuario
 from app.models.enums import Dominio
@@ -35,7 +37,6 @@ from app.services.audit_service import audit
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 FOTOS_DIR = os.path.join(settings.media_dir, "fotos")
-TIPOS_IMAGEM = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif", "image/svg+xml"}
 
 
 def _ip(request: Request) -> Optional[str]:
@@ -227,44 +228,42 @@ def list_fotos(
 
 
 @router.post("/fotos", response_model=ImagemOut, status_code=201)
-async def upload_foto(
+def upload_foto(
     request: Request,
     file: UploadFile = File(...),
-    nome: str = Form(...),
+    nome: str = Form(..., min_length=1, max_length=160),
     descricao: str | None = Form(default=None),
-    tags: str | None = Form(default=None),
-    dominio: str | None = Form(default=None),
+    tags: str | None = Form(default=None, max_length=200),
+    dominio: Dominio | None = Form(default=None),
     db: Session = Depends(get_db),
     user: Usuario = Depends(require_admin),
 ):
-    if file.content_type not in TIPOS_IMAGEM:
-        raise HTTPException(400, "Envie um arquivo de imagem (PNG, JPG, WEBP, GIF ou SVG)")
-
-    os.makedirs(FOTOS_DIR, exist_ok=True)
-    conteudo = await file.read()
-    # O caminho é definido ANTES do INSERT (coluna NOT NULL); o nome leva um
-    # prefixo único para evitar colisão entre arquivos de mesmo nome.
-    nome_arquivo = f"{uuid.uuid4().hex}_{os.path.basename(file.filename or 'foto')}"
-    destino = os.path.join(FOTOS_DIR, nome_arquivo)
-    with open(destino, "wb") as fh:
-        fh.write(conteudo)
+    conteudo = ler_arquivo(file, MAX_FOTO)
+    formato = validar_imagem(conteudo)
+    pasta = Path(FOTOS_DIR)
+    pasta.mkdir(parents=True, exist_ok=True)
+    destino = pasta / f"{uuid.uuid4().hex}{formato.extensao}"
 
     img = Imagem(
         nome=nome,
         descricao=descricao,
         tags=tags,
-        mime_type=file.content_type,
+        mime_type=formato.mime,
         uploaded_by=user.id,
-        caminho=destino,
+        caminho=str(destino),
         tamanho=len(conteudo),
+        dominio=dominio,
     )
-    if dominio:
-        img.dominio = Dominio(dominio)
-    db.add(img)
-    db.flush()
-
-    audit(db, user, "upload", "imagem", img.id, ip=_ip(request), diff={"nome": nome, "arquivo": file.filename})
-    db.commit()
+    try:
+        destino.write_bytes(conteudo)
+        db.add(img)
+        db.flush()
+        audit(db, user, "upload", "imagem", img.id, ip=_ip(request), diff={"nome": nome, "formato": formato.mime})
+        db.commit()
+    except Exception:
+        db.rollback()
+        destino.unlink(missing_ok=True)
+        raise
     db.refresh(img)
     return _img_out(img)
 

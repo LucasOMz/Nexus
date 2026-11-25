@@ -1,10 +1,14 @@
 """Testes da administração: dispositivos de impressão e banco de fotos."""
 from __future__ import annotations
 
-from tests.conftest import marcar_primeiro_acesso_concluido
+import re
+from io import BytesIO
 
-# Conteúdo mínimo com assinatura PNG (o endpoint valida o content-type).
-PNG_FALSO = b"\x89PNG\r\n\x1a\n" + b"conteudo-de-teste"
+import pytest
+from PIL import Image
+
+from app.core import uploads
+from tests.conftest import marcar_primeiro_acesso_concluido
 
 
 def test_dispositivo_compartilhamento(client, auth_headers):
@@ -50,6 +54,9 @@ def test_apenas_admin_gerencia_dispositivos(client, auth_headers):
 
 
 def test_upload_e_vinculo_de_foto(client, auth_headers):
+    imagem = BytesIO()
+    Image.new("RGB", (12, 10), "white").save(imagem, format="PNG")
+    png = imagem.getvalue()
     ativo_id = client.post(
         "/api/v1/ativos", json={"dominio": "ti", "patrimonio": "TI-FOTO", "numero_serie": "NS-TI-FOTO"}, headers=auth_headers
     ).json()["id"]
@@ -58,7 +65,7 @@ def test_upload_e_vinculo_de_foto(client, auth_headers):
         "/api/v1/admin/fotos",
         headers=auth_headers,
         data={"nome": "Notebook padrao", "tags": "notebook", "dominio": "ti"},
-        files={"file": ("notebook.png", PNG_FALSO, "image/png")},
+        files={"file": ("notebook.jpg", png, "application/octet-stream")},
     )
     assert res.status_code == 201, res.text
     foto = res.json()
@@ -76,15 +83,44 @@ def test_upload_e_vinculo_de_foto(client, auth_headers):
     assert client.get(url, params={"token": auth_headers["Authorization"].split()[1]}).status_code == 401
     arquivo = client.get(url, headers=auth_headers)
     assert arquivo.status_code == 200
-    assert arquivo.content == PNG_FALSO
+    assert arquivo.content == png
+    assert arquivo.headers["content-type"] == "image/png"
     assert arquivo.headers["cache-control"] == "private, no-store"
 
 
-def test_upload_rejeita_nao_imagem(client, auth_headers):
+@pytest.mark.parametrize(("nome", "conteudo", "mime"), [
+    ("doc.pdf", b"%PDF-1.4", "application/pdf"),
+    ("invalido.png", b"formato anunciado pelo cliente", "image/png"),
+    ("desenho.svg", b'<svg xmlns="http://www.w3.org/2000/svg"/>', "image/svg+xml"),
+])
+def test_upload_rejeita_nao_imagem(client, auth_headers, nome, conteudo, mime):
     res = client.post(
         "/api/v1/admin/fotos",
         headers=auth_headers,
         data={"nome": "Arquivo ruim"},
-        files={"file": ("doc.pdf", b"%PDF-1.4", "application/pdf")},
+        files={"file": (nome, conteudo, mime)},
     )
     assert res.status_code == 400
+
+
+def test_upload_rejeita_arquivo_acima_do_limite(client, auth_headers, monkeypatch):
+    from app.routers import admin
+
+    monkeypatch.setattr(admin, "MAX_FOTO", 8)
+    res = client.post(
+        "/api/v1/admin/fotos", headers=auth_headers, data={"nome": "Foto grande"},
+        files={"file": ("grande.png", b"x" * 9, "image/png")},
+    )
+    assert res.status_code == 413
+
+
+def test_limite_de_corpo_interrompe_upload_sem_content_length(client, auth_headers, monkeypatch):
+    monkeypatch.setattr(uploads, "_ROTAS", ((re.compile("/api/v1/admin/fotos"), 256),))
+    monkeypatch.setattr(uploads, "MIB", 128)
+    blocos = iter([
+        b'--teste\r\nContent-Disposition: form-data; name="file"; filename="grande.png"\r\n\r\n',
+        b"x" * 500, b"\r\n--teste--\r\n",
+    ])
+    res = client.post("/api/v1/admin/fotos", content=blocos,
+                      headers={**auth_headers, "Content-Type": "multipart/form-data; boundary=teste"})
+    assert res.status_code == 413, res.text

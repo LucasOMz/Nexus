@@ -376,6 +376,19 @@ Restrinja o arquivo de ambiente ao administrador do Raspberry.
 
 ## 6. Segurança
 
+### Limites de fotos e anexos
+
+| Envio | Formatos | Limite por arquivo |
+|---|---|---:|
+| Banco de fotos | PNG, JPG, WebP, GIF | 12 MB |
+| Print de reporte | PNG, JPG, WebP, GIF | 8 MB |
+| Planta baixa do Mapa 3D | PNG, JPG, WebP | 12 MB |
+| Anexo de manutenção | PDF, TXT em UTF-8, PNG, JPG, WebP, GIF | 20 MB |
+
+A API verifica o conteúdo antes de gravar e usa nomes gerados no servidor.
+Os limites também valem para envios em partes. Anexos de manutenção são
+fornecidos para download, com acesso vinculado à unidade do registro.
+
 - **Sessões persistentes** no banco. O refresh é rotacionado a cada uso, e
   reutilizar um refresh anterior encerra a sessão. O logout encerra a sessão
   atual, e o encerramento administrativo revoga todas as sessões da conta.

@@ -33,13 +33,19 @@ function abaFormulario(root) {
     placeholder: "Descreva o que você fez, o que esperava e o que aconteceu.",
     rows: "6",
   });
-  const arquivo = el("input", { type: "file", accept: "image/*" });
+  const arquivo = el("input", { type: "file", accept: "image/png,image/jpeg,image/webp,image/gif" });
   const previa = el("div", { class: "reporte-previa hidden" });
 
   arquivo.addEventListener("change", () => {
     previa.innerHTML = "";
     const f = arquivo.files && arquivo.files[0];
     if (!f) { previa.classList.add("hidden"); return; }
+    if (f.size > 8 * 1024 * 1024) {
+      arquivo.value = "";
+      previa.classList.add("hidden");
+      toast("O print pode ter até 8 MB");
+      return;
+    }
     const url = URL.createObjectURL(f);
     previa.append(el("img", { src: url, alt: "Print do erro" }));
     previa.append(el("span", { class: "muted" }, `${f.name} — ${(f.size / 1024).toFixed(0)} KB`));
@@ -84,7 +90,8 @@ function abaFormulario(root) {
     el("div", { class: "field" }, el("label", {}, "Resumo *"), titulo),
     el("div", { class: "field" }, el("label", {}, "Tela"), tela),
     el("div", { class: "field" }, el("label", {}, "Descrição *"), descricao),
-    el("div", { class: "field" }, el("label", {}, "Print da tela (opcional)"), arquivo, previa),
+    el("div", { class: "field" }, el("label", {}, "Print da tela (opcional)"), arquivo,
+      el("span", { class: "hint" }, "PNG, JPG, WebP ou GIF. Limite de 8 MB."), previa),
     el("div", { class: "row", style: "justify-content:flex-end;margin-top:14px" }, botao),
   );
 }

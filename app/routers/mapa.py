@@ -19,13 +19,11 @@ from __future__ import annotations
 
 import json
 import uuid
-from io import BytesIO
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
-from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session, selectinload
 
@@ -33,6 +31,7 @@ from app.config import settings
 from app.core.deps import require_module, require_write
 from app.core.permissoes import permissoes_efetivas
 from app.core.planta import planta_ativa_obrigatoria
+from app.core.uploads import MAX_PLANTA, ler_arquivo, validar_imagem
 from app.database import get_db
 from app.models.core import Ativo, Planta, Usuario
 from app.models.mapa import MapaProjeto
@@ -41,8 +40,7 @@ router = APIRouter(prefix="/mapas", tags=["mapa 3d"])
 
 # Mesma pasta das fotos do sistema.
 PASTA = "mapas"
-FORMATOS = {"PNG": ".png", "JPEG": ".jpg", "WEBP": ".webp"}
-MAX_BYTES = 12 * 1024 * 1024
+FORMATOS = ("PNG", "JPEG", "WEBP")
 
 
 def _pasta_abs() -> Path:
@@ -221,26 +219,16 @@ def enviar_imagem(
     planta: int | None = Depends(planta_ativa_obrigatoria),
 ) -> dict:
     _verificar_planta(db, planta_id, planta, bloquear=True)
-    conteudo = arquivo.file.read(MAX_BYTES + 1)
-    if len(conteudo) > MAX_BYTES:
-        raise HTTPException(413, "Imagem acima de 12 MB.")
-
-    try:
-        with Image.open(BytesIO(conteudo), formats=list(FORMATOS)) as imagem:
-            largura, altura = imagem.size
-            if max(largura, altura) > 20000 or largura * altura > 30_000_000:
-                raise HTTPException(422, "A imagem da planta é grande demais para renderizar.")
-            ext = FORMATOS[imagem.format]
-            imagem.verify()
-    except (UnidentifiedImageError, OSError, SyntaxError, Image.DecompressionBombError) as exc:
-        raise HTTPException(422, "Envie uma imagem válida em PNG, JPEG ou WebP.") from exc
+    conteudo = ler_arquivo(arquivo, MAX_PLANTA)
+    formato = validar_imagem(conteudo, formatos=FORMATOS, status_invalido=422)
+    largura, altura = formato.largura, formato.altura
     escala = largura_metros / largura if largura_metros is not None else None
     if escala is not None and escala > 5:
         raise HTTPException(422, "A largura real é muito grande para a resolução desta imagem.")
 
     p = _projeto(db, planta_id)
     imagem_anterior = p.imagem
-    destino = _pasta_abs() / f"{uuid.uuid4().hex}{ext}"
+    destino = _pasta_abs() / f"{uuid.uuid4().hex}{formato.extensao}"
     try:
         destino.write_bytes(conteudo)
         p.imagem = f"{PASTA}/{destino.name}"

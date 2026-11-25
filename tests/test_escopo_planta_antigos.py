@@ -156,6 +156,26 @@ class TestManutencoes:
         assert client.get(download, headers=admin_a).status_code == 404
         assert client.get(download, headers=auth_headers).status_code == 200
 
+        from io import BytesIO
+
+        from reportlab.pdfgen.canvas import Canvas
+
+        pdf = BytesIO()
+        documento = Canvas(pdf)
+        documento.drawString(50, 750, "Laudo de teste")
+        documento.save()
+        assert client.post(
+            caminho, files={"file": ("laudo.pdf", b"%PDF-1.7\n", "application/pdf")}, headers=headers_b,
+        ).status_code == 400
+        upload_pdf = client.post(
+            caminho, files={"file": ("laudo.pdf", pdf.getvalue(), "application/octet-stream")}, headers=headers_b,
+        )
+        assert upload_pdf.status_code == 200, upload_pdf.text
+        arquivo_pdf = client.get(f"{caminho}/{upload_pdf.json()['id']}/download", headers=headers_b)
+        assert arquivo_pdf.content == pdf.getvalue()
+        assert arquivo_pdf.headers["content-type"] == "application/pdf"
+        assert arquivo_pdf.headers["content-disposition"].startswith("attachment")
+
     def test_exclusao_exige_permissao_propria(self, client, db_session):
         a = _planta(db_session, "A")
         b = _planta(db_session, "B")
