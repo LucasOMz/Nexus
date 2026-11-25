@@ -47,6 +47,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: testes
       # Com SNMP: é uma das dependências cuja ausência já causou defeito, e o
       # teste precisa exercitar a mesma imagem da produção.
       args:
@@ -77,10 +78,4 @@ services:
       - ./tests:/app/tests:ro
       - ./scripts:/app/scripts:ro
       - ./raspberry_print_agent.py:/app/raspberry_print_agent.py:ro
-      - ./requirements-dev.txt:/app/requirements-dev.txt:ro
     working_dir: /app
-    # `requirements-dev.txt` é instalado na hora: a imagem de produção não
-    # deve carregar pytest.
-    command: >
-      sh -c "pip install --no-cache-dir -q -r requirements-dev.txt
-             && python -m pytest -q --color=no"

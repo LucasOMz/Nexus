@@ -1,10 +1,13 @@
 # =====================================================================
 # Nexus — imagem da API
 # =====================================================================
-FROM python:3.12-slim
+FROM python:3.12-slim-bookworm AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    MEDIA_DIR=/app/media \
+    BACKUP_DIR=/app/backups \
+    NEXUS_SEGREDOS_DIR=/app/segredos
 
 WORKDIR /app
 
@@ -58,10 +61,22 @@ COPY frontend ./frontend
 COPY alembic ./alembic
 COPY alembic.ini .
 
-# A porta interna e a da porta publicada PRECISAM ser a mesma do
-# `docker-compose.yml`. Quando divergiram (compose 5000, aqui 8000), o Docker
-# publicava uma porta em que nada escutava — a conexão era aceita e fechada na
-# hora, com `recv failure: conexão fechada pela outra ponta`.
+RUN groupadd --gid 10001 nexus \
+    && useradd --uid 10001 --gid 10001 --home-dir /tmp --no-create-home --shell /usr/sbin/nologin nexus \
+    && install -d -o nexus -g nexus -m 0750 /app/media /app/backups \
+    && install -d -o nexus -g nexus -m 0700 /app/segredos
+
+FROM base AS testes
+COPY requirements-dev.txt schema.sql pytest.ini ./
+RUN pip install --no-cache-dir -r requirements-dev.txt
+USER 10001:10001
+CMD ["python", "-m", "pytest", "-q", "-o", "cache_dir=/tmp/nexus-pytest-cache"]
+
+FROM base AS runtime
+COPY scripts/iniciar_container.py /usr/local/bin/nexus-init.py
+USER 10001:10001
+
 EXPOSE 4545
 
+ENTRYPOINT ["python", "/usr/local/bin/nexus-init.py"]
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "4545", "--proxy-headers"]

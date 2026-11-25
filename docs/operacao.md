@@ -217,6 +217,38 @@ monitores (inclusive `/health`) e integrações para o novo endereço HTTPS ante
 do corte. Remova publicações manuais da porta 4545. Após renovar os arquivos
 do certificado na pasta montada, execute `docker compose exec nginx nginx -s reload`.
 
+### Preparar os volumes da API
+
+A API roda com UID e GID `10001`. O código e as dependências ficam em um
+sistema de arquivos somente leitura. Os volumes de mídia, segredos e backups
+permitem gravação. Os arquivos temporários ficam em `/tmp`.
+
+Para uma instalação nova, prepare a pasta indicada em `NEXUS_BACKUP_DIR`.
+O exemplo usa `/srv/nexus/backups`. Volumes novos de mídia e segredos já
+recebem as permissões da imagem.
+
+```bash
+sudo install -d -o 10001 -g 10001 -m 0750 /srv/nexus/backups
+```
+
+Para atualizar uma instalação que rodava com root, confirme o caminho
+exclusivo de backups do Nexus e use o mesmo projeto Compose da instalação.
+Na janela de atualização, siga esta ordem.
+
+1. Pare a API com `docker compose stop api`.
+2. Ajuste a propriedade dos volumes de mídia e segredos com
+   `docker compose run --rm --no-deps --build ajustar-volumes`.
+3. Ajuste a pasta e os backups existentes no host para `10001:10001`. No
+   caminho do exemplo, use `sudo chown -hR 10001:10001 /srv/nexus/backups`.
+   Se o Kopia usa outra conta, mantenha acesso de leitura à pasta e aos dumps
+   por grupo ou ACL.
+4. Suba a nova imagem com `docker compose up -d --build`. Confira a API com
+   `docker compose exec api id`, depois valide o download de um anexo e a
+   criação de um backup.
+
+O serviço `ajustar-volumes` é de manutenção. Ele altera a propriedade dos
+arquivos existentes de mídia e segredos e encerra após o ajuste.
+
 > Migrações: o `AUTO_CREATE_TABLES=true` cria o schema no boot (prático para o
 > 1º deploy). Para fluxo versionado, gere a migração inicial e aplique:
 > ```bash

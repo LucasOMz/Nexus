@@ -42,6 +42,11 @@ services:
   api:
     build: .
     restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,mode=1777
     networks:
       - default
       - ingresso
@@ -144,8 +149,31 @@ services:
       #
       # Aponte para uma pasta real do servidor. O caminho padrão serve para
       # teste local.
-      - ${NEXUS_BACKUP_DIR:-./backups}:/app/backups
+      - type: bind
+        source: ${NEXUS_BACKUP_DIR:-./backups}
+        target: /app/backups
+        bind:
+          create_host_path: false
       - ${NEXUS_LDAP_CA_DIR:-./ldap-ca}:/etc/nexus/ldap-ca:ro
+
+  ajustar-volumes:
+    profiles: [manutencao]
+    build: .
+    user: "0:0"
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - media:/app/media
+      - segredos:/app/segredos
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        chown -hR -- 10001:10001 /app/media /app/segredos
+        chmod 750 /app/media
+        chmod 700 /app/segredos
 
   nginx:
     image: nginx:stable-alpine
@@ -195,11 +223,7 @@ networks:
 # Então: banco no volume (bom para o Docker), dump na pasta (bom para o
 # Kopia). O Kopia aponta para NEXUS_BACKUP_DIR e só.
 #
-# ## Criar a pasta antes do primeiro deploy
-#
-#     sudo mkdir -p /srv/nexus/backups
-#
-# A aplicação roda como root na imagem, então não precisa de chown.
+# Crie a pasta de backup antes do primeiro deploy com proprietário 10001:10001.
 #
 volumes:
   pgdata:

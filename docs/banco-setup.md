@@ -55,10 +55,11 @@ você não precisa mexer.
 alcançar por caminho:
 
 ```bash
-sudo mkdir -p /srv/nexus/backups
+sudo install -d -o 10001 -g 10001 -m 0750 /srv/nexus/backups
 ```
 
-**A aplicação roda como root na imagem** — não precisa de `chown`.
+O usuário da API tem UID e GID `10001`. Para uma instalação existente,
+siga o [ajuste de propriedade dos volumes](operacao.md#preparar-os-volumes-da-api).
 
 **No Kopia**, aponte o backup para **`/srv/nexus/backups`** e só.
 

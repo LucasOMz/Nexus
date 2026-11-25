@@ -20,3 +20,54 @@ jobs:
         run: ruff check app tests
       - name: Tests (pytest)
         run: pytest --cov=app --cov-report=term-missing
+
+  container:
+    runs-on: ubuntu-latest
+    env:
+      COMPOSE_PROJECT_NAME: nexus-ci-runtime
+      NEXUS_PUBLIC_HOST: nexus-ci.example
+      NEXUS_BACKUP_DIR: ${{ runner.temp }}/nexus-runtime-backups
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verificar execução sem root e validar backup PostgreSQL
+        run: |
+          sudo install -d -o 10001 -g 10001 -m 0750 "$NEXUS_BACKUP_DIR"
+          docker compose up -d --wait db
+          docker compose run --rm --no-deps --build -T api python - <<'PY'
+          import os
+          from pathlib import Path
+          from tempfile import TemporaryFile
+
+          assert (os.getuid(), os.getgid()) == (10001, 10001)
+          assert os.statvfs("/app").f_flag & os.ST_RDONLY
+          status = dict(line.split(":", 1) for line in Path("/proc/self/status").read_text().splitlines())
+          assert int(status["CapEff"], 16) == 0
+          assert status["NoNewPrivs"].strip() == "1"
+          with TemporaryFile(dir="/tmp") as tmp:
+              tmp.write(b"temporario")
+
+          from app.database import init_db
+          from app.services.backup_service import criar_backup, validar_backup
+
+          init_db()
+          meta = criar_backup("ci")
+          assert meta["tipo"] == "postgres" and meta["tamanho_bytes"] > 0
+          validacao = validar_backup(meta["arquivo"])
+          assert validacao["ok"], validacao
+          PY
+      - name: Verificar migração sem perda de arquivos
+        run: |
+          docker compose run --rm --no-deps --build -T --entrypoint /bin/sh ajustar-volumes -ec \
+            'printf legado > /app/media/legado; printf segredo > /app/segredos/legado.txt; chmod 600 /app/segredos/legado.txt'
+          docker compose run --rm --no-deps -T ajustar-volumes
+          docker compose run --rm --no-deps -T api python - <<'PY'
+          from pathlib import Path
+
+          for caminho, esperado in (("/app/media/legado", "legado"), ("/app/segredos/legado.txt", "segredo")):
+              arquivo = Path(caminho)
+              assert arquivo.read_text() == esperado
+              assert arquivo.stat().st_uid == 10001
+          PY
+      - name: Encerrar ambiente descartável
+        if: always()
+        run: docker compose down --volumes
