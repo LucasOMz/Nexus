@@ -218,6 +218,9 @@ class TestAtivosPorPlanta:
         monitor = f"/api/v1/monitor/impressoras/{impressora.id}"
         assert client.get(f"{monitor}/alertas", headers=headers_a).status_code == 404
         assert client.post(f"{monitor}/coletar", headers=headers_a).status_code == 404
+        assert client.get(f"{monitor}/situacao", headers=headers_a).status_code == 404
+        sem_monitor = _usuario_da_planta(client, b.id, {"modulos": ["mapa"]}, perfil="mapa")
+        assert client.get(f"{monitor}/situacao", headers=sem_monitor).status_code == 403
 
         atribuicao = client.post(f"{caminho}/atribuir", json={"usuario_id": 1}, headers=headers_b)
         assert atribuicao.status_code == 200, atribuicao.text

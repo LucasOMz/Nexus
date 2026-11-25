@@ -5,6 +5,7 @@ import { criarPlantaConsulta } from "../mapa_planta.js";
 import { state } from "../state.js";
 import { dialog, el, icon, mostrarErro, skeleton, STATUS_LABEL as statusAtivo, toast } from "../ui.js";
 import { abrirDetalhes } from "./ativo_detalhes.js";
+import { abrirMonitoramentoImpressora } from "./monitor_impressoras.js";
 
 const tipoAtivo = { ti: "TI", impressora: "Impressora" };
 const passoLista = 60;
@@ -141,6 +142,7 @@ function tituloMapa(unidade, acoes = null) {
 
 function montarPainel(pagina, unidade, store, projeto, signal, { acesso, falhaImagem, imagemAlterada, obterViewer, carregarViewer }) {
   const { editar: canWrite, departamento } = acesso;
+  const podeMonitorar = state.podeModulo("monitor") && state.podeInventario("impressora");
   let editando = false;
   let vista3d = false;
   let aba = store.project.equipment.some(eq => !eq.pendente) ? "mapa" : "pendentes";
@@ -154,7 +156,11 @@ function montarPainel(pagina, unidade, store, projeto, signal, { acesso, falhaIm
   const viewport = el("div", { class: "mapa-viewport" }, canvas);
   const consulta = criarPlantaConsulta(id => {
     const eq = store.findEquipment(id);
-    if (eq) selecionar(eq, false);
+    if (!eq) return;
+    selecionar(eq, false);
+    if (podeMonitorar && !editando && eq.ativo.dominio === "impressora") {
+      abrirMonitoramentoImpressora(eq.id, eq.name, signal);
+    }
   }, signal);
   const aviso = el("span", { role: "status" });
   const coordenada = el("span", { class: "mapa-coordenada" }, "X —  Z —");
@@ -505,6 +511,8 @@ function montarPainel(pagina, unidade, store, projeto, signal, { acesso, falhaIm
           aviso.textContent = `Clique no piso para posicionar ${eq.name}.`;
         }, { classe: "mapa-button-primary" }) : null,
         editando ? botao("Coordenadas", () => configurarPosicao(eq)) : null,
+        podeMonitorar && !editando && a.dominio === "impressora"
+          ? botao("Monitoramento", () => abrirMonitoramentoImpressora(eq.id, eq.name, signal), { icone: "print" }) : null,
         editando && !eq.pendente ? botao("Retirar do mapa", () => {
           store.updateEquipment(eq.id, { pendente: true });
           aba = "pendentes";

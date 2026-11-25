@@ -347,6 +347,19 @@ def varrer_suprimentos(endereco: str, comunidade: str = "public", timeout_s: int
     Devolve pares `(oid, valor)` — a tradução fica com `extrair_suprimentos`,
     que é pura e testável.
     """
+    pares, _ = _ler_tabela_suprimentos(endereco, comunidade, timeout_s, confirmar_comunicacao=False)
+    return pares
+
+
+def monitorar_suprimentos(endereco: str, comunidade: str = "public") -> tuple[list[dict], bool]:
+    """Lê os níveis e confirma a resposta SNMP mesmo sem tabela de suprimentos."""
+    pares, respondeu = _ler_tabela_suprimentos(endereco, comunidade, 3, confirmar_comunicacao=True)
+    return extrair_suprimentos(pares), respondeu
+
+
+def _ler_tabela_suprimentos(
+    endereco: str, comunidade: str, timeout_s: int, *, confirmar_comunicacao: bool,
+) -> tuple[list[tuple[str, Any]], bool]:
     if not disponivel():
         raise SNMPIndisponivel(
             "O suporte a SNMP precisa da biblioteca pysnmp. "
@@ -362,24 +375,43 @@ def varrer_suprimentos(endereco: str, comunidade: str = "public", timeout_s: int
         ObjectType,
         SnmpEngine,
         UdpTransportTarget,
+        get_cmd,
         walk_cmd,
     )
 
-    async def _varrer() -> list[tuple[str, Any]]:
+    async def _varrer() -> tuple[list[tuple[str, Any]], bool]:
         engine = SnmpEngine()
-        alvo = await UdpTransportTarget.create((endereco, 161), timeout=timeout_s, retries=1)
-        pares: list[tuple[str, Any]] = []
+        try:
+            alvo = await UdpTransportTarget.create((endereco, 161), timeout=timeout_s, retries=1)
+            auth = CommunityData(comunidade, mpModel=1)
+            contexto = ContextData()
+            pares: list[tuple[str, Any]] = []
+            respondeu = False
+            iterator = walk_cmd(
+                engine, auth, alvo, contexto, ObjectType(ObjectIdentity(PREFIXO_SUPRIMENTOS)),
+                lexicographicMode=False,
+            )
+            try:
+                async with asyncio.timeout(10 if confirmar_comunicacao else None):
+                    async for erro, erro_mib, _, var_binds in iterator:
+                        if erro:
+                            break
+                        respondeu = True
+                        if not erro_mib:
+                            pares.extend((str(nome), valor) for nome, valor in var_binds)
+            except TimeoutError:
+                pass
+            finally:
+                await iterator.aclose()
 
-        iterator = walk_cmd(
-            engine, CommunityData(comunidade, mpModel=1), alvo, ContextData(),
-            ObjectType(ObjectIdentity(PREFIXO_SUPRIMENTOS)),
-            lexicographicMode=False,
-        )
-        async for erro, _, _, var_binds in iterator:
-            if erro:
-                break
-            for nome, valor in var_binds:
-                pares.append((str(nome), valor))
-        return pares
+            if confirmar_comunicacao and not respondeu:
+                # sysUpTime.0 confirma comunicação sem depender da Printer MIB.
+                erro, _, _, _ = await get_cmd(
+                    engine, auth, alvo, contexto, ObjectType(ObjectIdentity("1.3.6.1.2.1.1.3.0")),
+                )
+                respondeu = not erro
+            return pares, respondeu
+        finally:
+            engine.close_dispatcher()
 
     return asyncio.run(_varrer())

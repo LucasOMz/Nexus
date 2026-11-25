@@ -6,6 +6,11 @@ códigos especiais da MIB, o índice dos suprimentos, a estimativa de duração.
 """
 from __future__ import annotations
 
+import pytest
+
+from app.models import Ativo
+from app.models.impressora import AtivoImpressora, LeituraContador
+from app.services import snmp_service
 from app.services.snmp_service import (
     OIDS,
     alertas_de_suprimento,
@@ -15,6 +20,66 @@ from app.services.snmp_service import (
     mapear,
     percentual_suprimento,
 )
+from tests.conftest import TestingSession
+
+
+@pytest.mark.parametrize(("respondeu", "nivel", "comunicacao"), [
+    (True, 8, "online"),
+    (True, None, "online"),
+    (False, None, "sem_resposta"),
+])
+def test_situacao_da_impressora(client, auth_headers, monkeypatch, respondeu, nivel, comunicacao):
+    with TestingSession() as db:
+        ativo = Ativo(planta_id=1, dominio="impressora", tipo_item="ativo", status="em_uso",
+                      patrimonio="IMP-01", numero_serie="SERIE-IMP-01")
+        db.add(ativo)
+        db.flush()
+        ativo_id = ativo.id
+        db.add(AtivoImpressora(ativo_id=ativo_id, hostname="impressora-teste", contador_paginas=200))
+        db.commit()
+
+    def monitorar(endereco):
+        assert endereco == "impressora-teste"
+        suprimentos = [] if nivel is None else [{
+            "descricao": "Toner preto", "indice": "1", "percentual": nivel,
+            "situacao": "critico", "nivel": nivel, "capacidade": 100,
+        }]
+        return suprimentos, respondeu
+
+    monkeypatch.setattr(snmp_service, "monitorar_suprimentos", monitorar)
+    resposta = client.get(f"/api/v1/monitor/impressoras/{ativo_id}/situacao", headers=auth_headers)
+    assert resposta.status_code == 200, resposta.text
+    dados = resposta.json()
+    assert dados["comunicacao"] == comunicacao
+    assert dados["patrimonio"] == "IMP-01"
+    assert dados["contador_cadastro"] == 200
+    if nivel is None:
+        assert dados["alertas"] == dados["suprimentos"] == []
+    else:
+        assert dados["suprimentos"][0]["percentual"] == nivel
+        assert dados["alertas"][0]["gravidade"] == "alta"
+    with TestingSession() as db:
+        assert db.query(LeituraContador).filter_by(ativo_id=ativo_id).count() == 0
+
+
+@pytest.mark.parametrize("erro", [None, "tempo esgotado"])
+def test_monitoramento_confirma_comunicacao_quando_tabela_esta_vazia(monkeypatch, erro):
+    transporte = pytest.importorskip("pysnmp.hlapi.v3arch.asyncio")
+
+    async def alvo(*args, **kwargs):
+        return object()
+
+    async def varrer(*args, **kwargs):
+        for resposta in ():
+            yield resposta
+
+    async def consultar(*args, **kwargs):
+        return erro, None, None, ()
+
+    monkeypatch.setattr(transporte.UdpTransportTarget, "create", alvo)
+    monkeypatch.setattr(transporte, "walk_cmd", varrer)
+    monkeypatch.setattr(transporte, "get_cmd", consultar)
+    assert snmp_service.monitorar_suprimentos("impressora-teste") == ([], erro is None)
 
 
 class TestMapeamento:

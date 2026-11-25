@@ -199,7 +199,7 @@ function cartao(p, caixa) {
 
     // --- direita: detalhes -------------------------------------------------
     el("div", { class: "mon-direita" },
-      el("button", { class: "btn tonal small", onclick: () => verDetalhes(p),
+      el("button", { class: "btn tonal small", onclick: () => abrirMonitoramentoImpressora(p.ativo_id, p.patrimonio || p.endereco),
         html: icon("relatorios", 15) + " Detalhes" }),
       p.com_snmp && state.canWrite
         ? el("button", { class: "btn text small",
@@ -280,7 +280,7 @@ function barraSuprimento(s) {
   const pct = s.percentual;
   const tom = s.situacao === "ok" ? "ok"
     : s.situacao === "atencao" ? "aviso"
-    : s.situacao === "critico" ? "erro" : "info";
+    : ["critico", "vazio"].includes(s.situacao) ? "erro" : "info";
 
   return el("div", { class: "mon-sup" },
     el("div", { class: "mon-sup-topo" },
@@ -298,26 +298,75 @@ function barraSuprimento(s) {
 // ---------------------------------------------------------------------------
 // Detalhes — os dados do SNMP separados por categoria
 // ---------------------------------------------------------------------------
-async function verDetalhes(p) {
-  const corpo = el("div", {}, el("p", { class: "muted" }, "Consultando a impressora…"));
-
-  dialog({
-    title: `${p.patrimonio || p.endereco || `Ativo #${p.ativo_id}`}`,
+export function abrirMonitoramentoImpressora(ativoId, nome, signal) {
+  const focoAnterior = document.activeElement;
+  const titulo = `Monitoramento · ${nome || `Ativo #${ativoId}`}`;
+  const status = el("p", { class: "muted", role: "status" });
+  const dados = el("div");
+  const atualizar = el("button", { class: "btn tonal", type: "button", onclick: consultar }, "Atualizar leitura");
+  const janela = dialog({
+    title: titulo,
     wide: true,
-    body: corpo,
-    actions: [{ label: "Fechar", variant: "text" }],
+    body: el("div", {}, status, dados),
+    actions: [{ elemento: atualizar }, { label: "Fechar", onClick: fechar }],
   });
+  janela.dlg.setAttribute("role", "dialog");
+  janela.dlg.setAttribute("aria-label", titulo);
+  janela.dlg.tabIndex = -1;
+  janela.dlg.focus();
+  signal?.addEventListener("abort", fechar, { once: true });
+  janela.overlay.addEventListener("click", ev => { if (ev.target === janela.overlay) fechar(); });
+  janela.dlg.addEventListener("keydown", ev => {
+    if (ev.key === "Escape") fechar();
+  });
+  consultar();
 
-  let d;
-  try {
-    d = await api.get(`/monitor/impressoras/${p.ativo_id}/alertas`);
-  } catch (e) {
-    corpo.innerHTML = "";
-    corpo.append(el("p", { class: "text-error" }, e.message));
-    return;
+  function fechar() {
+    signal?.removeEventListener("abort", fechar);
+    janela.close();
+    if (!signal?.aborted && focoAnterior?.isConnected) focoAnterior.focus();
   }
 
-  corpo.innerHTML = "";
+  async function consultar() {
+    atualizar.disabled = true;
+    status.textContent = "Consultando a impressora…";
+    dados.replaceChildren();
+    try {
+      const leitura = await api.get(`/monitor/impressoras/${ativoId}/situacao`);
+      if (!janela.overlay.isConnected) return;
+      const [tom, mensagem] = comunicacaoImpressora[leitura.comunicacao] || comunicacaoImpressora.falha_na_consulta;
+      status.replaceChildren(el("span", { class: `chip ${tom}` }, mensagem),
+        ` · ${fmtDate(leitura.verificado_em, true)}`);
+      mostrarMonitoramento(dados, leitura);
+    } catch (e) {
+      if (janela.overlay.isConnected) status.textContent = e.message;
+    } finally {
+      atualizar.disabled = false;
+    }
+  }
+}
+
+const comunicacaoImpressora = {
+  online: ["ok", "Online · respondeu por SNMP"],
+  sem_resposta: ["aviso", "Sem resposta por SNMP"],
+  sem_endereco: ["info", "Sem IP ou hostname cadastrado"],
+  indisponivel: ["aviso", "SNMP indisponível no servidor"],
+  falha_na_consulta: ["aviso", "Falha ao consultar por SNMP"],
+};
+
+function mostrarMonitoramento(corpo, p) {
+  if (p.alertas.length) {
+    corpo.append(secao("Alertas de suprimentos", p.alertas.map(a => [a.descricao, a.mensagem])));
+  }
+  const suprimentos = el("div", { class: "mon-secao" },
+    el("h3", { class: "mon-secao-titulo" }, "Suprimentos"),
+    p.suprimentos.length ? el("div", { class: "mon-suprimentos" }, ...p.suprimentos.map(s =>
+      el("div", {}, barraSuprimento(s), s.estimativa?.aplicavel
+        ? el("small", { class: "muted" }, `≈ ${s.estimativa.dias_restantes} dia(s) a ${inteiro(s.estimativa.paginas_por_dia)} págs/dia`)
+        : null))) : el("p", { class: "muted" }, p.comunicacao === "online"
+      ? "A impressora respondeu, mas não informou os níveis dos suprimentos."
+      : "Níveis indisponíveis nesta consulta."));
+  corpo.append(suprimentos);
 
   // --- 1. Identificação --------------------------------------------------
   corpo.append(secao("Identificação", [
@@ -343,34 +392,6 @@ async function verDetalhes(p) {
         : "—"],
   ]));
 
-  // --- 3. Suprimentos ----------------------------------------------------
-  const sup = d.suprimentos || [];
-  if (sup.length) {
-    corpo.append(secao("Suprimentos", sup.map((s) => [
-      s.descricao || `Suprimento ${s.indice}`,
-      [
-        s.percentual != null ? `${Math.round(s.percentual)}%` : "nível não informado",
-        s.nivel != null && s.capacidade ? `(${inteiro(s.nivel)} de ${inteiro(s.capacidade)})` : "",
-        s.estimativa?.aplicavel
-          ? `≈ ${s.estimativa.dias_restantes} dia(s) a ${inteiro(s.estimativa.paginas_por_dia)} págs/dia`
-          : "",
-      ].filter(Boolean).join(" · "),
-    ])));
-  } else {
-    corpo.append(secao("Suprimentos", [
-      ["—", "A impressora não informou. Algumas marcas usam OIDs próprios "
-           + "em vez dos padrão; nesse caso os níveis não são lidos por SNMP."],
-    ]));
-  }
-
-  // --- 4. Alertas --------------------------------------------------------
-  const alertas = d.alertas || [];
-  if (alertas.length) {
-    corpo.append(secao("Alertas", alertas.map((a) => [
-      a.descricao || "Alerta",
-      `${a.gravidade === "alta" ? "⚠ " : ""}${a.mensagem}`,
-    ])));
-  }
 }
 
 function inteiro(n) {

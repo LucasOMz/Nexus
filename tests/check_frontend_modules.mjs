@@ -45,7 +45,7 @@ const modulos = [
   "js/views/manutencoes.js", "js/views/scanner.js", "js/views/relatorios.js",
   "js/views/cadastros.js", "js/views/admin.js", "js/views/admin_etiquetas.js",
   "js/views/admin_backups.js", "js/views/admin_auth.js", "js/views/admin_auditoria.js",
-  "js/views/admin_plantas.js", "js/views/impressao.js", "js/mapa_planta.js", "js/views/mapa.js",
+  "js/views/admin_plantas.js", "js/views/impressao.js", "js/views/monitor_impressoras.js", "js/mapa_planta.js", "js/views/mapa.js",
 ];
 
 let falhas = 0;

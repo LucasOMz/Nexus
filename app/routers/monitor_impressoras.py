@@ -15,7 +15,8 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
-from app.core.deps import get_current_user, require_write
+from app.core.deps import get_current_user, require_module, require_write
+from app.core.permissoes import pode_inventario
 from app.core.planta import aplicar_filtro, planta_ativa_obrigatoria
 from app.database import get_db
 from app.models.core import Ativo, Usuario
@@ -39,14 +40,15 @@ def _impressoras(db: Session, planta_id: int | None) -> list[tuple[Ativo, AtivoI
     return q.all()
 
 
-def _ultima_leitura(db: Session, ativo_id: int) -> LeituraContador | None:
-    return (
+def _leituras_recentes(db: Session, ativo_id: int) -> tuple[LeituraContador | None, LeituraContador | None]:
+    leituras = (
         db.query(LeituraContador)
         .filter(LeituraContador.ativo_id == ativo_id,
                 LeituraContador.deleted_at.is_(None))
-        .order_by(LeituraContador.data_leitura.desc())
-        .first()
+        .order_by(LeituraContador.data_leitura.desc(), LeituraContador.id.desc())
+        .limit(2).all()
     )
+    return (leituras[0] if leituras else None, leituras[1] if len(leituras) == 2 else None)
 
 
 def _endereco(ficha: AtivoImpressora | None, ativo: Ativo) -> str | None:
@@ -62,15 +64,7 @@ def _endereco(ficha: AtivoImpressora | None, ativo: Ativo) -> str | None:
 
 def _linha(db: Session, ativo: Ativo, ficha: AtivoImpressora | None) -> dict:
     """Situação conhecida da impressora, sem tocar na rede."""
-    ultima = _ultima_leitura(db, ativo.id)
-    anterior = (
-        db.query(LeituraContador)
-        .filter(LeituraContador.ativo_id == ativo.id,
-                LeituraContador.deleted_at.is_(None),
-                LeituraContador.id != (ultima.id if ultima else 0))
-        .order_by(LeituraContador.data_leitura.desc())
-        .first()
-    )
+    ultima, anterior = _leituras_recentes(db, ativo.id)
 
     dias = None
     if ultima and anterior and ultima.data_leitura and anterior.data_leitura:
@@ -276,34 +270,55 @@ def alertas_de_suprimento(
 
     # Varredura completa: sem isso só o primeiro cartucho seria lido.
     suprimentos = _varrer_suprimentos(endereco, comunidade)
-    alertas = snmp_service.alertas_de_suprimento(suprimentos)
+    _estimar_suprimentos(suprimentos, _linha(db, ativo, ficha))
+    return {"ativo_id": ativo_id, "endereco": endereco, "suprimentos": suprimentos,
+            "alertas": snmp_service.alertas_de_suprimento(suprimentos)}
 
-    ultima = _ultima_leitura(db, ativo_id)
-    anterior = None
-    if ultima is not None:
-        anterior = (
-            db.query(LeituraContador)
-            .filter(LeituraContador.ativo_id == ativo_id,
-                    LeituraContador.deleted_at.is_(None),
-                    LeituraContador.id != ultima.id)
-            .order_by(LeituraContador.data_leitura.desc())
-            .first()
-        )
 
-    dias = None
-    if ultima and anterior and ultima.data_leitura and anterior.data_leitura:
-        dias = (ultima.data_leitura - anterior.data_leitura).days
-
+def _estimar_suprimentos(suprimentos: list[dict], linha: dict) -> None:
+    ultima = linha["ultima_leitura"]
+    consumo = linha["consumo_desde_a_anterior"]
+    anterior = ultima - consumo if ultima is not None and consumo is not None else None
     for s in suprimentos:
         s["estimativa"] = snmp_service.estimar_duracao(
-            s.get("percentual"),
-            ultima.contador if ultima else None,
-            anterior.contador if anterior else None,
-            dias,
+            s.get("percentual"), ultima, anterior, linha["dias_entre_leituras"],
         )
 
-    return {"ativo_id": ativo_id, "endereco": endereco,
-            "suprimentos": suprimentos, "alertas": alertas}
+
+@router.get("/{ativo_id}/situacao", response_model=dict)
+def situacao_da_impressora(
+    ativo_id: int,
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(require_module("monitor")),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
+):
+    """Consulta a comunicação e os suprimentos sem gravar contador."""
+    if not pode_inventario(user, Dominio.IMPRESSORA.value):
+        raise HTTPException(403, "Seu usuário não tem acesso ao inventário de impressoras.")
+    consulta = db.query(Ativo).filter(
+        Ativo.id == ativo_id, Ativo.deleted_at.is_(None), Ativo.dominio == Dominio.IMPRESSORA,
+    )
+    ativo = aplicar_filtro(consulta, Ativo, planta_id).first()
+    if ativo is None:
+        raise HTTPException(404, "Ativo não encontrado")
+    ficha = db.get(AtivoImpressora, ativo_id)
+    linha = _linha(db, ativo, ficha)
+    endereco = linha["endereco"]
+    suprimentos = []
+    comunicacao = "sem_endereco"
+    if endereco:
+        try:
+            suprimentos, respondeu = snmp_service.monitorar_suprimentos(endereco)
+        except snmp_service.SNMPIndisponivel:
+            comunicacao = "indisponivel"
+        except Exception as e:  # noqa: BLE001 — mantém o cadastro disponível se a consulta falhar
+            log.warning("Falha ao verificar comunicação SNMP de %s (%s)", ativo_id, type(e).__name__)
+            comunicacao = "falha_na_consulta"
+        else:
+            comunicacao = "online" if respondeu else "sem_resposta"
+    _estimar_suprimentos(suprimentos, linha)
+    return {**linha, "comunicacao": comunicacao, "verificado_em": snmp_service.carimbo(),
+            "suprimentos": suprimentos, "alertas": snmp_service.alertas_de_suprimento(suprimentos)}
 
 
 def _varrer_suprimentos(endereco: str, comunidade: str) -> list[dict]:
