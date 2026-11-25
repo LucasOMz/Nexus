@@ -4,6 +4,7 @@
  * @module views/scanner
  */
 import { api } from "../api.js";
+import { fotoProtegida } from "../fotos.js";
 import { state } from "../state.js";
 import { ctx } from "../context.js";
 import { el, icon, toast, dialog, statusBadge, fmtDate, mostrarErro } from "../ui.js";
@@ -159,10 +160,6 @@ function secaoEtiquetasBrancas() {
   return card;
 }
 
-function fotoUrl(fotoId) {
-  return fotoId ? `/api/v1/admin/fotos/${fotoId}/arquivo?token=${encodeURIComponent(state.access)}` : "";
-}
-
 async function processar(codigo, ui) {
   const texto = (codigo || "").trim();
   if (!texto) return;
@@ -259,7 +256,7 @@ function abrirCartao(ativo) {
   dialog({
     title: `Patrimônio ${ativo.patrimonio}`,
     body: el("div", {},
-      ativo.foto_id ? el("img", { class: "photo-preview mb", src: fotoUrl(ativo.foto_id), alt: "Foto do ativo" }) : null,
+      ativo.foto_id ? fotoProtegida(ativo.foto_id, { class: "photo-preview mb", alt: "Foto do ativo" }) : null,
       el("div", { style: "margin:6px 0 14px", html: statusBadge(ativo.status) }),
       ...linhas.map(([k, v]) => el("div", { class: "row between", style: "border-bottom:1px solid var(--md-sys-color-outline-variant);padding:9px 0" },
         el("span", { class: "muted" }, k), el("span", {}, String(v)))),

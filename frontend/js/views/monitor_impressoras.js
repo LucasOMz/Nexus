@@ -38,9 +38,9 @@
  * @module views/monitor_impressoras
  */
 import { api } from "../api.js";
+import { fotoProtegida } from "../fotos.js";
 import { state } from "../state.js";
 import { ctx } from "../context.js";
-import { fotoUrl } from "./ativos.js";
 import { el, icon, toast, dialog, emptyState, skeleton, fmtDate, mostrarErro } from "../ui.js";
 
 // Intervalo de releitura dos suprimentos. O contador não precisa disso: ele
@@ -168,8 +168,8 @@ function numero(valor, rotulo, tom = "") {
 // ---------------------------------------------------------------------------
 function cartao(p, caixa) {
   const foto = p.foto_id
-    ? el("img", {
-        class: "mon-foto", src: fotoUrl(p.foto_id), loading: "lazy",
+    ? fotoProtegida(p.foto_id, {
+        class: "mon-foto", loading: "lazy",
         alt: `Impressora ${p.patrimonio || p.ativo_id}`,
       })
     : el("div", { class: "mon-foto mon-foto-vazia", html: icon("print", 32) });

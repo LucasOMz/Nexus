@@ -335,7 +335,7 @@ verificar("anexo NAO usa href direto na API", !/href: `\/api\/v1\/manutencoes/.t
 const telas = fs.readdirSync(new URL("../frontend/js/views", import.meta.url));
 const suspeitas = telas.filter((f) => {
   const t = fs.readFileSync(new URL(`../frontend/js/views/${f}`, import.meta.url), "utf8");
-  return /(href|src): `\/api\/v1\/(reportes|manutencoes|admin\/backups)/.test(t);
+  return /[?&]token=/.test(t) || /(href|src): `\/api\/v1\/(reportes|manutencoes|admin\/(backups|fotos))/.test(t);
 });
 verificar("nenhuma tela linka arquivo protegido direto", suspeitas.length === 0);
 

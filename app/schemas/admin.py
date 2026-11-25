@@ -76,7 +76,7 @@ class ImagemOut(DatasComFuso):
     mime_type: str | None = None
     tamanho: int | None = None
     created_at: datetime
-    # URL para exibição (requer ?token= por ser rota autenticada).
+    # Endereço do arquivo. A requisição exige o cabeçalho Authorization.
     url: str = ""
 
 

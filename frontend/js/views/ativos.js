@@ -4,6 +4,7 @@
  * @module views/ativos
  */
 import { api } from "../api.js";
+import { fotoProtegida } from "../fotos.js";
 import { state } from "../state.js";
 import { ctx } from "../context.js";
 import { el, icon, toast, dialog, confirmSheet, emptyState, skeleton, fmtDate, fmtMoney, statusBadge, mostrarErro } from "../ui.js";
@@ -43,7 +44,6 @@ let filtroForma = "";
 let filtroSearch = "";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-export const fotoUrl = (id) => (id ? `/api/v1/admin/fotos/${id}/arquivo?token=${encodeURIComponent(state.access)}` : "");
 
 function extFields(dominio, ativo) {
   const ti = ativo?.ti || {};
@@ -537,7 +537,7 @@ function openDetail(ativo, lookups) {
   dialog({
     title: `Patrimônio ${ativo.patrimonio}`,
     body: el("div", {},
-      ativo.foto_id ? el("img", { class: "photo-preview mb", src: fotoUrl(ativo.foto_id), alt: "Foto do ativo" }) : null,
+      ativo.foto_id ? fotoProtegida(ativo.foto_id, { class: "photo-preview mb", alt: "Foto do ativo" }) : null,
       el("div", { style: "margin:6px 0 10px", html: statusBadge(ativo.status) }),
       ...rows,
     ),
@@ -786,7 +786,7 @@ async function renderList(root, lookups) {
 
       const tr = el("tr", { class: destacado ? "row-destaque" : "" },
         ...(caixaLinha ? [el("td", { style: "padding-right:0" }, caixaLinha)] : []),        el("td", { style: "padding-right:0" }, a.foto_id
-          ? el("img", { src: fotoUrl(a.foto_id), alt: "", style: "width:38px;height:38px;object-fit:cover;border-radius:8px;display:block" })
+          ? fotoProtegida(a.foto_id, { alt: "", loading: "lazy", style: "width:38px;height:38px;object-fit:cover;border-radius:8px;display:block" })
           : el("div", { style: "width:38px;height:38px;border-radius:8px;background:var(--md-sys-color-surface-container-high)" })),
         el("td", { style: "font-weight:600" },
           a.patrimonio,

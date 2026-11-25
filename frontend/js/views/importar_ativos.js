@@ -25,9 +25,9 @@
  * @module views/importar_ativos
  */
 import { api } from "../api.js";
+import { fotoProtegida } from "../fotos.js";
 import { state } from "../state.js";
 import { el, icon, toast, dialog, mostrarErro } from "../ui.js";
-import { fotoUrl } from "./ativos.js";
 
 /**
  * Abre o assistente. Chamado pelo botão da tela de ativos, visível apenas
@@ -260,7 +260,7 @@ function previa(a, arquivo, aoVoltar, aoConfirmar) {
 
 function cartaoPrevia(l) {
   const foto = l.foto_id
-    ? el("img", { class: "imp-foto", src: fotoUrl(l.foto_id), loading: "lazy",
+    ? fotoProtegida(l.foto_id, { class: "imp-foto", loading: "lazy",
         alt: `Foto ${l.foto_id}` })
     : el("div", { class: "imp-foto imp-sem-foto", html: icon("image", 18) });
 

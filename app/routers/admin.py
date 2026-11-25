@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.core.deps import get_current_user, get_current_user_query, require_admin
+from app.core.deps import get_current_user, require_admin
 from app.core.permissoes import INVENTARIOS, MODULOS
 from app.core.planta import aplicar_filtro, exigir_planta, planta_ativa
 from app.database import get_db
@@ -270,12 +270,13 @@ async def upload_foto(
 
 
 @router.get("/fotos/{foto_id}/arquivo")
-def arquivo_foto(foto_id: int, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user_query)):
-    """Serve a imagem. Aceita ?token=<jwt> para uso direto em <img src>."""
+def arquivo_foto(foto_id: int, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
+    """Serve a imagem para uma sessão autenticada pelo cabeçalho Authorization."""
     img = db.get(Imagem, foto_id)
     if img is None or img.deleted_at is not None or not os.path.exists(img.caminho):
         raise HTTPException(404, "Imagem não encontrada")
-    return FileResponse(img.caminho, media_type=img.mime_type or "image/png")
+    return FileResponse(img.caminho, media_type=img.mime_type or "image/png",
+                        headers={"Cache-Control": "private, no-store"})
 
 
 @router.put("/fotos/{foto_id}", response_model=ImagemOut)

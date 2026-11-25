@@ -3,6 +3,7 @@
  * @module views/admin
  */
 import { api } from "../api.js";
+import { fotoProtegida } from "../fotos.js";
 import { state } from "../state.js";
 import { ctx } from "../context.js";
 import { el, icon, toast, dialog, confirmSheet, skeleton, emptyState, mostrarErro } from "../ui.js";
@@ -21,7 +22,6 @@ import { renderAgente } from "./admin_agente.js";
 import { renderPlantas } from "./admin_plantas.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const fotoUrl = (id) => `/api/v1/admin/fotos/${id}/arquivo?token=${encodeURIComponent(state.access)}`;
 
 let meta = { modulos: [], inventarios: [] };
 
@@ -490,7 +490,7 @@ function abrirEdicaoFoto(foto) {
   dialog({
     title: "Editar foto",
     body: el("div", {},
-      el("img", { class: "photo-preview mb", src: fotoUrl(foto.id), alt: foto.nome }),
+      fotoProtegida(foto.id, { class: "photo-preview mb", alt: foto.nome }),
       el("div", { class: "field" }, el("label", {}, "Nome"), nome),
       el("div", { class: "field" }, el("label", {}, "Etiquetas"), tags),
       el("div", { class: "field" }, el("label", {}, "Descrição"), descricao),
@@ -526,7 +526,7 @@ async function abaFotos(root) {
     const grid = el("div", { class: "photo-grid" });
     fotos.forEach((f) => {
       grid.append(el("div", { class: "photo-card" },
-        el("img", { src: fotoUrl(f.id), alt: f.nome, loading: "lazy" }),
+        fotoProtegida(f.id, { alt: f.nome, loading: "lazy" }),
         el("div", { class: "photo-meta" },
           el("strong", {}, f.nome),
           el("div", { class: "muted" }, f.tags || "sem tags"),

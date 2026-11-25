@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from fastapi import Depends, HTTPException, Query, status
+from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
@@ -129,18 +129,6 @@ def usuario_para_configurar_mfa(
     token: str | None = Depends(oauth2_scheme), db: Session = Depends(get_db),
 ) -> Usuario:
     return _exigir_usuario(db, token, "cadastrar_mfa")
-
-
-def get_current_user_query(
-    token: str | None = Query(default=None),
-    header_token: str | None = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-) -> Usuario:
-    """Aceita o token via `?token=` (para <img src>) OU via header Authorization."""
-    user = _resolver_usuario(db, token or header_token)
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=_CREDENCIAIS_INVALIDAS)
-    return user
 
 
 def require_module(*modulos: str) -> Callable:

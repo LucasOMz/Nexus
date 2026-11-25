@@ -70,9 +70,14 @@ def test_upload_e_vinculo_de_foto(client, auth_headers):
     assert upd.status_code == 200
     assert upd.json()["foto_id"] == foto["id"]
 
-    # A imagem exige autenticação.
-    assert client.get(f"/api/v1/admin/fotos/{foto['id']}/arquivo").status_code == 401
-    assert client.get(f"/api/v1/admin/fotos/{foto['id']}/arquivo", headers=auth_headers).status_code == 200
+    # Somente o cabeçalho autentica o download, inclusive para URLs antigas.
+    url = foto["url"]
+    assert client.get(url).status_code == 401
+    assert client.get(url, params={"token": auth_headers["Authorization"].split()[1]}).status_code == 401
+    arquivo = client.get(url, headers=auth_headers)
+    assert arquivo.status_code == 200
+    assert arquivo.content == PNG_FALSO
+    assert arquivo.headers["cache-control"] == "private, no-store"
 
 
 def test_upload_rejeita_nao_imagem(client, auth_headers):
