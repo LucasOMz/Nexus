@@ -526,7 +526,9 @@ export class Viewer extends Emitter {
     group.visible = !this.equipmentFilter || this.equipmentFilter.has(item.id);
     group.userData.equipmentId = item.id;
 
-    const model = this.compactEquipment ? this._buildMapPin(item) : buildModel(item.type);
+    const model = this.compactEquipment && item.type !== 'printer'
+      ? this._buildMapPin(item)
+      : buildModel(item.type, { compact: this.compactEquipment });
     model.scale.setScalar(item.scale || 1);
     model.traverse((o) => {
       if (o.isMesh) {
@@ -942,14 +944,18 @@ export class Viewer extends Emitter {
     const rec = this.items.get(id);
     if (!rec) return;
     const item = rec.item;
-    const target = new THREE.Vector3(item.x, (item.elevation || 0) + 0.5, item.z);
-    const dist = 10;
-    const pos = target.clone().add(new THREE.Vector3(0.5, 1.25, 0.72).normalize().multiplyScalar(dist));
+    const impressora = item.type === 'printer';
+    const target = new THREE.Vector3(item.x, (item.elevation || 0) + (impressora ? 0.32 : 0.5), item.z);
     if (this.mode === 'top') {
       this.orbitTop.target.copy(target);
       this.topCamera.position.set(target.x, 100, target.z + 0.001);
       this.orbitTop.update();
     } else {
+      const offset = impressora
+        ? new THREE.Vector3(0.65, 0.78, 1.2).normalize().multiplyScalar(3.2)
+          .applyAxisAngle(rec.group.up, rec.group.rotation.y)
+        : new THREE.Vector3(0.5, 1.25, 0.72).normalize().multiplyScalar(10);
+      const pos = target.clone().add(offset);
       this._flyTo(pos, target, 650);
     }
   }

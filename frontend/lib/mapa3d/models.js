@@ -440,18 +440,58 @@ function camera() {
   return g;
 }
 
-function printer() {
+function printer(compact = false) {
   const g = newGroup('printer');
-  const shell = M('#e2e8f0', { roughness: 0.55, metalness: 0.15 });
-  box(g, 0.5, 0.3, 0.42, shell, 0, 0.19, 0);
-  box(g, 0.46, 0.08, 0.38, M('#cbd5e1'), 0, 0.38, -0.01);
-  box(g, 0.4, 0.02, 0.3, M('#f8fafc'), 0, 0.425, 0.02);
-  box(g, 0.4, 0.01, 0.28, M('#ffffff'), 0, 0.44, 0.01, { cast: false });
-  box(g, 0.34, 0.12, 0.02, M('#0f172a'), 0, 0.18, 0.215);
-  screen(g, 0.13, 0.06, -0.09, 0.22, 0.227, '#22d3ee');
-  for (let i = 0; i < 3; i++) led(g, i === 0 ? '#34d399' : '#fbbf24', 0.02 + i * 0.03, 0.14, 0.227, 0.006);
-  box(g, 0.44, 0.03, 0.1, M('#cbd5e1'), 0, 0.04, 0.2);
+  const carcaca = M('#dfded8', { roughness: 0.66, metalness: 0 });
+  const tampa = M('#f5f2eb', { roughness: 0.62, metalness: 0 });
+  const grafite = M('#28313b', { roughness: 0.78, metalness: 0 });
+  const carenagem = compact ? box : carenagemImpressora;
+
+  carenagem(g, 0.51, 0.045, 0.46, grafite, 0, 0.0225, 0);
+  carenagem(g, 0.55, 0.3, 0.51, carcaca, 0, 0.19, 0);
+  box(g, 0.53, 0.18, 0.13, grafite, 0, 0.42, -0.18);
+  for (const x of [-0.23, 0.23]) box(g, 0.09, 0.18, 0.49, carcaca, x, 0.42, 0);
+  carenagem(g, 0.57, 0.076, 0.54, tampa, 0, 0.548, -0.008);
+  carenagem(g, 0.50, 0.044, 0.39, tampa, 0, 0.608, -0.06);
+  box(g, 0.40, 0.018, 0.35, grafite, 0, 0.348, 0.085);
+  box(g, 0.21, 0.004, 0.22, basic('#fdfdf8'), -0.025, 0.36, 0.187, { rx: -0.035, cast: false });
+  if (compact) return g;
+
+  const gaveta = M('#c6cbd0', { roughness: 0.66, metalness: 0 });
+  for (const y of [0.106, 0.22]) {
+    carenagem(g, 0.49, 0.104, 0.026, gaveta, 0, y, 0.264);
+    box(g, 0.14, 0.018, 0.004, grafite, 0, y + 0.022, 0.278, { cast: false });
+  }
+  box(g, 0.468, 0.012, 0.345, grafite, 0, 0.589, -0.06);
+  const painel = carenagem(g, 0.145, 0.07, 0.032, grafite, 0.20, 0.495, 0.265);
+  painel.rotation.x = -0.25;
+  box(painel, 0.086, 0.041, 0.003, basic('#79a9bf'), -0.015, 0.005, 0.017, { cast: false });
+  box(painel, 0.019, 0.014, 0.003, tampa, 0.049, 0.005, 0.017, { cast: false });
+  for (let i = 0; i < 3; i++) {
+    box(g, 0.104 - i * 0.017, 0.001, 0.005, basic('#93a4b0'), -0.045, 0.361 + i * 0.0005, 0.22 + i * 0.015, { cast: false });
+  }
   return g;
+}
+
+function carenagemImpressora(parent, w, h, d, material, x, y, z) {
+  const bevel = Math.min(0.009, w / 8, h / 4, d / 4);
+  const largura = w / 2 - bevel;
+  const fundo = d / 2 - bevel;
+  const forma = new THREE.Shape();
+  forma.moveTo(-largura, -fundo);
+  forma.lineTo(largura, -fundo);
+  forma.lineTo(largura, fundo);
+  forma.lineTo(-largura, fundo);
+  forma.closePath();
+  const corpo = new THREE.ExtrudeGeometry(forma, {
+    depth: h - 2 * bevel, bevelSize: bevel, bevelThickness: bevel, bevelSegments: 2,
+  });
+  corpo.rotateX(-Math.PI / 2);
+  corpo.center();
+  const mesh = new THREE.Mesh(corpo, material);
+  mesh.position.set(x, y, z);
+  parent.add(mesh);
+  return mesh;
 }
 
 function nobreak() {
@@ -816,9 +856,9 @@ const BUILDERS = {
   forklift,
 };
 
-export function buildModel(typeId) {
+export function buildModel(typeId, { compact = false } = {}) {
   const builder = BUILDERS[typeId] || unknown;
-  const model = builder();
+  const model = builder(compact);
   model.traverse((o) => {
     if (o.isMesh) {
       o.castShadow = o.castShadow !== false;

@@ -60,7 +60,7 @@ export const EQUIPMENT_TYPES = [
     keywords: 'antena setorial wifi wi-fi outdoor',
   },
   {
-    id: 'printer', label: 'Impressora', cat: 'rede', desc: 'Impressora de rede', dims: [0.55, 0.7, 0.5],
+    id: 'printer', label: 'Impressora', cat: 'rede', desc: 'Impressora de rede', dims: [0.57, 0.63, 0.56],
     keywords: 'impressora printer multifuncional',
   },
   {
