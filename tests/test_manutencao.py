@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 from app.core.security import create_access_token
+from tests.conftest import marcar_primeiro_acesso_concluido
 
 
 def _criar_tecnico(client, auth_headers) -> int:
@@ -34,6 +35,7 @@ def _criar_tecnico(client, auth_headers) -> int:
         },
     )
     assert r.status_code in (200, 201), r.text
+    marcar_primeiro_acesso_concluido("tecnico@teste.com")
     return r.json()["id"]
 
 
@@ -77,6 +79,33 @@ class TestModoManutencao:
 
 
 class TestDerrubarSessao:
+    def test_reativar_conta_nao_recupera_sessoes_anteriores(self, client, auth_headers):
+        tecnico_id = _criar_tecnico(client, auth_headers)
+        dados = {"username": "tecnico@teste.com", "password": "senha123"}
+        login = client.post("/api/v1/auth/login", data=dados)
+        assert login.status_code == 200, login.text
+        sessao = login.json()
+        conta = f"/api/v1/usuarios/{tecnico_id}"
+        assert client.put(conta, json={"ativo": False}, headers=auth_headers).status_code == 200
+        assert client.put(conta, json={"ativo": True}, headers=auth_headers).status_code == 200
+        bearer = {"Authorization": f"Bearer {sessao['access_token']}"}
+        assert client.get("/api/v1/auth/me", headers=bearer).status_code == 401
+        corpo = {"refresh_token": sessao["refresh_token"]}
+        assert client.post("/api/v1/auth/refresh", json=corpo).status_code == 401
+
+    def test_derrubar_revoga_access_e_refresh_de_todas_as_sessoes(self, client, auth_headers):
+        tecnico_id = _criar_tecnico(client, auth_headers)
+        dados = {"username": "tecnico@teste.com", "password": "senha123"}
+        sessoes = [client.post("/api/v1/auth/login", data=dados).json() for _ in range(2)]
+        assert client.post(f"/api/v1/admin/manutencao/derrubar/{tecnico_id}", headers=auth_headers).status_code == 200
+        for sessao in sessoes:
+            bearer = {"Authorization": f"Bearer {sessao['access_token']}"}
+            assert client.get("/api/v1/auth/me", headers=bearer).status_code == 401
+            corpo = {"refresh_token": sessao["refresh_token"]}
+            assert client.post("/api/v1/auth/refresh", json=corpo).status_code == 401
+        nova = client.post("/api/v1/auth/login", data=dados).json()
+        assert client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {nova['access_token']}"}).status_code == 200
+
     def test_token_antigo_cai(self, client, auth_headers):
         tecnico_id = _criar_tecnico(client, auth_headers)
         antigo = _token(tecnico_id)

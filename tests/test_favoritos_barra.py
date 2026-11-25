@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from app.core.rate_limit import login_limiter, scan_limiter
+from tests.conftest import marcar_primeiro_acesso_concluido
 
 
 @pytest.fixture(autouse=True)
@@ -29,6 +30,7 @@ def _novo_usuario(client, auth_headers, email, papel="leitor"):
     client.post("/api/v1/usuarios",
                 json={"nome": f"User {email}", "email": email, "papel": papel, "senha": "senha123"},
                 headers=auth_headers)
+    marcar_primeiro_acesso_concluido(email)
     return _login(client, email)
 
 

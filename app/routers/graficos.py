@@ -9,11 +9,12 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, require_module
 from app.core.permissoes import pode_inventario
+from app.core.planta import aplicar_filtro, planta_ativa_obrigatoria
 from app.database import get_db
 from app.models.contrato import Contrato
 from app.models.core import (
@@ -115,9 +116,13 @@ def graficos(
     contrato_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
     user: Usuario = Depends(get_current_user),
+    planta_ativa: int | None = Depends(planta_ativa_obrigatoria),
 ) -> dict:
     if not pode_inventario(user, dominio.value):
         raise HTTPException(403, "Sem acesso a este inventário")
+    if planta_ativa is not None and planta_id not in (None, planta_ativa):
+        raise HTTPException(403, "Selecione a planta no escopo atual do relatório")
+    planta_id = planta_ativa if planta_ativa is not None else planta_id
 
     # As condições são calculadas UMA vez e espalhadas em todos os blocos.
     # É o que faz um filtro valer no relatório inteiro.
@@ -126,7 +131,6 @@ def graficos(
         forma_aquisicao=forma_aquisicao, contrato_id=contrato_id,
     )
     base = db.query(Ativo).filter(*cond)
-    ativo_ids = [a.id for a in base.with_entities(Ativo.id).all()]
 
     # 1) Ativos por status.
     rows = (
@@ -190,20 +194,18 @@ def graficos(
 
     # 7) Movimentações por mês (entradas x saídas) — agrupado em Python (portável).
     limite = datetime.now(timezone.utc) - timedelta(days=31 * meses)
-    movs = (
-        db.query(Movimentacao.tipo, Movimentacao.data_mov, Movimentacao.ativo_id, Movimentacao.produto_id)
-        .filter(Movimentacao.deleted_at.is_(None), Movimentacao.data_mov >= limite)
-        .all()
+    escopo_mov = Movimentacao.ativo_id.in_(select(Ativo.id).where(*cond))
+    if planta_id is None:
+        escopo_mov = or_(
+            escopo_mov,
+            Movimentacao.produto_id.in_(select(Produto.id).where(Produto.dominio == dominio)),
+        )
+    movs = db.query(Movimentacao.tipo, Movimentacao.data_mov).filter(
+        escopo_mov, Movimentacao.deleted_at.is_(None), Movimentacao.data_mov >= limite,
     )
-    # Domínios por id, para filtrar movimentações do inventário atual.
-    ids_produto = {p.id: getattr(p.dominio, "value", p.dominio) for p in db.query(Produto).all()}
-    # `ativo_ids` vem de `base`, então o filtro de ativos já está aplicado —
-    # movimentação de ativo fora do filtro não entra na contagem.
-    set_ativos = set(ativo_ids)
     buckets: dict[str, dict[str, int]] = {}
-    for tipo, data_mov, ativo_id, produto_id in movs:
-        pertence = (ativo_id in set_ativos) or (produto_id in ids_produto and ids_produto[produto_id] == dominio.value)
-        if not pertence or data_mov is None:
+    for tipo, data_mov in movs:
+        if data_mov is None:
             continue
         chave = data_mov.strftime("%Y-%m")
         b = buckets.setdefault(chave, {"entradas": 0, "saidas": 0})
@@ -274,7 +276,7 @@ def graficos(
     # Depois da locação, "valor do parque" deixou de ser um número só. Somar
     # patrimônio com mensalidade daria um valor sem significado — por isso o
     # relatório separa as duas naturezas, como o financeiro já faz.
-    parque = _parque(db, dominio, cond)
+    parque = _parque(db, cond, planta_id)
 
     return {
         "dominio": dominio.value,
@@ -292,7 +294,7 @@ def graficos(
     }
 
 
-def _parque(db: Session, dominio: Dominio, cond: list) -> dict:
+def _parque(db: Session, cond: list, planta_id: int | None) -> dict:
     """Composição do parque por forma de aquisição, e o custo da locação.
 
     Comprado e locado têm naturezas diferentes: um é patrimônio que perde
@@ -335,7 +337,7 @@ def _parque(db: Session, dominio: Dominio, cond: list) -> dict:
     # Custo mensal: a soma das mensalidades dos contratos que cobrem ativos
     # que passam pelo filtro. Contar o contrato inteiro inflaria um recorte
     # que talvez seja só parte dele.
-    contratos = (
+    consulta_contratos = (
         db.query(
             Contrato.numero,
             Contrato.valor_mensal,
@@ -346,9 +348,8 @@ def _parque(db: Session, dominio: Dominio, cond: list) -> dict:
             Contrato.deleted_at.is_(None),
             Contrato.valor_mensal.isnot(None),
         )
-        .group_by(Contrato.id)
-        .all()
     )
+    contratos = aplicar_filtro(consulta_contratos, Contrato, planta_id).group_by(Contrato.id).all()
 
     custo_mensal = 0.0
     top = []

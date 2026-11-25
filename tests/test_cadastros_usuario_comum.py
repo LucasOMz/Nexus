@@ -11,6 +11,8 @@ era exatamente isso que nao estava sendo testado.
 """
 from __future__ import annotations
 
+from tests.conftest import marcar_primeiro_acesso_concluido
+
 
 def _planta(client, auth_headers, nome: str) -> int:
     r = client.post(
@@ -32,6 +34,7 @@ def _usuario(client, auth_headers, email: str, planta_id: int | None) -> int:
 
 
 def _login(client, email: str, senha: str = "senha12345") -> dict:
+    marcar_primeiro_acesso_concluido(email)
     r = client.post(
         "/api/v1/auth/login",
         data={"username": email, "password": senha},

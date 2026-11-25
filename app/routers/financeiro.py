@@ -13,7 +13,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user
-from app.core.planta import aplicar_filtro, planta_ativa
+from app.core.planta import aplicar_filtro, planta_ativa, planta_ativa_obrigatoria
 from app.database import get_db
 from app.models.contrato import Contrato
 from app.models.core import Ativo, Departamento, Manutencao, Movimentacao, Produto, Usuario
@@ -368,7 +368,7 @@ def custo_por_pagina(
 def contratos_csv(
     db: Session = Depends(get_db),
     user: Usuario = Depends(get_current_user),
-    planta_id: int | None = Depends(planta_ativa),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ):
     """Custo mensal por contrato, em CSV.
 
@@ -391,12 +391,11 @@ def contratos_csv(
     ).order_by(Contrato.numero).all()
 
     # Contagem por contrato numa consulta só — dentro do laço seria N+1.
-    cobertos = dict(
+    q_cobertos = (
         db.query(Ativo.contrato_id, _func.count(Ativo.id))
         .filter(Ativo.deleted_at.is_(None), Ativo.contrato_id.isnot(None))
-        .group_by(Ativo.contrato_id)
-        .all()
     )
+    cobertos = dict(aplicar_filtro(q_cobertos, Ativo, planta_id).group_by(Ativo.contrato_id).all())
 
     buf = io.StringIO()
     w = csv.writer(buf, delimiter=";", lineterminator="\n")

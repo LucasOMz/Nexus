@@ -27,16 +27,18 @@ export const state = {
   access: localStorage.getItem(LS.access),
   refresh: localStorage.getItem(LS.refresh),
   user: readJSON(LS.user),
+  acaoRequerida: localStorage.getItem("nexus.primeiroAcesso"),
   dominio: localStorage.getItem(LS.dominio) || "ti",
   paleta: localStorage.getItem(LS.paleta) || "nexus",
   fundo: localStorage.getItem(LS.fundo) || "verde",
   theme: localStorage.getItem(LS.theme) || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"),
 
   /** Persiste tokens e usuário após login/refresh. */
-  setAuth({ access_token, refresh_token, user }) {
+  setAuth({ access_token, refresh_token, user, acao_requerida }) {
     this.access = access_token;
-    this.refresh = refresh_token;
+    this.refresh = refresh_token || null;
     this.user = user;
+    this.acaoRequerida = acao_requerida || null;
 
     // Restaura a planta escolhida no topo. Sem isto, cada recarga voltaria
     // para "todas as plantas" e o administrador teria de escolher de novo.
@@ -48,7 +50,10 @@ export const state = {
     } catch (e) { /* modo privado pode bloquear */ }
 
     localStorage.setItem(LS.access, access_token);
-    localStorage.setItem(LS.refresh, refresh_token);
+    if (this.refresh) localStorage.setItem(LS.refresh, this.refresh);
+    else localStorage.removeItem(LS.refresh);
+    if (this.acaoRequerida) localStorage.setItem("nexus.primeiroAcesso", this.acaoRequerida);
+    else localStorage.removeItem("nexus.primeiroAcesso");
     localStorage.setItem(LS.user, JSON.stringify(user));
     // O tema vem na conta: aplicar aqui faz a tela abrir no tema da pessoa,
     // inclusive num computador onde ela nunca entrou.
@@ -64,6 +69,17 @@ export const state = {
   setUser(user) {
     this.user = user;
     localStorage.setItem(LS.user, JSON.stringify(user));
+  },
+
+  sincronizarSessao() {
+    const user = readJSON(LS.user);
+    const refresh = localStorage.getItem(LS.refresh);
+    const access = localStorage.getItem(LS.access);
+    if (!user || user.id !== this.user?.id || !access || !refresh || refresh === this.refresh) return false;
+    this.user = user;
+    this.access = access;
+    this.refresh = refresh;
+    return true;
   },
 
   /** Define o inventário ativo (sem reload). */
@@ -145,9 +161,11 @@ export const state = {
     this.access = null;
     this.refresh = null;
     this.user = null;
+    this.acaoRequerida = null;
     localStorage.removeItem(LS.access);
     localStorage.removeItem(LS.refresh);
     localStorage.removeItem(LS.user);
+    localStorage.removeItem("nexus.primeiroAcesso");
   },
 
   // ------------------------------------------------------------------

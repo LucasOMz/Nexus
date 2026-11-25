@@ -57,15 +57,15 @@ log = logging.getLogger("app")
 # 32 bytes = 256 bits. Hex porque é o que cabe com folga em qualquer variável
 # de ambiente e em qualquer arquivo, sem escape.
 TAMANHO = 32
+SENHAS_ADMIN_PADRAO_ANTIGAS = {"admin123", "troque-esta-senha"}
 
 _PADROES_CONHECIDOS = {
     "",
     "troque-este-segredo-jwt",
     "troque-este-segredo-qr-hmac",
-    "admin123",
     "changeme",
     "secret",
-}
+} | SENHAS_ADMIN_PADRAO_ANTIGAS
 
 
 def diretorio() -> Path:
@@ -141,3 +141,39 @@ def obter(nome: str, valor_atual: str | None) -> str:
         nome, _caminho(nome),
     )
     return novo
+
+
+def senha_admin_inicial(fornecida: str) -> str:
+    """Resolve uma credencial forte, com persistência obrigatória se gerada."""
+    if fornecida:
+        if (
+            not 16 <= len(fornecida.encode("utf-8")) <= 72
+            or not fornecida.strip()
+            or fornecida.casefold() in _PADROES_CONHECIDOS
+        ):
+            raise ValueError("Defina SEED_ADMIN_PASSWORD com uma senha exclusiva de 16 a 72 bytes ou deixe vazia.")
+        return fornecida
+
+    nome = "seed_admin_password"
+    arquivo = _caminho(nome)
+    try:
+        arquivo.parent.mkdir(parents=True, exist_ok=True)
+        with arquivo.open("r", encoding="utf-8") as existente:
+            guardada = existente.read().strip()
+    except FileNotFoundError:
+        nova = secrets.token_urlsafe(32)
+        try:
+            with os.fdopen(os.open(arquivo, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w", encoding="utf-8") as destino:
+                destino.write(nova)
+        except FileExistsError:
+            return senha_admin_inicial("")
+        except OSError as exc:
+            raise RuntimeError("Não foi possível salvar a senha inicial no volume de segredos.") from exc
+        log.info("Senha inicial de administrador criada em %s.", arquivo)
+        return nova
+    except OSError as exc:
+        raise RuntimeError("Não foi possível ler o volume de segredos da instalação.") from exc
+
+    if not guardada:
+        raise RuntimeError("O arquivo da senha inicial está vazio. Defina SEED_ADMIN_PASSWORD para concluir a instalação.")
+    return senha_admin_inicial(guardada)

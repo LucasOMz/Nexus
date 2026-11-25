@@ -104,7 +104,7 @@ class Settings(BaseSettings):
     # --- App ---
     env: str = "development"
     seed_admin_email: str = "admin@empresa.com"
-    seed_admin_password: str = "admin123"
+    seed_admin_password: str = ""
     # Diretório para arquivos gerados (termos PDF, anexos de manutenção).
     media_dir: str = "./media"
 

@@ -324,8 +324,8 @@ verificar("reporte busca o print com token (api.blob)", /api\.blob\(`\/reportes\
 verificar("reporte NAO usa src direto na API", !/src: `\/api\//.test(fonteReporte));
 verificar("abrir em nova aba usa a URL local", /window\.open\(urlBlob, "_blank"\)/.test(fonteReporte));
 
-verificar("api expoe o download autenticado (blob)", /async blob\(path\)/.test(fonteUiApi));
-verificar("api.blob manda o Authorization", /headers\["Authorization"\] = "Bearer " \+ state\.access/.test(fonteUiApi));
+verificar("api expoe o download autenticado (blob)", /async blob\(path(?:, [^)]*)?\)/.test(fonteUiApi));
+verificar("api.blob manda o Authorization", /async blob\([\s\S]*?headers\["Authorization"\] = "Bearer " \+ acesso/.test(fonteUiApi));
 
 const fonteManut2 = fs.readFileSync(new URL("../frontend/js/views/manutencoes.js", import.meta.url), "utf8");
 verificar("anexo de manutencao tambem usa api.blob", /api\.blob\(`\/manutencoes\/\$\{m\.id\}\/anexos/.test(fonteManut2));

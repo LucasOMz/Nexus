@@ -7,18 +7,8 @@
   `get_current_user`.
 * Liga e desliga o **modo manutenção**, que bloqueia o login de quem não é
   administrador e derruba as sessões abertas na próxima requisição.
-* **Derruba** as sessões de uma pessoa específica, carimbando
-  `forcar_logout_em`.
-
-## Por que "presença" e não "sessões"
-
-O token é stateless: o servidor não mantém registro de quem está logado. Uma
-lista de sessões de verdade exigiria `sid` no JWT — o que invalidaria todo
-token existente e mudaria o caminho de autenticação de cada requisição.
-
-Para operação, "quem usou nos últimos N minutos" responde a mesma pergunta.
-O que se perde é derrubar **uma** sessão específica: aqui, derrubar derruba
-todas as daquela pessoa — que é o comportamento certo para manutenção.
+* **Encerra** todas as sessões de uma pessoa específica. A lista de presença
+  continua baseada no horário da atividade mais recente.
 """
 from __future__ import annotations
 
@@ -171,7 +161,7 @@ def derrubar(
 ) -> dict:
     """Encerra as sessões de um usuário.
 
-    O carimbo em `forcar_logout_em` invalida todo token emitido antes dele.
+    Revoga as sessões registradas e invalida as credenciais anteriores.
     O usuário **pode entrar de novo** logo em seguida — o que é desejável: se
     ele estava no meio de uma tarefa, não fica trancado fora para sempre.
 
@@ -192,11 +182,10 @@ def derrubar(
             "no cadastro de usuários.",
         )
 
-    alvo.forcar_logout_em = datetime.now(timezone.utc)
-    db.commit()
-
+    from app.services import sessoes
     from app.services.audit_service import audit
 
+    sessoes.revogar_do_usuario(db, alvo)
     audit(db, user, "manutencao_derrubar", "usuario", alvo.id)
     db.commit()
 

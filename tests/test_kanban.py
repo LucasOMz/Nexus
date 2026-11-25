@@ -19,6 +19,7 @@ onde o código compilava e não funcionava.
 from __future__ import annotations
 
 from app.core.security import create_access_token
+from tests.conftest import marcar_primeiro_acesso_concluido
 
 
 def _criar_usuario(client, auth_headers, email: str, papel: str = "ti") -> int:
@@ -28,6 +29,7 @@ def _criar_usuario(client, auth_headers, email: str, papel: str = "ti") -> int:
         json={"nome": email.split("@")[0], "email": email, "senha": "senha123", "papel": papel},
     )
     assert r.status_code in (200, 201), r.text
+    marcar_primeiro_acesso_concluido(email)
     return r.json()["id"]
 
 

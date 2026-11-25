@@ -65,7 +65,7 @@ services:
       QR_HMAC_SECRET: outro-segredo-de-teste-nao-usar-em-producao
       NEXUS_CHAVE_LICENCAS: Ovo2zKQ4nC7lFJ9dR1pW8sT3yB6mX0aH5uE7gI2kN4cM=
       SEED_ADMIN_EMAIL: admin@teste.local
-      SEED_ADMIN_PASSWORD: senha-de-teste
+      SEED_ADMIN_PASSWORD: "credencial-exclusiva-da-suite"
       # Os testes que dependem de OCS/SNMP pulam sozinhos quando não há
       # serviço — não é preciso mock para o básico.
       AUTO_CREATE_TABLES: "true"

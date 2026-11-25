@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from app.core.rate_limit import login_limiter, scan_limiter
+from tests.conftest import marcar_primeiro_acesso_concluido
 
 
 @pytest.fixture(autouse=True)
@@ -40,6 +41,7 @@ def _usuario(client, auth, email, planta_id, papel):
 
 
 def _token(client, email):
+    marcar_primeiro_acesso_concluido(email)
     r = client.post("/api/v1/auth/login", data={"username": email, "password": "senha123"})
     assert r.status_code == 200, r.text
     return {"Authorization": f"Bearer {r.json()['access_token']}"}

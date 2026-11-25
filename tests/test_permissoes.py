@@ -1,13 +1,17 @@
 """Testes do sistema de permissões e do acesso restrito por módulo."""
 from __future__ import annotations
 
+from tests.conftest import marcar_primeiro_acesso_concluido
+
 
 def _criar_usuario(client, auth_headers, **perm):
+    planta = client.get("/api/v1/admin/plantas", headers=auth_headers).json()[0]
     payload = {
         "nome": "Operador",
         "email": "operador@teste.com",
         "papel": "leitor",
         "senha": "senha123",
+        "planta_id": planta["id"],
         "permissoes": {
             "inventarios": ["ti"],
             "modulos": ["ativos", "relatorios"],
@@ -22,6 +26,7 @@ def _criar_usuario(client, auth_headers, **perm):
 
 
 def _token_do_usuario(client, email="operador@teste.com", senha="senha123"):
+    marcar_primeiro_acesso_concluido(email)
     res = client.post("/api/v1/auth/login", data={"username": email, "password": senha})
     assert res.status_code == 200, res.text
     return {"Authorization": f"Bearer {res.json()['access_token']}"}

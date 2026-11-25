@@ -1,6 +1,8 @@
 """Testes de manutenções e transições de status do ativo."""
 from __future__ import annotations
 
+from tests.conftest import marcar_primeiro_acesso_concluido
+
 
 def _criar_ativo(client, auth_headers, patrimonio="TI-M"):
     return client.post("/api/v1/ativos", json={"dominio": "ti", "patrimonio": patrimonio, "numero_serie": f"NS-{patrimonio}"}, headers=auth_headers).json()["id"]
@@ -142,16 +144,19 @@ class TestQuemConcluiuAManutencao:
     def test_usuario_diferente_registra_o_proprio_nome(self, client, auth_headers):
         """Cada pessoa que conclui fica registrada com o SEU nome."""
         m = self._abrir(client, auth_headers, "CONC-005")
+        ativo = client.get(f"/api/v1/ativos/{m['ativo_id']}", headers=auth_headers).json()
 
         r = client.post(
             "/api/v1/usuarios",
             json={
                 "nome": "Wagner", "email": "wagner@teste.com", "papel": "ti", "senha": "senha123",
+                "planta_id": ativo["planta_id"],
                 "permissoes": {"inventarios": ["ti"], "modulos": ["ativos", "manutencoes"], "pode_escrever": True},
             },
             headers=auth_headers,
         )
         assert r.status_code == 201, r.text
+        marcar_primeiro_acesso_concluido("wagner@teste.com")
         login = client.post("/api/v1/auth/login", data={"username": "wagner@teste.com", "password": "senha123"})
         h = {"Authorization": f"Bearer {login.json()['access_token']}"}
 

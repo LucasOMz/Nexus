@@ -1,7 +1,6 @@
 """Cifragem simétrica para segredos gravados no banco.
 
-Hoje é usada para a senha da conta de serviço do LDAP: guardar isso em texto
-puro no banco seria um problema de segurança/compliance.
+Usada para a senha da conta de serviço do LDAP e os segredos TOTP.
 
 A chave é derivada do `JWT_SECRET`. Consequência importante (documentada no
 README): **trocar o `JWT_SECRET` torna os valores cifrados ilegíveis** — basta

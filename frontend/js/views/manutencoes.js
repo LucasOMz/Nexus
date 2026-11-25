@@ -8,7 +8,6 @@ import { ctx } from "../context.js";
 import { el, icon, toast, dialog, confirmSheet, emptyState, skeleton, fmtDate, fmtMoney, mostrarErro } from "../ui.js";
 import { loadLookups, optionsOf } from "../lookups.js";
 import { seletorDeAtivo } from "../seletor_ativo.js";
-import { erroDeResposta } from "../erros.js";
 
 const PAGE_SIZE = 20;
 let page = 1;
@@ -150,8 +149,7 @@ async function anexar(m) {
         const fd = new FormData();
         fd.append("file", input.files[0]);
         try {
-          const res = await fetch(`/api/v1/manutencoes/${m.id}/anexos`, { method: "POST", headers: { Authorization: "Bearer " + state.access }, body: fd });
-          if (!res.ok) throw erroDeResposta(res.status, await res.json().catch(() => null));
+          await api.postForm(`/manutencoes/${m.id}/anexos`, fd);
           close(); toast("Anexo enviado");
         } catch (e) { mostrarErro(e, "enviar o anexo"); }
       } },

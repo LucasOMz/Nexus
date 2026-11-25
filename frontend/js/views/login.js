@@ -70,8 +70,8 @@ export function renderLogin(root) {
   // -------------------------------------------------------------------------
   function mostrarCodigo() {
     miolo.innerHTML = "";
-    const codigo = el("input", { id: "login-codigo", inputmode: "numeric",
-      autocomplete: "one-time-code", maxlength: "6",
+    const codigo = el("input", { id: "login-codigo",
+      autocomplete: "one-time-code", maxlength: "10",
       style: "font-size:22px;letter-spacing:6px;text-align:center", required: "" });
     const botao = el("button", { class: "btn filled", type: "submit", style: "width:100%" }, "Confirmar");
 
@@ -130,7 +130,7 @@ export function renderLogin(root) {
       botao.disabled = true;
       botao.textContent = "Salvando…";
       try {
-        const r = await api.post("/auth/trocar-senha", {
+        await api.post("/auth/trocar-senha", {
           senha_atual: atual.value,
           senha_nova: nova.value,
           confirmacao: confirma.value,
@@ -138,11 +138,8 @@ export function renderLogin(root) {
         // A senha mudou: guardamos para o próximo login e seguimos.
         credenciais.senha = nova.value;
         toast("Senha alterada");
-        if (r.acao_requerida === "cadastrar_mfa") {
-          irParaCadastroDoMfa();
-        } else {
-          entrarNoSistema();
-        }
+        state.logout();
+        if (await tentar() === false) mostrarSenha("Entre novamente com a nova senha.");
       } catch (e) {
         mostrarErro(e);
         botao.disabled = false;
@@ -162,10 +159,8 @@ export function renderLogin(root) {
   async function tentar(codigo) {
     try {
       const body = new URLSearchParams({ username: credenciais.email, password: credenciais.senha });
-      const url = codigo
-        ? `/api/v1/auth/login?codigo=${encodeURIComponent(codigo)}`
-        : "/api/v1/auth/login";
-      const res = await fetch(url, {
+      if (codigo) body.set("codigo", codigo);
+      const res = await fetch("/api/v1/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body,
@@ -187,11 +182,11 @@ export function renderLogin(root) {
       entrarNoSistema();
     } catch (err) {
       mostrarErro(err);
+      return false;
     }
   }
 
   function irParaCadastroDoMfa() {
-    // Já autenticado: o token vale, e a tela de segurança conduz o cadastro.
     location.hash = "#/seguranca";
     location.reload();
   }

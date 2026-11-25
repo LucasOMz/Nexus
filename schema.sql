@@ -83,6 +83,16 @@ CREATE TABLE usuarios (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE sessoes_usuarios (
+    id              VARCHAR(32) PRIMARY KEY,
+    usuario_id      INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    refresh_hash    VARCHAR(64),
+    expira_em       TIMESTAMPTZ NOT NULL,
+    revogada_em     TIMESTAMPTZ
+);
+CREATE INDEX ix_sessoes_usuarios_usuario_id ON sessoes_usuarios(usuario_id);
+CREATE INDEX ix_sessoes_usuarios_expira_em ON sessoes_usuarios(expira_em);
+
 CREATE TABLE produtos (
     id              SERIAL PRIMARY KEY,
     sku             VARCHAR(80) NOT NULL UNIQUE,

@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.deps import require_write
-from app.core.planta import aplicar_filtro, planta_ativa
+from app.core.planta import aplicar_filtro, planta_ativa, planta_ativa_obrigatoria
 from app.database import get_db
 from app.models.core import Ativo, DispositivoImpressao, TemplateEtiqueta, Usuario
 from app.models.enums import Dominio
@@ -165,6 +165,7 @@ def preview(
     body: PreviewRequest,
     db: Session = Depends(get_db),
     _: Usuario = Depends(require_write),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ) -> dict:
     """Pré-visualização: devolve a geometria (para desenhar) e o PDF/etiqueta.
 
@@ -173,14 +174,7 @@ def preview(
     """
     ativo: Ativo | None = None
     if body.ativo_id is not None:
-        ativo = (
-            db.query(Ativo)
-            .options(selectinload(Ativo.ti), selectinload(Ativo.impressora))
-            .filter(Ativo.id == body.ativo_id, Ativo.deleted_at.is_(None))
-            .first()
-        )
-        if ativo is None:
-            raise HTTPException(404, "Ativo não encontrado")
+        ativo = _buscar_ativo_da_etiqueta(db, body.ativo_id, planta_id)
         _garantir_payload(db, ativo)
 
     if body.config is not None:
@@ -213,18 +207,12 @@ def preview_pdf(
     body: PreviewRequest,
     db: Session = Depends(get_db),
     _: Usuario = Depends(require_write),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ) -> Response:
     """Gera o PDF da etiqueta (para visualizar ou imprimir em outra impressora)."""
     dados = _dados_exemplo()
     if body.ativo_id is not None:
-        ativo = (
-            db.query(Ativo)
-            .options(selectinload(Ativo.ti), selectinload(Ativo.impressora))
-            .filter(Ativo.id == body.ativo_id, Ativo.deleted_at.is_(None))
-            .first()
-        )
-        if ativo is None:
-            raise HTTPException(404, "Ativo não encontrado")
+        ativo = _buscar_ativo_da_etiqueta(db, body.ativo_id, planta_id)
         _garantir_payload(db, ativo)
         dados = dados_do_ativo(ativo)
 
@@ -254,22 +242,32 @@ def preview_pdf(
     )
 
 
+def _ativos_para_etiquetas(db: Session, planta_id: int | None):
+    q = (
+        db.query(Ativo)
+        .options(selectinload(Ativo.ti), selectinload(Ativo.impressora))
+        .filter(Ativo.deleted_at.is_(None))
+    )
+    return aplicar_filtro(q, Ativo, planta_id)
+
+
+def _buscar_ativo_da_etiqueta(db: Session, ativo_id: int, planta_id: int | None) -> Ativo:
+    ativo = _ativos_para_etiquetas(db, planta_id).filter(Ativo.id == ativo_id).first()
+    if ativo is None:
+        raise HTTPException(404, "Ativo não encontrado")
+    return ativo
+
+
 @router.get("/etiqueta/{ativo_id}.pdf")
 def etiqueta_pdf(
     ativo_id: int,
     template_id: int | None = None,
     db: Session = Depends(get_db),
     _: Usuario = Depends(require_write),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ) -> Response:
     """PDF da etiqueta de um ativo — para imprimir manualmente em outra impressora."""
-    ativo = (
-        db.query(Ativo)
-        .options(selectinload(Ativo.ti), selectinload(Ativo.impressora))
-        .filter(Ativo.id == ativo_id, Ativo.deleted_at.is_(None))
-        .first()
-    )
-    if ativo is None:
-        raise HTTPException(404, "Ativo não encontrado")
+    ativo = _buscar_ativo_da_etiqueta(db, ativo_id, planta_id)
     _garantir_payload(db, ativo)
     template = db.get(TemplateEtiqueta, template_id) if template_id else obter_template_padrao(db)
     layout = montar_label(template, ativo)
@@ -290,25 +288,26 @@ def etiquetas_pdf(
     limite: int = 100,
     db: Session = Depends(get_db),
     _: Usuario = Depends(require_write),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ) -> Response:
     """PDF com várias etiquetas (uma por página) — impressão manual.
 
     Aceita `ids` (lista separada por vírgula, na ordem da tela) ou, sem eles,
     todos os ativos do inventário indicado em `dominio`.
     """
-    consulta = db.query(Ativo).options(selectinload(Ativo.ti), selectinload(Ativo.impressora))
+    consulta = _ativos_para_etiquetas(db, planta_id)
 
     if ids:
         lista_ids = [int(v) for v in ids.split(",") if v.strip().isdigit()]
         if not lista_ids:
             raise HTTPException(400, "Nenhum ativo válido informado.")
-        ativos = consulta.filter(Ativo.id.in_(lista_ids), Ativo.deleted_at.is_(None)).all()
+        ativos = consulta.filter(Ativo.id.in_(lista_ids)).all()
         # Mantém a ordem em que os ativos vieram da tela.
         por_id = {a.id: a for a in ativos}
         ativos = [por_id[i] for i in lista_ids if i in por_id]
     else:
         ativos = (
-            consulta.filter(Ativo.deleted_at.is_(None), Ativo.dominio == dominio)
+            consulta.filter(Ativo.dominio == dominio)
             .order_by(Ativo.patrimonio)
             .limit(max(1, min(limite, 500)))
             .all()
@@ -400,11 +399,9 @@ def _dados_exemplo() -> dict[str, str]:
 @router.post("", response_model=PrintResponse)
 def print_one(
     body: PrintRequest, request: Request, db: Session = Depends(get_db),
-    user: Usuario = Depends(require_write), planta_id: int | None = Depends(planta_ativa),
+    user: Usuario = Depends(require_write), planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ):
-    ativo = db.get(Ativo, body.ativo_id)
-    if ativo is None or ativo.deleted_at is not None:
-        raise HTTPException(404, "Ativo não encontrado")
+    ativo = _buscar_ativo_da_etiqueta(db, body.ativo_id, planta_id)
     dispositivo = _resolver_dispositivo(db, body.dispositivo_id, ativo.dominio, planta_id)
     template = _template_do_dispositivo(db, dispositivo)
     job = _print_ativo(db, ativo, body.formato, body.printer, body.copies, dispositivo, template)
@@ -417,10 +414,10 @@ def print_one(
 @router.post("/batch", response_model=PrintResponse)
 def print_batch(
     body: PrintBatchRequest, request: Request, db: Session = Depends(get_db),
-    user: Usuario = Depends(require_write), planta_id: int | None = Depends(planta_ativa),
+    user: Usuario = Depends(require_write), planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ):
     """Impressão em massa: uma etiqueta por ativo da seleção."""
-    ativos = db.query(Ativo).filter(Ativo.id.in_(body.ativo_ids), Ativo.deleted_at.is_(None)).all()
+    ativos = _ativos_para_etiquetas(db, planta_id).filter(Ativo.id.in_(body.ativo_ids)).all()
     if not ativos:
         raise HTTPException(404, "Nenhum ativo encontrado")
     dispositivo = _resolver_dispositivo(db, body.dispositivo_id, ativos[0].dominio, planta_id)

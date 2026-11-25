@@ -14,14 +14,25 @@ Por isso há dois níveis de verificação:
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 
+from app.core.security import create_access_token, hash_password
 from app.database import get_db
 from app.main import app
 from app.models.contrato import Contrato
-from app.models.core import Ativo, Categoria, Departamento, Localizacao, Planta
+from app.models.core import (
+    Ativo,
+    Categoria,
+    Departamento,
+    Localizacao,
+    Manutencao,
+    Movimentacao,
+    Planta,
+    Produto,
+    Usuario,
+)
 from app.models.enums import FormaAquisicao, TipoContrato
 
 FONTE = Path(__file__).resolve().parent.parent / "app" / "routers" / "graficos.py"
@@ -53,6 +64,108 @@ def _graficos(client, headers, **params):
     r = client.get(f"/api/v1/relatorios/graficos{('?' + q) if q else ''}", headers=headers)
     assert r.status_code == 200, r.text
     return r.json()
+
+
+def _operador(db, planta_id, *, inventarios=None):
+    usuario = Usuario(
+        nome="Operador", email="operador@relatorio.test", senha_hash=hash_password("teste123"),
+        papel="ti", ativo=True, planta_id=planta_id,
+        permissoes={"inventarios": inventarios} if inventarios is not None else {},
+    )
+    db.add(usuario)
+    db.commit()
+    token = create_access_token(usuario.id, "ti", usuario.email)
+    return {"Authorization": f"Bearer {token}"}
+
+
+class TestEscopoDosRelatorios:
+    def test_csv_e_pdf_usam_planta_e_inventario_autorizados(self, client, auth_headers, monkeypatch):
+        from app.routers import relatorios
+
+        db = _db(client)
+        a, b = _planta(db, "AAA"), _planta(db, "BBB")
+        validade = date.today() + timedelta(days=10)
+        local = _ativo(db, a.id, "ESCOPO-A", data_garantia=validade)
+        externo = _ativo(db, b.id, "ESCOPO-B", data_garantia=validade)
+        impressora = _ativo(db, a.id, "ESCOPO-IMP", dominio="impressora", data_garantia=validade)
+        headers = _operador(db, a.id, inventarios=["ti"])
+        for ativo in (local, externo, impressora):
+            db.add(Movimentacao(ativo_id=ativo.id, tipo="atribuicao", destino_usuario_id=1))
+            db.add(Manutencao(ativo_id=ativo.id))
+        db.commit()
+
+        for relatorio in ("inventario", "ativos-por-usuario", "movimentacoes", "manutencoes", "garantias"):
+            url = f"/api/v1/relatorios/{relatorio}"
+            csv_local = client.get(url, headers=headers)
+            assert csv_local.status_code == 200, csv_local.text
+            assert "ESCOPO-A" in csv_local.text
+            assert "ESCOPO-B" not in csv_local.text
+            assert "ESCOPO-IMP" not in csv_local.text
+            admin_b = {**auth_headers, "X-Planta-Id": str(b.id)}
+            csv_b = client.get(url, headers=admin_b)
+            assert csv_b.status_code == 200, csv_b.text
+            assert "ESCOPO-B" in csv_b.text
+            assert "ESCOPO-A" not in csv_b.text
+            assert "ESCOPO-B" in client.get(url, headers=auth_headers).text
+
+        gerador = relatorios.build_relatorio_pdf
+
+        def verificar_linhas(titulo, colunas, linhas, subtitulo):
+            assert [linha[0] for linha in linhas] == ["ESCOPO-A"]
+            return gerador(titulo, colunas, linhas, subtitulo)
+
+        monkeypatch.setattr(relatorios, "build_relatorio_pdf", verificar_linhas)
+        pdf = client.get("/api/v1/relatorios/inventario?formato=pdf", headers=headers)
+        assert pdf.status_code == 200
+        assert pdf.content.startswith(b"%PDF")
+        impressoras = client.get("/api/v1/relatorios/inventario?dominio=impressora", headers=headers)
+        assert impressoras.status_code == 403
+
+    def test_graficos_e_estoque_global_respeitam_escopo(self, client, auth_headers):
+        db = _db(client)
+        a, b = _planta(db, "AAA"), _planta(db, "BBB")
+        local = _ativo(db, a.id, "LOCAL")
+        externo = _ativo(db, b.id, "EXTERNO")
+        produto = Produto(nome="Consumível compartilhado", sku="GLOBAL", dominio="ti", estoque_minimo=2)
+        db.add(produto)
+        db.flush()
+        db.add_all([
+            Movimentacao(ativo_id=local.id, tipo="entrada"),
+            Movimentacao(ativo_id=externo.id, tipo="entrada"),
+            Movimentacao(produto_id=produto.id, tipo="entrada"),
+        ])
+        db.commit()
+        headers = _operador(db, a.id)
+
+        local = _graficos(client, headers)
+        consolidado = _graficos(client, auth_headers)
+        assert sum(item["valor"] for item in local["status"]) == 1
+        assert sum(item["entradas"] for item in local["movimentacoes_mes"]) == 1
+        assert sum(item["entradas"] for item in consolidado["movimentacoes_mes"]) == 3
+        resposta = client.get("/api/v1/relatorios/graficos", params={"planta_id": b.id}, headers=headers)
+        assert resposta.status_code == 403
+
+        estoque = "/api/v1/relatorios/consumiveis-minimo"
+        assert client.get(estoque, headers=headers).status_code == 403
+        assert "GLOBAL" in client.get(estoque, headers=auth_headers).text
+
+    def test_usuario_sem_planta_nao_recebe_relatorio(self, client):
+        headers = _operador(_db(client), None)
+        for caminho in ("inventario", "graficos", "consumiveis-minimo"):
+            assert client.get(f"/api/v1/relatorios/{caminho}", headers=headers).status_code == 400
+
+    def test_exportacao_de_etiquetas_respeita_a_planta(self, client):
+        db = _db(client)
+        a, b = _planta(db, "AAA"), _planta(db, "BBB")
+        local = _ativo(db, a.id, "LOCAL")
+        externo = _ativo(db, b.id, "EXTERNO")
+        headers = _operador(db, a.id)
+
+        assert client.get(f"/api/v1/print/etiqueta/{externo.id}.pdf", headers=headers).status_code == 404
+        assert client.get(f"/api/v1/print/etiqueta/{local.id}.pdf", headers=headers).status_code == 200
+        lote = client.get("/api/v1/print/etiquetas.pdf", params={"ids": f"{local.id},{externo.id}"}, headers=headers)
+        assert lote.status_code == 200
+        assert "LOCAL" in lote.headers["content-disposition"]
 
 
 class TestGuardaNaFonte:

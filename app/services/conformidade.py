@@ -228,7 +228,9 @@ def instalados_por_nome(
     return q.group_by(SoftwareInstalado.nome).all()
 
 
-def instalados_das_atribuicoes(db: Session) -> list[tuple[str, int]]:
+def instalados_das_atribuicoes(
+    db: Session, planta_id: int | None = None,
+) -> list[tuple[str, int]]:
     """Alternativa ao OCS: o que o operador registrou como em uso.
 
     ## Por que existe
@@ -244,7 +246,7 @@ def instalados_das_atribuicoes(db: Session) -> list[tuple[str, int]]:
     A chave é o **nome do software**, para o resultado ter a mesma forma do
     caminho do OCS e o resto do código não precisar saber qual dos dois rodou.
     """
-    linhas = (
+    consulta = (
         db.query(Software.nome, func.count(func.distinct(AtribuicaoLicenca.id)))
         .join(Licenca, Licenca.software_id == Software.id)
         .join(AtribuicaoLicenca, AtribuicaoLicenca.licenca_id == Licenca.id)
@@ -253,10 +255,10 @@ def instalados_das_atribuicoes(db: Session) -> list[tuple[str, int]]:
             Licenca.deleted_at.is_(None),
             AtribuicaoLicenca.deleted_at.is_(None),
         )
-        .group_by(Software.nome)
-        .all()
     )
-    return linhas
+    if planta_id is not None:
+        consulta = consulta.filter(Software.planta_id == planta_id)
+    return consulta.group_by(Software.nome).all()
 
 
 

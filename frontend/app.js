@@ -6,7 +6,7 @@
  * @module app
  */
 import { state, ROTULO_INVENTARIO } from "./js/state.js";
-import { api, replayOfflineQueue } from "./js/api.js";
+import { api, encerrarSessao, replayOfflineQueue } from "./js/api.js";
 import { Router } from "./js/router.js";
 import { ctx } from "./js/context.js";
 import { el, icon, toast, mostrarErro, dialog } from "./js/ui.js";
@@ -382,8 +382,8 @@ function toggleTheme() {
   ctx.rerender();
 }
 
-function logout() {
-  state.logout();
+async function logout() {
+  await encerrarSessao();
   location.hash = "#/";
   location.reload();
 }
@@ -769,6 +769,16 @@ function boot() {
 
   // Registro do service worker é feito em registrarServiceWorker() no final.
 
+  if (state.acaoRequerida === "trocar_senha") state.logout();
+  if (state.isAuthed && state.acaoRequerida === "cadastrar_mfa") {
+    const root = document.getElementById("app");
+    const view = el("div", { class: "login-card card elevated", id: "view" });
+    root.replaceChildren(el("div", { class: "login-wrap" }, view));
+    document.title = "Configurar verificação em duas etapas — Nexus";
+    renderSeguranca(view);
+    return;
+  }
+
   if (!state.isAuthed) {
     const root = document.getElementById("app");
     root.innerHTML = "";
@@ -803,7 +813,13 @@ function boot() {
   router.onChange = () => {};
 
   // Atualiza permissões a partir do servidor (podem ter mudado).
-  api.get("/auth/me").then((me) => state.setUser(me)).catch(() => {}).finally(() => {
+  api.get("/auth/me").then((me) => state.setUser(me)).catch((e) => {
+    if (e.status === 401 && !state.refresh) state.logout();
+  }).finally(() => {
+    if (!state.isAuthed) {
+      location.reload();
+      return;
+    }
     // Se o domínio salvo não for permitido, começa pela seleção.
     if (!state.podeInventario(state.dominio)) {
       router.go("selecao");

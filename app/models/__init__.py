@@ -59,6 +59,7 @@ from app.models.notificacao import (
     PreferenciaNotificacao,
     TemplateNotificacao,
 )
+from app.models.sessao import SessaoUsuario
 from app.models.software import (
     AtribuicaoLicenca,
     Licenca,
@@ -113,6 +114,7 @@ __all__ = [
     "Planta",
     "Produto",
     "ReporteErro",
+    "SessaoUsuario",
     "ResultadoItem",
     "StatusContagem",
     "Transferencia",

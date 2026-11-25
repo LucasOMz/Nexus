@@ -31,6 +31,7 @@ from app.schemas.common import (
     UsuarioOut,
     UsuarioUpdate,
 )
+from app.services import sessoes
 from app.services.audit_service import audit
 
 router = APIRouter(tags=["cadastros"])
@@ -378,9 +379,11 @@ def update_usuario(
     data = body.model_dump(exclude_unset=True)
     if "senha" in data:
         data["senha_hash"] = hash_password(data.pop("senha"))
+    if "senha_hash" in data or data.get("ativo") is False or data.get("email", obj.email) != obj.email:
+        sessoes.revogar_do_usuario(db, obj)
     for k, v in data.items():
         setattr(obj, k, v)
-    audit(db, user, "update", "usuario", obj.id, ip=_ip(request), diff={k: ("***" if k == "senha" else v) for k, v in data.items()})
+    audit(db, user, "update", "usuario", obj.id, ip=_ip(request), diff={k: ("***" if k == "senha_hash" else v) for k, v in data.items()})
     db.commit()
     db.refresh(obj)
     return obj
@@ -396,6 +399,7 @@ def delete_usuario(
     if obj.id == user.id:
         raise HTTPException(400, "Você não pode excluir a si mesmo")
     obj.deleted_at = datetime.now(timezone.utc)
+    sessoes.revogar_do_usuario(db, obj)
     audit(db, user, "delete", "usuario", obj.id, ip=_ip(request))
     db.commit()
 

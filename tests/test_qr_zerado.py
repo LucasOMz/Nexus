@@ -10,6 +10,12 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
+from app.core.security import create_access_token
+from app.models.core import Ativo, DispositivoImpressao, Planta, QRZerado, Usuario
+from tests.conftest import TestingSession
+
 
 def gerar(client, auth_headers, quantidade=3, dominio="ti"):
     r = client.post("/api/v1/zerados", json={"quantidade": quantidade, "dominio": dominio}, headers=auth_headers)
@@ -79,6 +85,111 @@ class TestGeracao:
         etiqueta_id = dados["itens"][0]["id"]
         assert client.delete(f"/api/v1/zerados/{etiqueta_id}", headers=auth_headers).status_code == 204
         assert client.get("/api/v1/zerados", headers=auth_headers).json()["total"] == 0
+
+
+@pytest.fixture
+def duas_plantas(client):
+    with TestingSession() as db:
+        a, b = Planta(nome="Unidade A", sigla="AAA"), Planta(nome="Unidade B", sigla="BBB")
+        db.add_all([a, b])
+        db.flush()
+        operador_a = Usuario(nome="TI A", email="ti-a@teste.local", senha_hash="irrelevante", papel="ti", planta_id=a.id)
+        operador_b = Usuario(nome="TI B", email="ti-b@teste.local", senha_hash="irrelevante", papel="ti", planta_id=b.id)
+        db.add_all([operador_a, operador_b])
+        db.commit()
+        headers_a = {"Authorization": f"Bearer {create_access_token(operador_a.id, 'ti', operador_a.email)}"}
+        headers_b = {"Authorization": f"Bearer {create_access_token(operador_b.id, 'ti', operador_b.email)}"}
+        yield db, a, b, headers_a, headers_b
+
+
+class TestEscopoPorPlanta:
+    def test_lotes_qr_e_pdf_da_planta_ativa(self, client, auth_headers, duas_plantas):
+        db, a, b, headers_a, headers_b = duas_plantas
+        admin_b = {**auth_headers, "X-Planta-Id": str(b.id)}
+        assert client.post("/api/v1/zerados", json={"quantidade": 1}, headers=auth_headers).status_code == 400
+        lote_a = gerar(client, headers_a, 1)
+        lote_b = gerar(client, admin_b, 1)
+        item_a = lote_a["itens"][0]
+        item_b = lote_b["itens"][0]
+        assert db.get(QRZerado, item_a["id"]).planta_id == a.id
+        assert db.get(QRZerado, item_b["id"]).planta_id == b.id
+        lista_a = client.get("/api/v1/zerados", headers=headers_a).json()
+        assert lista_a["total"] == lista_a["livres"] == 1
+        assert [item["id"] for item in lista_a["itens"]] == [item_a["id"]]
+        assert [item["lote"] for item in client.get("/api/v1/zerados/lotes", headers=admin_b).json()] == [lote_b["lote"]]
+
+        assert client.get(f"/api/v1/zerados/{item_b['id']}/qrcode", headers=headers_a).status_code == 404
+        assert client.get(f"/api/v1/zerados/{item_b['id']}/qrcode", headers=headers_b).status_code == 200
+        assert client.delete(f"/api/v1/zerados/{item_b['id']}", headers=headers_a).status_code == 404
+        pdf = "/api/v1/zerados/etiquetas.pdf"
+        assert client.get(pdf, params={"lote": lote_b["lote"]}, headers=headers_a).status_code == 404
+        assert client.get(pdf, params={"ids": item_b["id"]}, headers=headers_a).status_code == 404
+        assert client.get(pdf, params={"lote": lote_b["lote"]}, headers=admin_b).content.startswith(b"%PDF")
+        assert client.get(pdf, params={"lote": lote_b["lote"]}, headers=auth_headers).content.startswith(b"%PDF")
+
+    def test_impressao_da_planta_usa_apenas_dispositivo_autorizado(self, client, duas_plantas, monkeypatch):
+        from app.routers import zerados
+
+        db, a, b, headers_a, headers_b = duas_plantas
+        impressora_a = DispositivoImpressao(nome="Impressora A", tipo="compartilhamento", planta_id=a.id)
+        impressora_b = DispositivoImpressao(nome="Impressora B", tipo="compartilhamento", planta_id=b.id)
+        db.add_all([impressora_a, impressora_b])
+        db.commit()
+        lote = gerar(client, headers_b, 1)
+        chamadas = []
+
+        def imprimir_local(**kwargs):
+            chamadas.append(kwargs["dispositivo"].id)
+            return {"status": "ok"}
+
+        monkeypatch.setattr(zerados, "send_print_job", imprimir_local)
+        path = "/api/v1/zerados/imprimir"
+        corpo = {"lote": lote["lote"], "dispositivo_id": impressora_b.id}
+        assert client.post(path, json=corpo, headers=headers_a).status_code == 404
+        assert client.post(path, json={**corpo, "dispositivo_id": impressora_a.id}, headers=headers_b).status_code == 400
+        assert client.post(path, json=corpo, headers=headers_b).status_code == 200
+        assert chamadas == [impressora_b.id]
+
+    def test_leitura_e_vinculo_seguem_a_planta_atual(self, client, auth_headers, duas_plantas):
+        db, a, b, headers_a, headers_b = duas_plantas
+        lote = gerar(client, headers_b, 1)
+        item = lote["itens"][0]
+        leitor = "/api/v1/scanner/buscar"
+        assert client.post(leitor, json={"codigo": item["payload"]}, headers=headers_a).status_code == 404
+        assert client.post(leitor, json={"codigo": item["codigo"]}, headers=headers_a).status_code == 404
+        assert client.post(leitor, json={"codigo": item["codigo"]}, headers=headers_b).json()["tipo"] == "zerado"
+
+        corpo = corpo_ativo("ATIVO-ETIQUETA", item["payload"])
+        assert client.post("/api/v1/ativos", json=corpo, headers=headers_a).status_code == 409
+        criado = client.post("/api/v1/ativos", json=corpo, headers=auth_headers)
+        assert criado.status_code == 201, criado.text
+        assert criado.json()["planta_id"] == b.id
+
+        # Representa uma etiqueta de antes do preenchimento da coluna planta_id.
+        etiqueta = db.get(QRZerado, item["id"])
+        etiqueta.planta_id = None
+        db.commit()
+        lido = client.post(leitor, json={"codigo": item["payload"]}, headers=headers_b)
+        assert lido.status_code == 200, lido.text
+        assert lido.json()["ativo"]["id"] == criado.json()["id"]
+        assert client.post(leitor, json={"codigo": str(criado.json()["id"])}, headers=headers_a).status_code == 404
+        assert client.post(leitor, json={"codigo": item["payload"]}, headers=headers_a).status_code == 404
+
+        ativo = db.get(Ativo, criado.json()["id"])
+        ativo.planta_id = a.id
+        db.commit()
+        assert client.post(leitor, json={"codigo": item["payload"]}, headers=headers_a).status_code == 200
+        assert client.post(leitor, json={"codigo": item["payload"]}, headers=headers_b).status_code == 404
+
+    def test_etiqueta_livre_legada_fica_na_visao_consolidada(self, client, auth_headers, duas_plantas):
+        db, _, _, headers_a, _ = duas_plantas
+        lote = gerar(client, headers_a, 1)
+        etiqueta = db.get(QRZerado, lote["itens"][0]["id"])
+        etiqueta.planta_id = None
+        db.commit()
+        params = {"lote": lote["lote"]}
+        assert client.get("/api/v1/zerados/etiquetas.pdf", params=params, headers=headers_a).status_code == 404
+        assert client.get("/api/v1/zerados/etiquetas.pdf", params=params, headers=auth_headers).status_code == 200
 
 
 class TestLeituraEVinculo:

@@ -16,7 +16,12 @@ from urllib.parse import urlencode
 
 import pytest
 
-from app.core.security import hash_password
+from app.core.security import (
+    create_access_token,
+    create_refresh_token,
+    hash_password,
+    verify_password,
+)
 from app.models.core import Usuario
 from app.models.enums import PapelUsuario
 
@@ -136,6 +141,116 @@ class TestEtapasDoLogin:
         u = criar_usuario(senha_temporaria=True)
         r = entrar(client, u.email)
         assert r.json()["access_token"]
+
+
+def test_primeiro_acesso_so_libera_sessao_depois_do_mfa(client, monkeypatch):
+    from app.config import settings
+    from app.services import plataforma
+
+    u = criar_usuario(senha_temporaria=True, mfa_obrigatorio=False)
+    monkeypatch.setattr(settings, "env", "production")
+    inicial = entrar(client, u.email).json()
+    h_inicial = {"Authorization": f"Bearer {inicial['access_token']}"}
+    assert inicial["acao_requerida"] == "trocar_senha"
+    assert inicial["refresh_token"] is None
+    assert client.get("/api/v1/auth/me", headers=h_inicial).status_code == 401
+    assert client.post("/api/v1/mfa/iniciar", json={}, headers=h_inicial).status_code == 401
+
+    token_legado = create_access_token(u.id, "admin", u.email)
+    refresh_legado = create_refresh_token(u.id, "admin", u.email)
+    assert client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token_legado}"}).status_code == 401
+    assert client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_legado}).status_code == 401
+
+    nova = "minha-senha-2026"
+    assert trocar(client, inicial["access_token"], "SenhaInicial123", nova).status_code == 200
+    proxima = entrar(client, u.email, nova).json()
+    assert proxima["acao_requerida"] == "cadastrar_mfa"
+    assert proxima["refresh_token"] is None
+    h_mfa = {"Authorization": f"Bearer {proxima['access_token']}"}
+    assert client.get("/api/v1/auth/me", headers=h_mfa).status_code == 401
+    assert trocar(client, proxima["access_token"], nova, "outra-senha-2026").status_code == 401
+    assert client.post("/api/v1/auth/refresh", json={"refresh_token": proxima["access_token"]}).status_code == 401
+
+    cadastro = client.post("/api/v1/mfa/iniciar", json={}, headers=h_mfa).json()
+    codigo = plataforma.gerar_codigo(cadastro["segredo"])
+    ativacao = client.post("/api/v1/mfa/confirmar", json={"codigo": codigo}, headers=h_mfa)
+    assert ativacao.status_code == 200, ativacao.text
+    sessao = ativacao.json()["sessao"]
+    h_final = {"Authorization": f"Bearer {sessao['access_token']}"}
+    assert client.get("/api/v1/auth/me", headers=h_final).status_code == 200
+    assert client.get("/api/v1/auth/me", headers=h_mfa).status_code == 401
+    assert client.post("/api/v1/auth/refresh", json={"refresh_token": sessao["refresh_token"]}).status_code == 200
+    assert entrar(client, u.email, nova).status_code == 401
+    assert client.post("/api/v1/auth/login", data={
+        "username": u.email, "password": nova, "codigo": codigo,
+    }).status_code == 200
+    troca_mfa = client.post("/api/v1/mfa/desativar", json={"codigo": codigo}, headers=h_final)
+    assert troca_mfa.status_code == 200
+    reconfiguracao = troca_mfa.json()["sessao"]
+    assert reconfiguracao["acao_requerida"] == "cadastrar_mfa"
+    assert reconfiguracao["refresh_token"] is None
+    assert client.get("/api/v1/auth/me", headers=h_final).status_code == 401
+    h_reconfiguracao = {"Authorization": f"Bearer {reconfiguracao['access_token']}"}
+    assert client.post("/api/v1/mfa/iniciar", json={}, headers=h_reconfiguracao).status_code == 200
+
+
+def test_bootstrap_gera_senha_exclusiva_para_admin(monkeypatch, tmp_path):
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from app import database
+    from app.config import settings
+    from app.core import cripto
+    from app.models.core import QRZerado
+    from app.services import plataforma
+
+    motor = create_engine("sqlite://")
+    sessao = sessionmaker(bind=motor)
+    monkeypatch.setattr(database, "engine", motor)
+    monkeypatch.setattr(database, "SessionLocal", sessao)
+    monkeypatch.setattr(settings, "seed_admin_email", "bootstrap@teste.com")
+    monkeypatch.setattr(settings, "seed_admin_password", "")
+    monkeypatch.setenv("NEXUS_SEGREDOS_DIR", str(tmp_path))
+    try:
+        database.init_db()
+        senha = (tmp_path / "seed_admin_password.txt").read_text(encoding="utf-8")
+        assert 16 <= len(senha) <= 72
+        segredo_legado = plataforma.gerar_segredo()
+        with sessao() as db:
+            admin = db.query(Usuario).filter_by(email=settings.seed_admin_email).one()
+            assert verify_password(senha, admin.senha_hash)
+            assert admin.senha_temporaria and admin.mfa_obrigatorio
+            admin.mfa_segredo = segredo_legado
+            db.add(QRZerado(codigo="LEGADO", payload="payload-legado", lote="lote-legado"))
+            db.commit()
+        database.init_db()
+        assert (tmp_path / "seed_admin_password.txt").read_text(encoding="utf-8") == senha
+        with sessao() as db:
+            admin = db.query(Usuario).filter_by(email=settings.seed_admin_email).one()
+            assert cripto.esta_cifrado(admin.mfa_segredo)
+            assert cripto.decifrar(admin.mfa_segredo) == segredo_legado
+            assert db.query(QRZerado).one().planta_id is None
+    finally:
+        motor.dispose()
+
+
+@pytest.mark.parametrize("senha", ["admin123", "troque-esta-senha"])
+def test_bootstrap_recusa_senha_padrao(senha):
+    from app.core.segredos_instalacao import senha_admin_inicial
+
+    with pytest.raises(ValueError, match="senha exclusiva"):
+        senha_admin_inicial(senha)
+
+
+@pytest.mark.parametrize("senha", ["admin123", "troque-esta-senha"])
+def test_admin_em_producao_nao_entra_com_senha_padrao(client, monkeypatch, senha):
+    from app.config import settings
+
+    usuario = criar_usuario(senha=senha)
+    monkeypatch.setattr(settings, "env", "production")
+    resposta = entrar(client, usuario.email, senha)
+    assert resposta.status_code == 401
+    assert resposta.json()["detail"] == "Usuário ou senha inválidos"
 
 
 class TestTrocaDeSenha:

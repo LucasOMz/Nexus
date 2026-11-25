@@ -449,15 +449,35 @@ def restaurar_backup(nome: str) -> dict[str, Any]:
     arquivo, _meta = _resolver(nome)
 
     # 3) Troca.
-    from app.database import recriar_engine
+    from sqlalchemy import URL, create_engine
+    from sqlalchemy.exc import SQLAlchemyError
 
+    from app.database import engine as _engine
+    from app.database import recriar_engine
+    from app.services import sessoes
+
+    avisos: list[str] = []
     if arquivo.suffix == ".db":
-        destino = caminho_sqlite() or ""
-        recriar_engine()  # fecha as conexões antes de trocar o arquivo
+        destino = Path(caminho_sqlite() or "")
         try:
-            shutil.copy2(arquivo, destino)
+            with tempfile.TemporaryDirectory(dir=destino.parent) as pasta:
+                copia = Path(pasta) / destino.name
+                shutil.copy2(arquivo, copia)
+                motor_temporario = create_engine(URL.create("sqlite", database=str(copia)))
+                try:
+                    sessoes.limpar_em_banco_restaurado(motor_temporario)
+                finally:
+                    motor_temporario.dispose()
+                recriar_engine()
+                os.replace(copia, destino)
         except OSError as exc:
             return {"ok": False, "mensagem": f"Falha ao substituir o banco: {exc}", "backup_seguranca": seguranca}
+        except SQLAlchemyError:
+            return {
+                "ok": False,
+                "mensagem": "Não foi possível limpar as sessões na cópia do banco restaurado.",
+                "backup_seguranca": seguranca,
+            }
     else:
         env = _pg_env()
         banco = env.get("PGDATABASE", "estoque")
@@ -466,7 +486,6 @@ def restaurar_backup(nome: str) -> dict[str, Any]:
 
         # Avisos que não impedem a restauração mas precisam ser mostrados —
         # ex.: dump feito por cliente mais novo que o servidor.
-        avisos: list[str] = []
         try:
             subprocess.run(["dropdb", "--if-exists", banco_tmp], capture_output=True, text=True, timeout=120, env=env)
             subprocess.run(["createdb", banco_tmp], capture_output=True, text=True, timeout=120, env=env)
@@ -488,6 +507,17 @@ def restaurar_backup(nome: str) -> dict[str, Any]:
                     "pg_restore ignorou parâmetros de sessão desconhecidos. "
                     "O cliente que gerou o dump é mais novo que este servidor."
                 )
+            motor_temporario = create_engine(_engine.url.set(database=banco_tmp))
+            try:
+                sessoes.limpar_em_banco_restaurado(motor_temporario)
+            except SQLAlchemyError:
+                return {
+                    "ok": False,
+                    "mensagem": "Não foi possível limpar as sessões no banco temporário.",
+                    "backup_seguranca": seguranca,
+                }
+            finally:
+                motor_temporario.dispose()
             # --- fecha o pool, mas NÃO reconecta ----------------------
             #
             # ## A diferença que custou dados invisíveis
@@ -503,8 +533,6 @@ def restaurar_backup(nome: str) -> dict[str, Any]:
             #
             # Por isso: aqui só se FECHA. A reconexão acontece depois da
             # troca, quando o nome novo já é o certo.
-            from app.database import engine as _engine
-
             _engine.dispose()
 
             # --- derruba as conexões antes de renomear --------------------
@@ -578,12 +606,6 @@ def restaurar_backup(nome: str) -> dict[str, Any]:
             recriar_engine()
         except (OSError, subprocess.SubprocessError) as exc:
             return {"ok": False, "mensagem": f"Falha na restauração: {exc}", "backup_seguranca": seguranca}
-
-    # 4) Derruba todas as sessões: os tokens emitidos antes deixam de valer.
-    from app.core.security import invalidar_tokens
-
-    invalidar_tokens()
-    recriar_engine()
 
     # --- o banco restaurado tem algo VISÍVEL? -------------------------
     #

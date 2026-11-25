@@ -144,8 +144,10 @@ docker compose up -d
 ```
 
 O sistema sobe, cria a base e publica a API na porta definida em `API_PORT`
-(padrão **4545**). No primeiro acesso, use o usuário administrador e **troque
-a senha** — o sistema pede.
+(padrão **4545**). Use o e-mail definido em `SEED_ADMIN_EMAIL`. Se
+`SEED_ADMIN_PASSWORD` estiver vazia, a senha temporária é gerada e guardada
+em `/app/segredos/seed_admin_password.txt`, no volume de segredos. No primeiro
+acesso, troque a senha e cadastre a verificação em duas etapas.
 
 > Os antigos `run.bat`, `run.ps1`, `run.sh` e `run-servidor.ps1` foram
 > **removidos**. Existiam para rodar a aplicação direto no Windows, e

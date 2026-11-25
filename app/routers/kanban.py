@@ -19,12 +19,12 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.deps import get_current_user, require_admin, require_module
-from app.core.planta import aplicar_filtro, exigir_planta, planta_ativa
+from app.core.planta import aplicar_filtro, exigir_planta, planta_ativa, planta_ativa_obrigatoria
 from app.database import get_db
 from app.models.core import Usuario
 from app.models.kanban import Atividade, AtividadeItem, AtividadeResponsavel, Bucket
@@ -700,7 +700,6 @@ def definir_responsaveis(
 
 @router.get("/exportar")
 def exportar(
-    request: Request,
     formato: str = Query(default="pdf", pattern="^(pdf|csv)$"),
     de: date | None = Query(default=None),
     ate: date | None = Query(default=None),
@@ -709,7 +708,7 @@ def exportar(
     por: str = Query(default="prazo", pattern="^(prazo|conclusao)$"),
     campos: str = Query(default=""),
     db: Session = Depends(get_db),
-    user: Usuario = Depends(get_current_user),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ) -> Response:
     """Exporta as atividades em PDF ou CSV.
 
@@ -728,11 +727,7 @@ def exportar(
     Sai apenas o que o usuário enxerga: o quadro da planta ativa. Sem isso,
     um usuário de filial exportaria o trabalho das outras.
     """
-    from app.core.planta import resolver_planta_id
-    from app.models.kanban import Bucket
     from app.services import kanban_export
-
-    planta_id = resolver_planta_id(user, request)
 
     consulta = (
         db.query(Atividade)
@@ -780,7 +775,8 @@ def exportar(
             f"a {ate.strftime('%d/%m/%Y') if ate else '...'}"
         )
     if bucket_id is not None:
-        b = db.get(Bucket, bucket_id)
+        q = db.query(Bucket).filter(Bucket.id == bucket_id, Bucket.deleted_at.is_(None))
+        b = aplicar_filtro(q, Bucket, planta_id).first()
         partes.append("coluna " + (b.nome if b else str(bucket_id)))
     if status != "todas":
         partes.append(

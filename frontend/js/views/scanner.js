@@ -9,7 +9,7 @@ import { ctx } from "../context.js";
 import { el, icon, toast, dialog, statusBadge, fmtDate, mostrarErro } from "../ui.js";
 import { openForm as openFormManutencao } from "./manutencoes.js";
 import { loadLookups, optionsOf } from "../lookups.js";
-import { mensagemErro, erroDeResposta } from "../erros.js";
+import { mensagemErro } from "../erros.js";
 import { abrirNovoAtivoComQR } from "./ativos.js";
 
 /** Mantida para compatibilidade com o roteador (nada a desligar). */
@@ -24,12 +24,10 @@ let resumoEtiquetasEl = null;
 
 /** Baixa o PDF do lote (tamanho exato, para imprimir em qualquer impressora). */
 async function baixarPdfLote(lote, quantidade) {
-  const url = `/api/v1/zerados/etiquetas.pdf?lote=${encodeURIComponent(lote)}&quantidade=${Math.max(1, quantidade || 1)}`;
-  const res = await fetch(url, { headers: { Authorization: "Bearer " + state.access } });
-  if (!res.ok) throw erroDeResposta(res.status, await res.json().catch(() => null));
-  const blob = await res.blob();
+  const parametros = new URLSearchParams({ lote });
+  if (quantidade > 0) parametros.set("quantidade", quantidade);
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
+  a.href = await api.blob(`/zerados/etiquetas.pdf?${parametros}`);
   a.download = `etiquetas_branco_${lote}.pdf`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
@@ -110,7 +108,7 @@ async function atualizarResumoEtiquetas() {
           btnImprimir,
           el("button", {
             class: "btn outlined small",
-            onclick: () => baixarPdfLote(l.lote, l.livres || l.total).catch((e) => mostrarErro(e, "gerar o PDF")),
+            onclick: () => baixarPdfLote(l.lote, l.livres).catch((e) => mostrarErro(e, "gerar o PDF")),
             html: icon("download", 16) + " PDF",
           }),
         ),

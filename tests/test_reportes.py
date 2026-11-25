@@ -10,6 +10,7 @@ import io
 import pytest
 
 from app.core.rate_limit import login_limiter, scan_limiter
+from tests.conftest import marcar_primeiro_acesso_concluido
 
 # PNG 1x1 válido, para o upload do print.
 PNG_1PX = bytes.fromhex(
@@ -33,6 +34,7 @@ def _leitor(client, auth_headers, email="rep@teste.com"):
         json={"nome": "Reporter", "email": email, "papel": "leitor", "senha": "senha123"},
         headers=auth_headers,
     )
+    marcar_primeiro_acesso_concluido(email)
     login = client.post("/api/v1/auth/login", data={"username": email, "password": "senha123"})
     return {"Authorization": f"Bearer {login.json()['access_token']}"}
 

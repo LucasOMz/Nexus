@@ -8,7 +8,6 @@ import { state } from "../state.js";
 import { ctx } from "../context.js";
 import { el, icon, toast, dialog, confirmSheet, skeleton, fmtMoney, fmtMoneyCurto, statusBadge, mostrarErro } from "../ui.js";
 import { donut, barsH, barsV, linhaMensal } from "../charts.js";
-import { mensagemErro } from "../erros.js";
 
 /**
  * Filtros dos gráficos.
@@ -37,23 +36,21 @@ const filtrosGraficos = {
 function filtrosAtivos() {
   const q = {};
   for (const [k, v] of Object.entries(filtrosGraficos)) {
+    if (k === "planta_id" && (!state.isAdmin || state.plantaAtiva)) continue;
     if (v) q[k] = v;
   }
   return q;
 }
 
 
-async function download(url, filename) {
+async function download(path, filename) {
   try {
-    const res = await fetch(url, { headers: { Authorization: "Bearer " + state.access } });
-    if (!res.ok) { const j = await res.json().catch(() => ({})); toast(mensagemErro(j.detail, res.status)); return; }
-    const blob = await res.blob();
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
+    a.href = await api.blob(path);
     a.download = filename;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-  } catch { toast("Sem conexão"); }
+  } catch (e) { mostrarErro(e, "baixar o relatório"); }
 }
 
 // ---------------------------------------------------------------------------
@@ -160,8 +157,9 @@ function blocoParque(p) {
  * o relatório inteiro. Filtro é acessório; os gráficos é que são o conteúdo.
  */
 async function barraFiltros(container) {
+  const podeFiltrarPlanta = state.isAdmin && !state.plantaAtiva;
   const [plantas, contratos] = await Promise.all([
-    api.get("/plantas").catch(() => []),
+    podeFiltrarPlanta ? api.get("/plantas").catch(() => []) : [],
     api.get("/contratos").catch(() => []),
   ]);
 
@@ -208,7 +206,7 @@ async function barraFiltros(container) {
     },
   }, "Limpar filtros");
 
-  const ativos = Object.values(filtrosGraficos).filter(Boolean).length;
+  const ativos = Object.keys(filtrosAtivos()).length;
 
   return el("div", { class: "card", style: "margin-bottom:14px" },
     el("div", { class: "row between wrap", style: "gap:10px;align-items:center" },
@@ -224,7 +222,7 @@ async function barraFiltros(container) {
     el("div", { class: "grade", style: "margin-top:12px" },
       campo("Adquirido de", inicio),
       campo("Adquirido até", fim),
-      campo("Planta", planta),
+      podeFiltrarPlanta ? campo("Planta", planta) : null,
       campo("Aquisição", forma),
       campo("Contrato", contrato),
     ),
@@ -494,7 +492,7 @@ export async function renderRelatorios(root) {
   ctx.setTitle("Relatórios");
   ctx.setFab(null);
 
-  const base = "/api/v1/relatorios";
+  const base = "/relatorios";
   const invStatus = el("select", { class: "chip" }, el("option", { value: "" }, "Todos os status"), ...["estoque", "em_uso", "manutencao", "descartado", "emprestado", "reservado"].map((s) => el("option", { value: s }, s.replace(/_/g, " "))));
   const garDias = el("input", { type: "number", min: 1, max: 365, value: 90, class: "chip", style: "width:96px" });
   const movDe = el("input", { type: "date", class: "chip" });
@@ -526,15 +524,24 @@ export async function renderRelatorios(root) {
     reportCard("Ativos por usuário", "Ativos atribuídos a colaboradores.", { buildUrl: (f) => `${base}/ativos-por-usuario?formato=${f}` }),
     reportCard("Movimentações", "Histórico por período.", {
       inputs: [el("div", { class: "row" }, movDe, movAte)],
-      buildUrl: (f) => `${base}/movimentacoes?formato=${f}&data_inicio=${movDe.value ? new Date(movDe.value).toISOString() : ""}&data_fim=${movAte.value ? new Date(movAte.value + "T23:59:59").toISOString() : ""}`,
+      buildUrl: (f) => {
+        const parametros = new URLSearchParams({ formato: f });
+        if (movDe.value) parametros.set("data_inicio", new Date(movDe.value + "T00:00:00").toISOString());
+        if (movAte.value) parametros.set("data_fim", new Date(movAte.value + "T23:59:59").toISOString());
+        return `${base}/movimentacoes?${parametros}`;
+      },
     }),
     reportCard("Manutenções", "Histórico completo de manutenções.", { buildUrl: (f) => `${base}/manutencoes?formato=${f}` }),
     reportCard("Garantias", "Garantias a vencer no período.", {
       inputs: [el("div", { class: "row" }, el("span", { class: "muted" }, "Dias:"), garDias)],
       buildUrl: (f) => `${base}/garantias?dias=${garDias.value || 90}&formato=${f}`,
     }),
-    reportCard("Consumíveis abaixo do mínimo", "Itens com saldo abaixo do estoque mínimo.", { buildUrl: (f) => `${base}/consumiveis-minimo?dominio=${state.dominio}&formato=${f}` }),
   ];
+  if (state.isAdmin && !state.plantaAtiva) {
+    cards.push(reportCard("Consumíveis abaixo do mínimo", "Itens com saldo abaixo do estoque mínimo.", {
+      buildUrl: (f) => `${base}/consumiveis-minimo?dominio=${state.dominio}&formato=${f}`,
+    }));
+  }
   root.append(el("div", { class: "charts-grid" }, ...cards));
 
   root.append(el("button", { class: "btn tonal mt", onclick: () => saveFilter(), html: icon("add", 18) + " Salvar filtro atual" }));

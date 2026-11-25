@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.deps import get_current_user, require_module
 from app.core.permissoes import pode_acao
+from app.core.planta import aplicar_filtro, planta_ativa_obrigatoria
 from app.core.rate_limit import scan_limiter
 from app.database import get_db
 from app.models.core import Ativo, Usuario
@@ -100,11 +101,12 @@ def buscar(
     request: Request,
     db: Session = Depends(get_db),
     user: Usuario = Depends(get_current_user),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ) -> LeituraOut:
     """Resolve o que foi lido: ativo (QR, id, patrimônio, série) ou etiqueta em branco.
 
-    O ID dentro do payload sempre resolve o ativo (etiquetas já impressas
-    continuam válidas). A assinatura é conferida em separado e, quando
+    O ID dentro do payload resolve o ativo no escopo do usuário.
+    A assinatura é conferida em separado e, quando
     `QR_EXIGIR_ASSINATURA=false`, não bloqueia a leitura — mas fica auditada.
     """
     if not scan_limiter.is_allowed(str(user.id)):
@@ -112,6 +114,11 @@ def buscar(
 
     codigo = body.codigo.strip()
     ip = request.client.host if request.client else None
+    ativos = aplicar_filtro(
+        db.query(Ativo).options(selectinload(Ativo.impressora)).filter(Ativo.deleted_at.is_(None)),
+        Ativo,
+        planta_id,
+    )
 
     # ------------------------------------------------------------------
     # 0) Etiqueta EM BRANCO (gerada sem ativo).
@@ -124,7 +131,7 @@ def buscar(
     codigo_zerado = extrair_codigo_zerado(codigo)
     etiqueta = None
     if codigo_zerado:
-        etiqueta = zerado_service.localizar(db, codigo_zerado)
+        etiqueta = zerado_service.localizar(db, codigo_zerado, planta_id)
         if etiqueta is None:
             raise HTTPException(
                 404,
@@ -133,7 +140,7 @@ def buscar(
             )
     elif ":" not in codigo:
         # Não parece um payload nosso: pode ser o código curto da etiqueta.
-        etiqueta = zerado_service.localizar(db, codigo)
+        etiqueta = zerado_service.localizar(db, codigo, planta_id)
 
     if etiqueta is not None:
         # Sem payload não há assinatura a conferir — o código curto só existe
@@ -149,17 +156,11 @@ def buscar(
 
         # Já vinculada: comporta-se como qualquer etiqueta de ativo.
         if etiqueta.ativo_id:
-            ativo = (
-                db.query(Ativo)
-                .options(selectinload(Ativo.impressora))
-                .filter(Ativo.id == etiqueta.ativo_id, Ativo.deleted_at.is_(None))
-                .first()
-            )
+            ativo = ativos.filter(Ativo.id == etiqueta.ativo_id).first()
             if ativo is None:
                 raise HTTPException(
                     404,
-                    f"A etiqueta {etiqueta.codigo} aponta para um ativo que foi excluído. "
-                    "Gere uma nova etiqueta para este equipamento.",
+                    "Nenhum ativo encontrado para a etiqueta lida.",
                 )
             audit(db, user, "scan", "ativo", ativo.id, ip=ip,
                   diff={"origem": "qr_zerado", "assinatura_valida": assinatura_ok})
@@ -189,21 +190,19 @@ def buscar(
     # 1) Payload QR (ID extraído do próprio código).
     ativo_id, assinatura_ok = resolver_codigo(codigo)
     if ativo_id is not None:
-        ativo = db.get(Ativo, ativo_id)
+        ativo = ativos.filter(Ativo.id == ativo_id).first()
         assinatura_valida = assinatura_ok
         origem = "qr" if assinatura_ok else "qr_sem_assinatura"
     # 2) Id numérico.
     elif codigo.isdigit():
-        ativo = db.get(Ativo, int(codigo))
+        ativo = ativos.filter(Ativo.id == int(codigo)).first()
         origem = "id"
     # 3) Patrimônio / nº de série.
     else:
         ativo = (
-            db.query(Ativo)
-            .options(selectinload(Ativo.impressora))
+            ativos
             .outerjoin(AtivoTI, AtivoTI.ativo_id == Ativo.id)
             .filter(
-                Ativo.deleted_at.is_(None),
                 or_(
                     Ativo.patrimonio.ilike(codigo),
                     Ativo.numero_serie.ilike(codigo),
@@ -217,7 +216,7 @@ def buscar(
         )
         origem = "patrimonio"
 
-    if ativo is None or ativo.deleted_at is not None:
+    if ativo is None:
         raise HTTPException(404, f"Nenhum ativo encontrado para o código lido: {codigo[:60]}")
 
     audit(db, user, "scan", "ativo", ativo.id, ip=ip,

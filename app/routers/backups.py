@@ -96,6 +96,7 @@ def restaurar_backup(
     if not verify_password(body.senha, user.senha_hash):
         raise HTTPException(403, "Senha incorreta.")
 
+    db.close()
     try:
         resultado = backup_service.restaurar_backup(body.arquivo)
     except FileNotFoundError as exc:

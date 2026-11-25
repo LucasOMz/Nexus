@@ -84,3 +84,45 @@ class TestResumoDoBackup:
 
         resumo = backup_service._resumo_sqlite(str(arquivo))
         assert resumo.get("usuarios") == 1, resumo
+
+
+def test_restauracao_sqlite_remove_sessoes_da_copia(tmp_path, monkeypatch):
+    from datetime import timedelta
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session, sessionmaker
+
+    from app import database
+    from app.config import settings
+    from app.models import Base, SessaoUsuario, Usuario
+    from app.services import sessoes
+
+    arquivo = tmp_path / "backup.db"
+    destino = tmp_path / "destino.db"
+    origem = create_engine(f"sqlite:///{arquivo}")
+    motor = create_engine(f"sqlite:///{destino}")
+    monkeypatch.setattr(database, "engine", motor)
+    monkeypatch.setattr(database, "SessionLocal", sessionmaker(bind=motor))
+    monkeypatch.setattr(settings, "database_url", f"sqlite:///{destino}")
+    monkeypatch.setattr(backup_service, "criar_backup", lambda motivo: {"motivo": motivo})
+    monkeypatch.setattr(backup_service, "validar_backup", lambda nome: {"ok": True})
+    monkeypatch.setattr(backup_service, "_resolver", lambda nome: (arquivo, {}))
+    try:
+        Base.metadata.create_all(origem)
+        with Session(origem) as db:
+            usuario = Usuario(nome="Operador restaurado", email="restaurado@teste.com", senha_hash="teste")
+            db.add(usuario)
+            db.flush()
+            sessoes.registrar(db, "sessao-antiga", usuario.id, timedelta(minutes=5), "refresh-antigo")
+            db.commit()
+        origem.dispose()
+
+        assert backup_service.restaurar_backup(arquivo.name)["ok"]
+        with database.SessionLocal() as db:
+            assert db.query(Usuario).one().email == "restaurado@teste.com"
+            assert db.query(SessaoUsuario).count() == 0
+        with Session(origem) as db:
+            assert db.query(SessaoUsuario).count() == 1
+    finally:
+        database.engine.dispose()
+        origem.dispose()

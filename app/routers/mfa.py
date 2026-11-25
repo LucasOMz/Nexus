@@ -1,17 +1,4 @@
-"""MFA (segunda etapa) — cadastro, confirmação e verificação.
-
-TOTP em biblioteca padrão (`app.services.plataforma`), então **não há
-dependência nova**. O segredo só é gravado **depois** que a pessoa confirma um
-código: guardar antes deixaria um segredo pendente que ninguém usa, e um
-cadastro pela metade é pior que nenhum.
-
-## Por que só administrador
-
-Exigir MFA de todo mundo num sistema de fábrica empurraria as pessoas a
-anotarem o código num papel. O ganho de segurança ficaria na aparência. Quem
-mexe em permissão, apaga ativo e restaura backup é quem precisa da segunda
-etapa.
-"""
+"""Cadastro, confirmação e verificação do MFA da conta."""
 from __future__ import annotations
 
 import hashlib
@@ -21,11 +8,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from app.core.deps import get_current_user
+from app.core import cripto
+from app.core.deps import get_current_user, usuario_para_configurar_mfa
+from app.core.primeiro_acesso import mfa_exigido
 from app.database import get_db
 from app.models.core import Usuario
 from app.models.enums import PapelUsuario
-from app.services import plataforma
+from app.routers.auth import emitir_credencial_de_etapa, emitir_sessao
+from app.services import plataforma, sessoes
 from app.services.audit_service import audit
 
 router = APIRouter(prefix="/mfa", tags=["mfa"])
@@ -51,7 +41,7 @@ def exigir_admin(user: Usuario) -> None:
 @router.get("/qrcode")
 def qrcode_imagem(
     db: Session = Depends(get_db),
-    user: Usuario = Depends(get_current_user),
+    user: Usuario = Depends(usuario_para_configurar_mfa),
 ):
     """QR Code do endereço `otpauth://` — o que o aplicativo lê.
 
@@ -64,10 +54,13 @@ def qrcode_imagem(
     import qrcode
     from fastapi.responses import Response
 
-    if not user.mfa_segredo:
+    if user.mfa_ativo:
+        raise HTTPException(404, "QR Code disponível durante o cadastro da segunda etapa.")
+    segredo = cripto.decifrar(user.mfa_segredo)
+    if not segredo:
         raise HTTPException(400, "Inicie a configuração antes de pedir o QR Code.")
 
-    uri = plataforma.uri_otpauth(user.mfa_segredo, user.email)
+    uri = plataforma.uri_otpauth(segredo, user.email)
     imagem = qrcode.make(uri)
     buffer = _io.BytesIO()
     imagem.save(buffer, format="PNG")
@@ -84,32 +77,34 @@ def qrcode_imagem(
 @router.get("/situacao", response_model=dict)
 def situacao(
     db: Session = Depends(get_db),
-    user: Usuario = Depends(get_current_user),
+    user: Usuario = Depends(usuario_para_configurar_mfa),
 ):
-    papel = getattr(user.papel, "value", user.papel)
     return {
         "ativo": bool(user.mfa_ativo),
         "ativado_em": user.mfa_ativado_em,
         "codigos_restantes": len(user.mfa_recuperacao or []),
-        "exigido": papel == PapelUsuario.ADMIN.value,
+        "exigido": mfa_exigido(user),
     }
 
 
 @router.post("/iniciar", response_model=dict)
 def iniciar(
     db: Session = Depends(get_db),
-    user: Usuario = Depends(get_current_user),
+    user: Usuario = Depends(usuario_para_configurar_mfa),
 ):
     """Gera um segredo novo e o endereço do QR Code.
 
     **Não ativa nada.** O segredo fica pendente até alguém provar que o
     aplicativo está configurado, confirmando um código.
     """
+    db.refresh(user, with_for_update=True)
+    if user.senha_temporaria:
+        raise HTTPException(401, "Troque a senha antes de configurar a segunda etapa.")
     if user.mfa_ativo:
         raise HTTPException(400, "A segunda etapa já está ativa. Desative antes de trocar o aparelho.")
 
     segredo = plataforma.gerar_segredo()
-    user.mfa_segredo = segredo
+    user.mfa_segredo = cripto.cifrar(segredo)
     db.commit()
 
     return {
@@ -127,15 +122,19 @@ def confirmar(
     body: CodigoIn,
     request: Request,
     db: Session = Depends(get_db),
-    user: Usuario = Depends(get_current_user),
+    user: Usuario = Depends(usuario_para_configurar_mfa),
 ):
     """Confirma o código e **então** ativa. Devolve os códigos de recuperação."""
+    db.refresh(user, with_for_update=True)
+    if user.senha_temporaria:
+        raise HTTPException(401, "Troque a senha antes de configurar a segunda etapa.")
     if user.mfa_ativo:
         raise HTTPException(400, "A segunda etapa já está ativa.")
-    if not user.mfa_segredo:
+    segredo = cripto.decifrar(user.mfa_segredo)
+    if not segredo:
         raise HTTPException(400, "Inicie a configuração antes de confirmar.")
 
-    if not plataforma.conferir_codigo(user.mfa_segredo, body.codigo):
+    if not plataforma.conferir_codigo(segredo, body.codigo):
         raise HTTPException(
             400,
             "Código incorreto. Confira o relógio do celular e tente o código atual.",
@@ -148,10 +147,13 @@ def confirmar(
 
     audit(db, user, "ativar_mfa", "usuario", user.id,
           ip=request.client.host if request.client else None)
+    sessoes.revogar_do_usuario(db, user)
+    sessao = emitir_sessao(db, user)
     db.commit()
 
     return {
         "ativo": True,
+        "sessao": sessao,
         "codigos_recuperacao": codigos,
         "aviso": (
             "Guarde estes códigos. Cada um serve UMA vez e é a única forma de "
@@ -172,21 +174,28 @@ def desativar(
     Exigir o código (e não só a sessão) evita que alguém que encontrou uma
     máquina destravada desligue a proteção da conta.
     """
+    db.refresh(user, with_for_update=True)
     if not user.mfa_ativo:
         raise HTTPException(400, "A segunda etapa não está ativa.")
 
-    if not plataforma.conferir_codigo(user.mfa_segredo or "", body.codigo):
-        raise HTTPException(400, "Código incorreto.")
+    if not plataforma.conferir_codigo(cripto.decifrar(user.mfa_segredo) or "", body.codigo):
+        if not consumir_recuperacao(db, user, body.codigo):
+            raise HTTPException(400, "Código incorreto.")
 
     user.mfa_ativo = False
     user.mfa_segredo = None
     user.mfa_recuperacao = None
     user.mfa_ativado_em = None
+    sessoes.revogar_do_usuario(db, user)
 
     audit(db, user, "desativar_mfa", "usuario", user.id,
           ip=request.client.host if request.client else None)
+    sessao = (
+        emitir_credencial_de_etapa(db, user, "cadastrar_mfa") if mfa_exigido(user)
+        else emitir_sessao(db, user)
+    )
     db.commit()
-    return {"ativo": False}
+    return {"ativo": False, "sessao": sessao}
 
 
 @router.post("/verificar", response_model=dict)
@@ -199,7 +208,7 @@ def verificar(
     if not user.mfa_ativo:
         return {"valido": True, "mfa": False}
     return {
-        "valido": plataforma.conferir_codigo(user.mfa_segredo or "", body.codigo),
+        "valido": plataforma.conferir_codigo(cripto.decifrar(user.mfa_segredo) or "", body.codigo),
         "mfa": True,
     }
 
@@ -207,14 +216,15 @@ def verificar(
 def consumir_recuperacao(db: Session, user: Usuario, codigo: str) -> bool:
     """Usa um código de recuperação — e o queima.
 
-    Uso único de verdade: o hash sai da lista ao ser usado. Guardar a lista e
-    só marcar como usado permitiria reuso em caso de falha no meio.
+    Bloqueia a linha até o chamador confirmar a transação.
     """
-    restantes = list(user.mfa_recuperacao or [])
+    armazenados = (
+        db.query(Usuario.mfa_recuperacao).filter(Usuario.id == user.id).with_for_update(of=Usuario).scalar()
+    )
+    restantes = list(armazenados or [])
     alvo = _hash_recuperacao(codigo)
     if alvo not in restantes:
         return False
     restantes.remove(alvo)
     user.mfa_recuperacao = restantes
-    db.commit()
     return True

@@ -11,9 +11,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from app.core.deps import get_current_user, require_module, require_write
+from app.core.deps import require_module, require_write
+from app.core.planta import aplicar_filtro, planta_ativa_obrigatoria
 from app.database import get_db
-from app.models.core import Ativo, QRZerado, TemplateEtiqueta, Usuario
+from app.models.core import Ativo, Planta, QRZerado, TemplateEtiqueta, Usuario
 from app.models.enums import Dominio
 from app.services import zerado_service
 from app.services.audit_service import audit
@@ -67,10 +68,11 @@ class ImprimirRequest(BaseModel):
     dispositivo_id: int | None = None
 
 
-def _serializar(db: Session, etiqueta: QRZerado) -> ZeradoOut:
+def _serializar(db: Session, etiqueta: QRZerado, planta_id: int | None) -> ZeradoOut:
     patrimonio = None
     if etiqueta.ativo_id:
-        ativo = db.get(Ativo, etiqueta.ativo_id)
+        q = db.query(Ativo).filter(Ativo.id == etiqueta.ativo_id)
+        ativo = aplicar_filtro(q, Ativo, planta_id).first()
         patrimonio = ativo.patrimonio if ativo is not None else None
     return ZeradoOut(
         id=etiqueta.id,
@@ -86,17 +88,18 @@ def _serializar(db: Session, etiqueta: QRZerado) -> ZeradoOut:
     )
 
 
-def _selecionar(db: Session, body: ImprimirRequest) -> list[QRZerado]:
+def _selecionar(db: Session, body: ImprimirRequest, planta_id: int | None) -> list[QRZerado]:
     """Resolve QUAIS etiquetas imprimir, na ordem de geração."""
+    consulta = zerado_service.aplicar_escopo(db.query(QRZerado), planta_id)
     if body.ids:
         itens = (
-            db.query(QRZerado)
+            consulta
             .filter(QRZerado.id.in_(body.ids))
             .order_by(QRZerado.id)
             .all()
         )
     elif body.lote:
-        consulta = db.query(QRZerado).filter(QRZerado.lote == body.lote)
+        consulta = consulta.filter(QRZerado.lote == body.lote)
         if body.quantidade:
             consulta = consulta.filter(QRZerado.status == zerado_service.STATUS_LIVRE)
         itens = consulta.order_by(QRZerado.id).limit(body.quantidade or zerado_service.LIMITE_POR_LEVA).all()
@@ -130,17 +133,26 @@ def _template(db: Session, template_id: int | None) -> TemplateEtiqueta | None:
 # ---------------------------------------------------------------------------
 @router.post("", status_code=201)
 def gerar(
-    body: GerarRequest, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_write)
+    body: GerarRequest, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_write),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ) -> dict:
     """Gera um lote de etiquetas em branco (sem ativo vinculado)."""
+    plantas_ativas = db.query(Planta.id).filter(Planta.ativa.is_(True), Planta.deleted_at.is_(None))
+    if planta_id is not None:
+        plantas_ativas = plantas_ativas.filter(Planta.id == planta_id)
+    plantas = plantas_ativas.limit(2).all()
+    if len(plantas) != 1:
+        raise HTTPException(400, "Selecione uma planta ativa para gerar etiquetas em branco.")
+    planta_id = plantas[0].id
+    dominio = body.dominio.value if body.dominio else None
     try:
-        lote, itens = zerado_service.gerar(db, body.quantidade, body.dominio.value if body.dominio else None)
+        lote, itens = zerado_service.gerar(db, body.quantidade, dominio, planta_id)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
 
     audit(db, user, "gerar_zerados", "qr_zerado", None,
           ip=request.client.host if request.client else None,
-          diff={"lote": lote, "quantidade": len(itens), "dominio": body.dominio.value if body.dominio else None})
+          diff={"lote": lote, "quantidade": len(itens), "dominio": dominio, "planta_id": planta_id})
     db.commit()
     return {
         "lote": lote,
@@ -156,10 +168,11 @@ def listar(
     pagina: int = Query(default=1, ge=1),
     por_pagina: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ) -> dict:
     """Lista as etiquetas em branco, com filtro por status/lote."""
-    consulta = db.query(QRZerado)
+    escopo = zerado_service.aplicar_escopo(db.query(QRZerado), planta_id)
+    consulta = escopo
     if status:
         consulta = consulta.filter(QRZerado.status == status)
     if lote:
@@ -172,26 +185,29 @@ def listar(
         .limit(por_pagina)
         .all()
     )
-    livres = db.query(QRZerado).filter(QRZerado.status == zerado_service.STATUS_LIVRE).count()
+    livres = escopo.filter(QRZerado.status == zerado_service.STATUS_LIVRE).count()
     return {
         "total": total,
         "livres": livres,
-        "itens": [_serializar(db, i) for i in itens],
+        "itens": [_serializar(db, i, planta_id) for i in itens],
     }
 
 
 @router.get("/lotes", response_model=list[LoteZeradoOut])
-def listar_lotes(db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)) -> list[dict]:
+def listar_lotes(
+    db: Session = Depends(get_db), planta_id: int | None = Depends(planta_ativa_obrigatoria),
+) -> list[dict]:
     """Resumo por leva (quantas livres e quantas já usadas)."""
-    return zerado_service.resumo_por_lote(db)
+    return zerado_service.resumo_por_lote(db, planta_id)
 
 
 @router.get("/{zerado_id}/qrcode")
 def qrcode_da_etiqueta(
-    zerado_id: int, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)
+    zerado_id: int, db: Session = Depends(get_db), planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ) -> dict:
     """Imagem do QR de uma etiqueta (para exibir na tela)."""
-    etiqueta = db.get(QRZerado, zerado_id)
+    consulta = zerado_service.aplicar_escopo(db.query(QRZerado), planta_id)
+    etiqueta = consulta.filter(QRZerado.id == zerado_id).first()
     if etiqueta is None:
         raise HTTPException(404, "Etiqueta em branco não encontrada")
     return {"codigo": etiqueta.codigo, "qr_data_url": qr_png_data_url(etiqueta.payload, box_size=4)}
@@ -205,10 +221,11 @@ def etiquetas_pdf(
     template_id: int | None = None,
     db: Session = Depends(get_db),
     _: Usuario = Depends(require_write),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ) -> Response:
     """PDF das etiquetas em branco, no tamanho exato — para imprimir em qualquer impressora."""
     lista_ids = [int(v) for v in ids.split(",") if v.strip().isdigit()] if ids else None
-    itens = _selecionar(db, ImprimirRequest(lote=lote, ids=lista_ids, quantidade=quantidade))
+    itens = _selecionar(db, ImprimirRequest(lote=lote, ids=lista_ids, quantidade=quantidade), planta_id)
     template = _template(db, template_id)
 
     layouts = [_layout(db, etiqueta, template) for etiqueta in itens]
@@ -224,7 +241,8 @@ def etiquetas_pdf(
 
 @router.post("/imprimir")
 def imprimir(
-    body: ImprimirRequest, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_write)
+    body: ImprimirRequest, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_write),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ) -> dict:
     """Imprime as etiquetas em branco na impressora cadastrada.
 
@@ -233,11 +251,12 @@ def imprimir(
     """
     from app.routers.print import _resolver_dispositivo, _template_do_dispositivo
 
-    dispositivo = _resolver_dispositivo(db, body.dispositivo_id, Dominio.TI)
+    itens = _selecionar(db, body, planta_id)
+    dominio = Dominio(itens[0].dominio) if itens[0].dominio else Dominio.TI
+    dispositivo = _resolver_dispositivo(db, body.dispositivo_id, dominio, planta_id)
     if dispositivo is None:
         raise HTTPException(400, "Cadastre um dispositivo de impressão antes de imprimir.")
 
-    itens = _selecionar(db, body)
     template = _template_do_dispositivo(db, dispositivo)
     layouts = [_layout(db, etiqueta, template) for etiqueta in itens]
 
@@ -270,10 +289,12 @@ def imprimir(
 
 @router.delete("/{zerado_id}", status_code=204)
 def excluir(
-    zerado_id: int, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_write)
+    zerado_id: int, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_write),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ):
     """Remove uma etiqueta em branco que ainda não foi usada."""
-    etiqueta = db.get(QRZerado, zerado_id)
+    consulta = zerado_service.aplicar_escopo(db.query(QRZerado), planta_id)
+    etiqueta = consulta.filter(QRZerado.id == zerado_id).with_for_update(of=QRZerado).first()
     if etiqueta is None:
         raise HTTPException(404, "Etiqueta em branco não encontrada")
     if etiqueta.status == zerado_service.STATUS_USADO:

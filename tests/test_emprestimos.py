@@ -11,6 +11,7 @@ from datetime import date, timedelta
 import pytest
 
 from app.core.rate_limit import login_limiter, scan_limiter
+from tests.conftest import marcar_primeiro_acesso_concluido
 
 
 @pytest.fixture(autouse=True)
@@ -252,6 +253,7 @@ class TestCalendarioPorPlanta:
             headers=auth_headers,
         )
         assert r.status_code == 201, r.text
+        marcar_primeiro_acesso_concluido(email)
         login = client.post("/api/v1/auth/login", data={"username": email, "password": "senha123"})
         return {"Authorization": f"Bearer {login.json()['access_token']}"}
 
@@ -328,6 +330,7 @@ class TestCalendarioPorPlanta:
             headers=auth_headers,
         )
         assert r.status_code == 201
+        marcar_primeiro_acesso_concluido("sem.planta@teste.com")
         login = client.post("/api/v1/auth/login", data={"username": "sem.planta@teste.com", "password": "senha123"})
         h = {"Authorization": f"Bearer {login.json()['access_token']}"}
 

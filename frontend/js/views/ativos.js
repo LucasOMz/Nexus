@@ -9,7 +9,6 @@ import { ctx } from "../context.js";
 import { el, icon, toast, dialog, confirmSheet, emptyState, skeleton, fmtDate, fmtMoney, statusBadge, mostrarErro } from "../ui.js";
 import { abrirDetalhes, abrirSoftwares } from "./ativo_detalhes.js";
 import { loadLookups, optionsOf } from "../lookups.js";
-import { erroDeResposta } from "../erros.js";
 import { renderLabelSVG, renderAvisos } from "../label.js";
 import { importarAtivos } from "./importar_ativos.js";
 
@@ -322,12 +321,8 @@ async function acaoQR(ativo) {
 /** Baixa o PDF das etiquetas dos ativos indicados (impressão manual). */
 async function baixarEtiquetasPdf(ativos) {
   const ids = ativos.map((a) => a.id).join(",");
-  const url = `/api/v1/print/etiquetas.pdf?ids=${encodeURIComponent(ids)}`;
-  const res = await fetch(url, { headers: { Authorization: "Bearer " + state.access } });
-  if (!res.ok) throw erroDeResposta(res.status, await res.json().catch(() => null));
-  const blob = await res.blob();
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
+  a.href = await api.blob(`/print/etiquetas.pdf?ids=${encodeURIComponent(ids)}`);
   a.download = ativos.length === 1 ? `etiqueta_${ativos[0].patrimonio}.pdf` : "etiquetas.pdf";
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);

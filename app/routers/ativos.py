@@ -20,7 +20,7 @@ from app.core.deps import (
 )
 from app.core.pagination import paginate
 from app.core.permissoes import permissoes_efetivas, pode_inventario
-from app.core.planta import aplicar_filtro, exigir_planta, planta_ativa
+from app.core.planta import aplicar_filtro, exigir_planta, planta_ativa_obrigatoria
 from app.database import get_db
 from app.models.core import Ativo, Movimentacao, Termo, Usuario
 from app.models.enums import Dominio, FormaAquisicao, StatusAtivo, TipoMov
@@ -58,21 +58,16 @@ def _ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
 
-def _get_ativo(db: Session, ativo_id: int, planta_id: int | None = None) -> Ativo:
+def _get_ativo(db: Session, ativo_id: int, planta_id: int | None) -> Ativo:
     """Busca o ativo respeitando a planta ativa (isolamento entre localidades).
 
     `planta_id=None` significa visão consolidada (administrador): encontra
     qualquer ativo.
     """
-    obj = db.get(Ativo, ativo_id)
-    if obj is None or obj.deleted_at is not None:
+    q = db.query(Ativo).filter(Ativo.id == ativo_id, Ativo.deleted_at.is_(None))
+    obj = aplicar_filtro(q, Ativo, planta_id).first()
+    if obj is None:
         raise HTTPException(404, "Ativo não encontrado")
-    if planta_id is not None and obj.planta_id != planta_id:
-        raise HTTPException(
-            404,
-            "Este ativo pertence a outra planta. "
-            "Troque a planta ativa no topo da tela para acessá-lo.",
-        )
     return obj
 
 
@@ -117,7 +112,7 @@ def list_ativos(
     sort: str | None = Query(default=None),
     db: Session = Depends(get_db),
     user: Usuario = Depends(get_current_user),
-    planta_id: int | None = Depends(planta_ativa),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ):
     # Respeita os inventários que o usuário pode acessar.
     if dominio is not None and not pode_inventario(user, dominio.value):
@@ -182,6 +177,7 @@ def stats_compat(
     dominio: Dominio = Query(default=Dominio.TI),
     db: Session = Depends(get_db),
     user: Usuario = Depends(get_current_user),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ) -> dict:
     """Alias antigo de `/dashboard/stats`.
 
@@ -189,7 +185,7 @@ def stats_compat(
     cache do service worker — assim o dashboard não quebra enquanto o cache
     é atualizado. Não usar em código novo.
     """
-    return dashboard_stats(dominio=dominio, db=db, user=user)
+    return dashboard_stats(dominio=dominio, db=db, user=user, planta_id=planta_id)
 
 
 # ---------------------------------------------------------------------------
@@ -200,7 +196,7 @@ def get_ativo(
     ativo_id: int,
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
-    planta_id: int | None = Depends(planta_ativa),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ):
     q = db.query(Ativo).filter(Ativo.id == ativo_id, Ativo.deleted_at.is_(None))
     q = aplicar_filtro(q, Ativo, planta_id)
@@ -217,7 +213,7 @@ def create_ativo(
     request: Request,
     db: Session = Depends(get_db),
     user: Usuario = Depends(require_write),
-    planta_id: int | None = Depends(planta_ativa),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ):
     # O identificador é o NÚMERO DE SÉRIE. O patrimônio continua aceito, mas
     # deixou de ser obrigatório e de definir unicidade: dois ativos sem
@@ -258,8 +254,17 @@ def create_ativo(
     # Por segurança só aceitamos payload de ETIQUETA EM BRANCO vindo do cliente.
     # Um payload TIATIVO arbitrário não é gravado (a leitura resolve pelo ID de
     # dentro do QR, mas gravar lixo atrapalharia a reimpressão da etiqueta).
-    if data.get("qr_payload") and not eh_payload_zerado(data["qr_payload"]):
-        data.pop("qr_payload", None)
+    etiqueta = None
+    if body.qr_payload:
+        if eh_payload_zerado(body.qr_payload):
+            etiqueta = zerado_service.localizar(db, body.qr_payload, planta_id, bloquear=True)
+            if etiqueta is None or etiqueta.payload != body.qr_payload:
+                raise HTTPException(409, "Etiqueta em branco não encontrada neste escopo.")
+            if etiqueta.ativo_id is not None or etiqueta.status != zerado_service.STATUS_LIVRE:
+                raise HTTPException(409, "Esta etiqueta em branco já está vinculada a um ativo.")
+            planta_id = etiqueta.planta_id or planta_id
+        else:
+            data.pop("qr_payload", None)
 
     ativo = Ativo(**data)
     # A planta vem de quem está criando: usuário comum grava na planta dele;
@@ -271,12 +276,8 @@ def create_ativo(
 
     # Cadastro a partir de uma ETIQUETA EM BRANCO: o ativo nasce com o payload
     # lido e a etiqueta fica vinculada a ele (leitura futura acha o ativo).
-    if body.qr_payload and eh_payload_zerado(body.qr_payload):
-        try:
-            zerado_service.vincular(db, body.qr_payload, ativo)
-        except ValueError as exc:
-            db.rollback()
-            raise HTTPException(409, str(exc))
+    if etiqueta is not None:
+        zerado_service.vincular(etiqueta, ativo)
 
     audit(db, user, "create", "ativo", ativo.id, ip=_ip(request), diff=data)
     db.commit()
@@ -287,7 +288,7 @@ def create_ativo(
 @router.put("/{ativo_id}", response_model=AtivoOut)
 def update_ativo(
     ativo_id: int, body: AtivoUpdate, request: Request, db: Session = Depends(get_db),
-    user: Usuario = Depends(require_write), planta_id: int | None = Depends(planta_ativa),
+    user: Usuario = Depends(require_write), planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ):
     ativo = _get_ativo(db, ativo_id, planta_id)
 
@@ -336,9 +337,10 @@ def update_ativo(
 
 @router.delete("/{ativo_id}", status_code=204)
 def delete_ativo(
-    ativo_id: int, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_delete)
+    ativo_id: int, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_delete),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ):
-    ativo = _get_ativo(db, ativo_id)
+    ativo = _get_ativo(db, ativo_id, planta_id)
     ativo.deleted_at = datetime.now(timezone.utc)
     audit(db, user, "delete", "ativo", ativo.id, ip=_ip(request))
     db.commit()
@@ -349,9 +351,10 @@ def delete_ativo(
 # ---------------------------------------------------------------------------
 @router.patch("/{ativo_id}/status", response_model=AtivoOut)
 def change_status(
-    ativo_id: int, body: StatusChange, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_write)
+    ativo_id: int, body: StatusChange, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_write),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ):
-    ativo = _get_ativo(db, ativo_id)
+    ativo = _get_ativo(db, ativo_id, planta_id)
     old = ativo.status.value
     ativo.status = body.status
     # Emprestar tem fluxo próprio (exige chamado e data de devolução), então
@@ -398,9 +401,10 @@ def registrar_emprestimo(
     request: Request,
     db: Session = Depends(get_db),
     user: Usuario = Depends(require_write),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ):
     """Registra a saída do ativo por empréstimo, com chamado e devolução."""
-    ativo = _get_ativo(db, ativo_id)
+    ativo = _get_ativo(db, ativo_id, planta_id)
     if ativo.status == StatusAtivo.DESCARTADO:
         raise HTTPException(400, "Ativo descartado não pode ser emprestado")
     if ativo.status == StatusAtivo.EMPRESTADO:
@@ -450,10 +454,11 @@ def registrar_emprestimo(
 
 @router.post("/{ativo_id}/devolucao", response_model=AtivoOut)
 def registrar_devolucao(
-    ativo_id: int, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_write)
+    ativo_id: int, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_write),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ):
     """Devolve o ativo: encerra o empréstimo e libera para uso."""
-    ativo = _get_ativo(db, ativo_id)
+    ativo = _get_ativo(db, ativo_id, planta_id)
     if ativo.status != StatusAtivo.EMPRESTADO:
         raise HTTPException(400, "Este ativo não está emprestado.")
 
@@ -482,9 +487,10 @@ def registrar_devolucao(
 
 @router.post("/{ativo_id}/atribuir", response_model=AtivoOut)
 def atribuir(
-    ativo_id: int, body: AtribuirRequest, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_write)
+    ativo_id: int, body: AtribuirRequest, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_write),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ):
-    ativo = _get_ativo(db, ativo_id)
+    ativo = _get_ativo(db, ativo_id, planta_id)
     if ativo.status == StatusAtivo.DESCARTADO:
         raise HTTPException(400, "Ativo descartado não pode ser atribuído")
     colaborador = db.get(Usuario, body.usuario_id)
@@ -534,12 +540,20 @@ def atribuir(
 
 
 @router.get("/{ativo_id}/termos")
-def list_termos(ativo_id: int, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
+def list_termos(
+    ativo_id: int, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
+):
+    _get_ativo(db, ativo_id, planta_id)
     return db.query(Termo).filter(Termo.ativo_id == ativo_id, Termo.deleted_at.is_(None)).order_by(Termo.data_assinatura.desc()).all()
 
 
 @router.get("/{ativo_id}/termos/{termo_id}/pdf")
-def download_termo(ativo_id: int, termo_id: int, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
+def download_termo(
+    ativo_id: int, termo_id: int, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
+):
+    _get_ativo(db, ativo_id, planta_id)
     termo = db.query(Termo).filter(Termo.id == termo_id, Termo.ativo_id == ativo_id, Termo.deleted_at.is_(None)).first()
     if termo is None or not termo.pdf_path or not os.path.exists(termo.pdf_path):
         raise HTTPException(404, "Termo não encontrado")
@@ -551,9 +565,10 @@ def download_termo(ativo_id: int, termo_id: int, db: Session = Depends(get_db), 
 # ---------------------------------------------------------------------------
 @router.post("/{ativo_id}/leituras", response_model=LeituraContadorOut, status_code=201)
 def create_leitura(
-    ativo_id: int, body: LeituraContadorCreate, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_write)
+    ativo_id: int, body: LeituraContadorCreate, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_write),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ):
-    ativo = _get_ativo(db, ativo_id)
+    ativo = _get_ativo(db, ativo_id, planta_id)
     if ativo.dominio != Dominio.IMPRESSORA:
         raise HTTPException(400, "Leitura de contador disponível apenas para impressoras")
     leitura = register_leitura(db, ativo, body.contador, body.observacoes)
@@ -564,7 +579,11 @@ def create_leitura(
 
 
 @router.get("/{ativo_id}/leituras", response_model=list[LeituraContadorOut])
-def list_leituras(ativo_id: int, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
+def list_leituras(
+    ativo_id: int, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
+):
+    _get_ativo(db, ativo_id, planta_id)
     return (
         db.query(LeituraContador)
         .filter(LeituraContador.ativo_id == ativo_id, LeituraContador.deleted_at.is_(None))
@@ -574,7 +593,11 @@ def list_leituras(ativo_id: int, db: Session = Depends(get_db), _: Usuario = Dep
 
 
 @router.get("/{ativo_id}/suprimentos", response_model=list[SuprimentoOut])
-def list_suprimentos(ativo_id: int, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
+def list_suprimentos(
+    ativo_id: int, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
+):
+    _get_ativo(db, ativo_id, planta_id)
     return (
         db.query(SuprimentoImpressora)
         .filter(SuprimentoImpressora.ativo_id == ativo_id, SuprimentoImpressora.deleted_at.is_(None))
@@ -585,9 +608,10 @@ def list_suprimentos(ativo_id: int, db: Session = Depends(get_db), _: Usuario = 
 
 @router.post("/{ativo_id}/suprimentos", response_model=SuprimentoOut, status_code=201)
 def create_suprimento(
-    ativo_id: int, body: SuprimentoCreate, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_write)
+    ativo_id: int, body: SuprimentoCreate, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_write),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ):
-    ativo = _get_ativo(db, ativo_id)
+    ativo = _get_ativo(db, ativo_id, planta_id)
     if ativo.dominio != Dominio.IMPRESSORA:
         raise HTTPException(400, "Suprimentos disponíveis apenas para impressoras")
     obj = SuprimentoImpressora(ativo_id=ativo.id, **body.model_dump())
@@ -601,11 +625,13 @@ def create_suprimento(
 
 @router.delete("/suprimentos/{suprimento_id}", status_code=204)
 def delete_suprimento(
-    suprimento_id: int, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_delete)
+    suprimento_id: int, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_delete),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ):
     obj = db.get(SuprimentoImpressora, suprimento_id)
     if obj is None or obj.deleted_at is not None:
         raise HTTPException(404, "Suprimento não encontrado")
+    _get_ativo(db, obj.ativo_id, planta_id)
     obj.deleted_at = datetime.now(timezone.utc)
     audit(db, user, "delete", "suprimento", obj.id, ip=_ip(request))
     db.commit()
@@ -644,7 +670,7 @@ def excluir_lote(
     request: Request,
     db: Session = Depends(get_db),
     user: Usuario = Depends(require_admin),
-    planta_id: int | None = Depends(planta_ativa),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ) -> dict:
     """Exclui vários ativos de uma vez.
 

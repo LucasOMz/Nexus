@@ -253,6 +253,19 @@ def _analisar(bind) -> None:  # noqa: ANN001
         conn.execute(text("ANALYZE"))
 
 
+def _ampliar_coluna_do_segredo_mfa(bind) -> None:
+    """Permite armazenar Fernet nos bancos PostgreSQL com o esquema antigo."""
+    from sqlalchemy import Text, inspect, text
+
+    if bind.dialect.name != "postgresql":
+        return
+    colunas = inspect(bind).get_columns("usuarios")
+    segredo = next(coluna for coluna in colunas if coluna["name"] == "mfa_segredo")
+    if not isinstance(segredo["type"], Text):
+        with bind.begin() as conexao:
+            conexao.execute(text("ALTER TABLE usuarios ALTER COLUMN mfa_segredo TYPE TEXT"))
+
+
 def init_db() -> None:
     """Cria/atualiza o schema e garante o usuário administrador inicial.
 
@@ -269,6 +282,7 @@ def init_db() -> None:
     novas = _adicionar_colunas_faltantes(engine)
     if novas:
         logging.getLogger("app").info("Colunas adicionadas automaticamente: %s", ", ".join(novas))
+    _ampliar_coluna_do_segredo_mfa(engine)
 
     # Relaxa colunas que o modelo passou a aceitar vazias. Precisa vir
     # antes de qualquer escrita: sem isso, a primeira gravacao sem o
@@ -304,10 +318,17 @@ def init_db() -> None:
             logging.getLogger("app").warning("ANALYZE falhou: %s", exc)
 
     # Seed do usuário administrador inicial.
-    from app.core.security import hash_password
-    from app.models.core import Ativo, DispositivoImpressao, Planta, QRZerado, Usuario
+    from app.core import cripto
+    from app.core.security import hash_password, verify_password
+    from app.core.segredos_instalacao import SENHAS_ADMIN_PADRAO_ANTIGAS, senha_admin_inicial
+    from app.models.core import Ativo, DispositivoImpressao, Planta, Usuario
+    from app.services import sessoes
 
     with SessionLocal() as db:
+        for usuario in db.query(Usuario).filter(Usuario.mfa_segredo.isnot(None)).yield_per(200):
+            if not cripto.esta_cifrado(usuario.mfa_segredo):
+                usuario.mfa_segredo = cripto.cifrar(usuario.mfa_segredo)
+
         # --- Planta padrão ---------------------------------------------------
         # Todo ativo pertence a uma planta. Uma instalação nova (ou que veio de
         # uma versão anterior, sem plantas) ganha a "Matriz", e todo registro
@@ -324,7 +345,7 @@ def init_db() -> None:
             planta.sigla = "Central-SP"
             logging.getLogger("app").info("Planta padrão renomeada para Central-SP")
 
-        for modelo in (Ativo, QRZerado, DispositivoImpressao):
+        for modelo in (Ativo, DispositivoImpressao):
             atualizados = (
                 db.query(modelo).filter(modelo.planta_id.is_(None)).update({"planta_id": planta.id})
             )
@@ -335,19 +356,34 @@ def init_db() -> None:
 
         # --- Usuário administrador inicial -----------------------------------
         admin = db.query(Usuario).filter(Usuario.email == settings.seed_admin_email).first()
-        if not admin:
+        if admin is None and not db.query(Usuario.id).filter(
+            Usuario.papel == "admin", Usuario.ativo.is_(True), Usuario.deleted_at.is_(None),
+        ).first():
             db.add(
                 Usuario(
                     nome="Administrador",
                     email=settings.seed_admin_email,
-                    senha_hash=hash_password(settings.seed_admin_password),
+                    senha_hash=hash_password(senha_admin_inicial(settings.seed_admin_password)),
                     papel="admin",
                     ativo=True,
                     origem="local",
+                    senha_temporaria=True,
+                    mfa_obrigatorio=True,
                     # O admin fica SEM planta: assim enxerga todas e pode
                     # escolher qual acessar no seletor do topo.
                 )
             )
+        elif (
+            admin is not None
+            and admin.papel == "admin"
+            and admin.origem == "local"
+            and settings.env.lower() == "production"
+            and any(verify_password(padrao, admin.senha_hash) for padrao in SENHAS_ADMIN_PADRAO_ANTIGAS)
+        ):
+            admin.senha_hash = hash_password(senha_admin_inicial(settings.seed_admin_password))
+            admin.senha_temporaria = True
+            admin.mfa_obrigatorio = True
+            sessoes.revogar_do_usuario(db, admin)
         db.commit()
 
 

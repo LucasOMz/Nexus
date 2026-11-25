@@ -52,6 +52,15 @@ engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, p
 TestingSession = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
 
+def marcar_primeiro_acesso_concluido(email: str) -> None:
+    """Prepara contas de testes que exercitam operações posteriores ao primeiro acesso."""
+    with TestingSession() as db:
+        usuario = db.query(Usuario).filter_by(email=email).one()
+        usuario.senha_temporaria = False
+        usuario.mfa_obrigatorio = False
+        db.commit()
+
+
 @pytest.fixture()
 def client():
     Base.metadata.create_all(bind=engine)

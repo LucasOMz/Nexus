@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, require_write
-from app.core.planta import aplicar_filtro, planta_ativa
+from app.core.planta import aplicar_filtro, planta_ativa_obrigatoria
 from app.database import get_db
 from app.models.core import Ativo, Usuario
 from app.models.enums import Dominio
@@ -110,7 +110,7 @@ def _linha(db: Session, ativo: Ativo, ficha: AtivoImpressora | None) -> dict:
 def painel(
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
-    planta_id: int | None = Depends(planta_ativa),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ):
     """Situação de todas as impressoras, com o que já se sabe do contador."""
     itens = [_linha(db, a, f) for a, f in _impressoras(db, planta_id)]
@@ -130,15 +130,18 @@ def coletar_uma(
     comunidade: str = Query(default="public"),
     db: Session = Depends(get_db),
     user: Usuario = Depends(require_write),
-    planta_id: int | None = Depends(planta_ativa),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ):
     """Consulta a impressora agora e grava a leitura do contador.
 
     Se o contador não vier, **nada é gravado** — gravar zero poluiria o
     histórico e faria o custo por página despencar.
     """
-    ativo = db.get(Ativo, ativo_id)
-    if ativo is None or ativo.deleted_at is not None:
+    q = db.query(Ativo).filter(
+        Ativo.id == ativo_id, Ativo.deleted_at.is_(None), Ativo.dominio == Dominio.IMPRESSORA,
+    )
+    ativo = aplicar_filtro(q, Ativo, planta_id).first()
+    if ativo is None:
         raise HTTPException(404, "Ativo não encontrado")
     ficha = db.get(AtivoImpressora, ativo_id)
     endereco = _endereco(ficha, ativo)
@@ -198,7 +201,7 @@ def coletar_todas(
     comunidade: str = Query(default="public"),
     db: Session = Depends(get_db),
     user: Usuario = Depends(require_write),
-    planta_id: int | None = Depends(planta_ativa),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ):
     """Percorre todas as impressoras com endereço.
 
@@ -252,7 +255,7 @@ def alertas_de_suprimento(
     comunidade: str = Query(default="public"),
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
-    planta_id: int | None = Depends(planta_ativa),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ):
     """Nível de tonner e estimativa de quanto ainda dura.
 
@@ -260,8 +263,11 @@ def alertas_de_suprimento(
     pelo ritmo real de impressão — porque 20% não diz quando acaba, e 20% a
     5.000 páginas por dia dura horas.
     """
-    ativo = db.get(Ativo, ativo_id)
-    if ativo is None or ativo.deleted_at is not None:
+    q = db.query(Ativo).filter(
+        Ativo.id == ativo_id, Ativo.deleted_at.is_(None), Ativo.dominio == Dominio.IMPRESSORA,
+    )
+    ativo = aplicar_filtro(q, Ativo, planta_id).first()
+    if ativo is None:
         raise HTTPException(404, "Ativo não encontrado")
     ficha = db.get(AtivoImpressora, ativo_id)
     endereco = _endereco(ficha, ativo)

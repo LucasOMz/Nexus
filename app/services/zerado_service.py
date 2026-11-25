@@ -12,6 +12,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.core import Ativo, QRZerado
@@ -37,7 +38,9 @@ def _codigo_unico(db: Session) -> str:
     raise RuntimeError("Não foi possível gerar um código único. Tente novamente.")
 
 
-def gerar(db: Session, quantidade: int, dominio: str | None = None) -> tuple[str, list[QRZerado]]:
+def gerar(
+    db: Session, quantidade: int, dominio: str | None, planta_id: int,
+) -> tuple[str, list[QRZerado]]:
     """Cria `quantidade` etiquetas em branco e devolve `(lote, etiquetas)`."""
     if quantidade < 1:
         raise ValueError("A quantidade precisa ser pelo menos 1.")
@@ -49,6 +52,7 @@ def gerar(db: Session, quantidade: int, dominio: str | None = None) -> tuple[str
     for _ in range(quantidade):
         codigo = _codigo_unico(db)
         etiqueta = QRZerado(
+            planta_id=planta_id,
             codigo=codigo,
             payload=build_payload_zerado(codigo),
             lote=lote,
@@ -61,38 +65,41 @@ def gerar(db: Session, quantidade: int, dominio: str | None = None) -> tuple[str
     return lote, itens
 
 
-def localizar(db: Session, payload_ou_codigo: str) -> QRZerado | None:
+def aplicar_escopo(consulta, planta_id: int | None):
+    """Usa a planta do lote para etiquetas livres e a do ativo para as vinculadas."""
+    consulta = consulta.filter(QRZerado.deleted_at.is_(None))
+    if planta_id is None:
+        return consulta
+    ativos_da_planta = select(Ativo.id).where(
+        Ativo.planta_id == planta_id, Ativo.deleted_at.is_(None),
+    )
+    return consulta.filter(or_(
+        and_(QRZerado.ativo_id.is_(None), QRZerado.planta_id == planta_id),
+        QRZerado.ativo_id.in_(ativos_da_planta),
+    ))
+
+
+def localizar(
+    db: Session, payload_ou_codigo: str, planta_id: int | None, *, bloquear: bool = False,
+) -> QRZerado | None:
     """Encontra a etiqueta pelo payload completo ou só pelo código."""
     if not payload_ou_codigo:
         return None
     codigo = extrair_codigo_zerado(payload_ou_codigo) or payload_ou_codigo.strip()
     if not codigo:
         return None
-    return db.query(QRZerado).filter(QRZerado.codigo == codigo).first()
+    consulta = aplicar_escopo(db.query(QRZerado), planta_id).filter(QRZerado.codigo == codigo)
+    if bloquear:
+        consulta = consulta.with_for_update(of=QRZerado)
+    return consulta.first()
 
 
-def vincular(db: Session, payload: str, ativo: Ativo) -> QRZerado:
-    """Vincula a etiqueta em branco `payload` ao ativo indicado.
-
-    Levanta `ValueError` com mensagem clara quando a etiqueta não existe ou já
-    pertence a outro ativo.
-    """
-    etiqueta = localizar(db, payload)
-    if etiqueta is None:
-        raise ValueError(
-            "Etiqueta em branco não encontrada. Ela pode ter sido gerada em outro sistema "
-            "ou o QR_HMAC_SECRET foi alterado."
-        )
-    if etiqueta.ativo_id and etiqueta.ativo_id != ativo.id:
-        outro = db.get(Ativo, etiqueta.ativo_id)
-        dono = outro.patrimonio if outro is not None else f"id {etiqueta.ativo_id}"
-        raise ValueError(f"Esta etiqueta em branco já está vinculada ao ativo {dono}.")
-
+def vincular(etiqueta: QRZerado, ativo: Ativo) -> None:
+    """Vincula uma etiqueta livre já bloqueada na transação de cadastro."""
+    etiqueta.planta_id = ativo.planta_id
     etiqueta.ativo_id = ativo.id
     etiqueta.status = STATUS_USADO
     etiqueta.usado_em = datetime.now(timezone.utc)
-    db.flush()
-    return etiqueta
 
 
 def dados_para_etiqueta(etiqueta: QRZerado) -> dict[str, str]:
@@ -120,14 +127,13 @@ def dados_para_etiqueta(etiqueta: QRZerado) -> dict[str, str]:
     }
 
 
-def resumo_por_lote(db: Session) -> list[dict]:
+def resumo_por_lote(db: Session, planta_id: int | None) -> list[dict]:
     """Quantas etiquetas livres/usadas em cada leva."""
     lotes: dict[str, dict] = {}
-    consulta = (
-        db.query(QRZerado.lote, QRZerado.status, QRZerado.created_at, QRZerado.dominio)
-        .order_by(QRZerado.created_at.desc())
-        .all()
-    )
+    consulta = aplicar_escopo(
+        db.query(QRZerado.lote, QRZerado.status, QRZerado.created_at, QRZerado.dominio),
+        planta_id,
+    ).order_by(QRZerado.created_at.desc())
     for lote, status, criado_em, dominio in consulta:
         item = lotes.setdefault(
             lote,

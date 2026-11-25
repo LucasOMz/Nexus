@@ -15,22 +15,72 @@ export class ApiError extends Error {
 
 const BASE = "/api/v1";
 
-async function refreshTokens() {
-  if (!state.refresh) return false;
-  const res = await fetch(`${BASE}/auth/refresh`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refresh_token: state.refresh }),
+function incluirPlanta(headers) {
+  if (state.plantaAtiva) headers["X-Planta-Id"] = String(state.plantaAtiva);
+  else if (state.isAdmin) headers["X-Planta-Id"] = "todas";
+}
+
+let renovacaoEmCurso;
+
+function comTravaDeSessao(operacao) {
+  return globalThis.navigator?.locks?.request("nexus-sessao", operacao) ?? operacao();
+}
+
+function refreshTokens(acessoQueFalhou) {
+  if (state.access !== acessoQueFalhou) return Boolean(state.access);
+  renovacaoEmCurso ??= comTravaDeSessao(async () => {
+    if (state.access !== acessoQueFalhou) return Boolean(state.access);
+    if (state.sincronizarSessao()) return true;
+    const refresh = state.refresh;
+    if (!refresh) return false;
+    let res;
+    try {
+      res = await fetch(`${BASE}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: refresh }),
+        signal: AbortSignal.timeout(10000),
+      });
+    } catch {
+      return false;
+    }
+    if (state.refresh !== refresh) return Boolean(state.access);
+    if (!res.ok) {
+      if (res.status === 401) state.logout();
+      return false;
+    }
+    state.setAuth(await res.json());
+    return true;
+  }).catch(() => false).finally(() => { renovacaoEmCurso = null; });
+  return renovacaoEmCurso;
+}
+
+export async function encerrarSessao() {
+  await renovacaoEmCurso;
+  return comTravaDeSessao(async () => {
+    try {
+      state.sincronizarSessao();
+      if (state.refresh) {
+        await fetch(`${BASE}/auth/logout`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: state.refresh }),
+          signal: AbortSignal.timeout(5000),
+          keepalive: true,
+        });
+      }
+    } catch {
+      // A saída local também precisa funcionar offline.
+    } finally {
+      state.logout();
+    }
   });
-  if (!res.ok) { state.logout(); return false; }
-  state.setAuth(await res.json());
-  return true;
 }
 
 export const api = {
   base: BASE,
 
-  async request(method, path, { body, query } = {}) {
+  async request(method, path, { body, query, renovar = true } = {}) {
     let url = this.base + path;
     if (query) {
       const qs = new URLSearchParams();
@@ -42,11 +92,9 @@ export const api = {
 
     const headers = {};
     if (body !== undefined) headers["Content-Type"] = "application/json";
-    if (state.access) headers["Authorization"] = "Bearer " + state.access;
-    // Planta ativa escolhida no topo da tela. Sem isto, o servidor nao
-    // tem como saber qual planta o administrador quer ver — e tudo o
-    // que ele cria nasce sem planta, aparecendo em todas.
-    if (state.plantaAtiva) headers["X-Planta-Id"] = String(state.plantaAtiva);
+    const acesso = state.access;
+    if (acesso) headers["Authorization"] = "Bearer " + acesso;
+    incluirPlanta(headers);
 
     // Prazo para a resposta.
     //
@@ -87,15 +135,17 @@ export const api = {
         );
       }
       // Offline: fila a escrita para reenvio posterior.
-      if (method !== "GET") await enqueue(method, path, body);
+      if (method !== "GET" && !path.startsWith("/auth/") && !path.startsWith("/mfa/")) {
+        await enqueue(method, path, body);
+      }
       throw new ApiError(0, "Sem conexão com o servidor");
     } finally {
       clearTimeout(relogio);
     }
 
     // 401 → tenta refresh uma vez e repete a requisição.
-    if (res.status === 401 && state.refresh && !path.includes("/auth/")) {
-      if (await refreshTokens()) return this.request(method, path, { body, query });
+    if (renovar && res.status === 401 && state.refresh && (!path.startsWith("/auth/") || path === "/auth/me")) {
+      if (await refreshTokens(acesso)) return this.request(method, path, { body, query, renovar: false });
     }
 
     let data = null;
@@ -135,13 +185,11 @@ export const api = {
    * multipart sozinho — definindo à mão, o servidor não consegue separar os
    * campos e o upload falha.
    */
-  async form(method, path, dados) {
+  async form(method, path, dados, renovar = true) {
     const headers = {};
-    if (state.access) headers["Authorization"] = "Bearer " + state.access;
-    // Planta ativa escolhida no topo da tela. Sem isto, o servidor nao
-    // tem como saber qual planta o administrador quer ver — e tudo o
-    // que ele cria nasce sem planta, aparecendo em todas.
-    if (state.plantaAtiva) headers["X-Planta-Id"] = String(state.plantaAtiva);
+    const acesso = state.access;
+    if (acesso) headers["Authorization"] = "Bearer " + acesso;
+    incluirPlanta(headers);
 
     let res;
     try {
@@ -150,8 +198,8 @@ export const api = {
       throw new ApiError(0, "Sem conexão com o servidor");
     }
 
-    if (res.status === 401 && state.refresh && !path.includes("/auth/")) {
-      if (await refreshTokens()) return this.form(method, path, dados);
+    if (renovar && res.status === 401 && state.refresh && !path.startsWith("/auth/")) {
+      if (await refreshTokens(acesso)) return this.form(method, path, dados, false);
     }
 
     let data = null;
@@ -180,13 +228,11 @@ export const api = {
    *
    * Quem chama deve liberar depois com `URL.revokeObjectURL`.
    */
-  async blob(path) {
+  async blob(path, renovar = true) {
     const headers = {};
-    if (state.access) headers["Authorization"] = "Bearer " + state.access;
-    // Planta ativa escolhida no topo da tela. Sem isto, o servidor nao
-    // tem como saber qual planta o administrador quer ver — e tudo o
-    // que ele cria nasce sem planta, aparecendo em todas.
-    if (state.plantaAtiva) headers["X-Planta-Id"] = String(state.plantaAtiva);
+    const acesso = state.access;
+    if (acesso) headers["Authorization"] = "Bearer " + acesso;
+    incluirPlanta(headers);
 
     let res;
     try {
@@ -194,8 +240,8 @@ export const api = {
     } catch {
       throw new ApiError(0, "Sem conexão com o servidor");
     }
-    if (res.status === 401 && state.refresh && !path.includes("/auth/")) {
-      if (await refreshTokens()) return this.blob(path);
+    if (renovar && res.status === 401 && state.refresh && !path.startsWith("/auth/")) {
+      if (await refreshTokens(acesso)) return this.blob(path, false);
     }
     if (!res.ok) {
       let detalhe = null;
@@ -210,6 +256,10 @@ export const api = {
 export async function replayOfflineQueue() {
   const ops = await pending();
   for (const op of ops) {
+    if (op.path.startsWith("/auth/") || op.path.startsWith("/mfa/")) {
+      await dequeue(op.id);
+      continue;
+    }
     try {
       await api.request(op.method, op.path, { body: op.body });
       await dequeue(op.id);

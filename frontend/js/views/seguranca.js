@@ -29,6 +29,12 @@ export async function renderSeguranca(root) {
 
   const caixa = el("div", {}, skeleton(3));
   root.append(caixa);
+  if (state.acaoRequerida === "cadastrar_mfa") {
+    root.append(el("button", { class: "btn text", onclick: () => {
+      state.logout();
+      location.reload();
+    } }, "Voltar ao login"));
+  }
   await carregar(caixa, root);
 }
 
@@ -57,7 +63,7 @@ function cartaoInativo(d, root) {
       + "gerado por um aplicativo no seu celular."),
     d.exigido
       ? el("div", { class: "recado info", style: "margin-top:12px" },
-          el("b", {}, "Recomendado para o seu perfil."),
+          el("b", {}, "Obrigatória para a sua conta."),
           " Contas de administrador podem alterar permissões, apagar ativos e "
           + "restaurar backups — uma senha sozinha é pouca proteção.")
       : null,
@@ -84,7 +90,8 @@ function cartaoAtivo(d, root) {
           + "sem eles, perder o celular significa perder o acesso.")
       : null,
     el("div", { class: "row", style: "margin-top:14px" },
-      el("button", { class: "btn text", onclick: () => desativar(root) }, "Desativar"),
+      el("button", { class: "btn text", onclick: () => desativar(root, d.exigido) },
+        d.exigido ? "Trocar autenticador" : "Desativar"),
     ),
   );
 }
@@ -149,9 +156,11 @@ async function iniciar(root) {
         if (!valor) { codigo.focus(); return; }
         try {
           const r = await api.post("/mfa/confirmar", { codigo: valor });
+          const primeiroAcesso = state.acaoRequerida === "cadastrar_mfa";
+          state.setAuth(r.sessao);
           close();
           if (urlQr) URL.revokeObjectURL(urlQr);
-          mostrarCodigos(r.codigos_recuperacao, root);
+          mostrarCodigos(r.codigos_recuperacao, root, primeiroAcesso);
         } catch (e) {
           erro.classList.remove("oculto");
           erro.textContent = e.message;
@@ -171,7 +180,7 @@ async function iniciar(root) {
  * única saída se o celular for perdido, e depois desta janela eles não podem
  * ser recuperados: o servidor guarda só o hash.
  */
-function mostrarCodigos(codigos, root) {
+function mostrarCodigos(codigos, root, primeiroAcesso) {
   if (!codigos?.length) { toast("Ativado"); return carregar(document.getElementById("view"), root); }
 
   const guardei = el("input", { type: "checkbox" });
@@ -218,22 +227,30 @@ function mostrarCodigos(codigos, root) {
         }
         close();
         toast("Verificação em duas etapas ativada");
+        if (primeiroAcesso) {
+          location.hash = "#/selecao";
+          location.reload();
+          return;
+        }
         await carregar(document.getElementById("view"), root);
       } },
     ],
   });
 }
 
-async function desativar(root) {
-  if (!(await confirmSheet("Desativar verificação",
-      "Sua conta volta a depender só da senha. Continuar?"))) return;
+async function desativar(root, exigido) {
+  const titulo = exigido ? "Trocar autenticador" : "Desativar verificação";
+  const mensagem = exigido
+    ? "As sessões atuais serão encerradas. Cadastre o novo autenticador para voltar a usar o Nexus."
+    : "Sua conta volta a depender só da senha. Continuar?";
+  if (!(await confirmSheet(titulo, mensagem))) return;
 
   const codigo = el("input", {
     inputmode: "numeric", placeholder: "Código do aplicativo ou de recuperação",
   });
 
   dialog({
-    title: "Desativar verificação",
+    title: titulo,
     body: el("div", {},
       el("p", { class: "muted", style: "margin:0 0 12px" },
         "Informe um código válido para confirmar. A senha sozinha não desativa "
@@ -242,10 +259,16 @@ async function desativar(root) {
     ),
     actions: [
       { label: "Cancelar", variant: "text" },
-      { label: "Desativar", variant: "filled", onClick: async (close) => {
+      { label: exigido ? "Trocar" : "Desativar", variant: "filled", onClick: async (close) => {
         try {
-          await api.post("/mfa/desativar", { codigo: codigo.value.trim() });
+          const r = await api.post("/mfa/desativar", { codigo: codigo.value.trim() });
+          state.setAuth(r.sessao);
           close();
+          if (r.sessao.acao_requerida === "cadastrar_mfa") {
+            location.hash = "#/seguranca";
+            location.reload();
+            return;
+          }
           toast("Verificação desativada");
           await carregar(document.getElementById("view"), root);
         } catch (e) { mostrarErro(e); }

@@ -85,7 +85,7 @@ POSTGRES_PASSWORD=SENHA-FORTE-AQUI
 POSTGRES_DB=estoque
 
 SEED_ADMIN_EMAIL=admin@empresa.com
-SEED_ADMIN_PASSWORD=SENHA-DO-ADMIN
+SEED_ADMIN_PASSWORD=
 ```
 
 **Só isso.** `DATABASE_URL` vazio faz o compose montar a conexão.
@@ -100,7 +100,7 @@ dumps caem, e o caminho que o Kopia vai encontrar. Use o mesmo da seção 2
 DATABASE_URL=postgresql+psycopg://nexus:senha@10.0.0.50:5432/nexus
 
 SEED_ADMIN_EMAIL=admin@empresa.com
-SEED_ADMIN_PASSWORD=SENHA-DO-ADMIN
+SEED_ADMIN_PASSWORD=
 ```
 
 **Os `POSTGRES_*` não são usados** nesse caso — o serviço `db` do compose
@@ -151,8 +151,19 @@ docker exec -it <container_db> psql -U estoque -d estoque -c '\dt'
 
 **~41 tabelas.** No log da API deve aparecer `Planta padrão criada`.
 
-**Acesse `http://IP:4545`** e entre com `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`.
-O sistema **força a troca de senha** no primeiro acesso.
+Acesse o Nexus e entre com `SEED_ADMIN_EMAIL`. Se `SEED_ADMIN_PASSWORD`
+estiver vazia, consulte `/app/segredos/seed_admin_password.txt` no volume de
+segredos. Para fornecer sua própria senha temporária, use uma credencial
+exclusiva de 16 a 72 bytes. O primeiro acesso exige troca de senha e cadastro
+da verificação em duas etapas.
+
+O `JWT_SECRET` também protege os segredos dos autenticadores. Preserve-o no
+volume de segredos e no procedimento de recuperação do servidor.
+
+Em uma instalação existente com a senha padrão antiga no administrador
+inicial, a atualização em produção substitui essa senha pela configuração
+válida atual ou pela credencial gerada no volume. Remova o valor padrão
+antigo da configuração da stack antes de atualizar.
 
 ---
 

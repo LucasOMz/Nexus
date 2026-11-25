@@ -73,6 +73,14 @@ def exigir_planta_do_usuario(user: Usuario, planta_id: int | None) -> int | None
     return planta_id
 
 
+def planta_ativa_obrigatoria(
+    planta_id: int | None = Depends(planta_ativa),
+    user: Usuario = Depends(get_current_user),
+) -> int | None:
+    """Resolve o escopo dos recursos por planta, incluindo a visão administrativa."""
+    return exigir_planta_do_usuario(user, planta_id)
+
+
 def aplicar_filtro(consulta, modelo, planta_id: int | None):
     """Aplica o filtro de planta numa consulta (None = todas as plantas)."""
     if planta_id is None:

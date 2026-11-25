@@ -316,7 +316,11 @@ WantedBy=multi-user.target
 
 ## 6. Segurança
 
-- **JWT** access (15 min) + refresh (7 dias) com rotação e blacklist em memória (Redis opcional em multi-réplica).
+- **Sessões persistentes** no banco. O refresh é rotacionado a cada uso, e
+  reutilizar um refresh anterior encerra a sessão. O logout encerra a sessão
+  atual, e o encerramento administrativo revoga todas as sessões da conta.
+- Após atualizar de uma versão anterior, entre novamente para registrar a
+  sessão. Restaurar um backup também exige novo login.
 - **bcrypt** para senhas; **HMAC-SHA256** para o QR.
 - **Permissões por usuário** (`inventarios`, `modulos`, `pode_escrever`, `pode_excluir`) aplicadas no backend por `require_module` / `require_escrita` / `require_exclusao` — não é só ocultação visual.
 - **Papéis** (`admin | ti | leitor | auditor`) definem o padrão; o admin pode ajustar caso a caso.
@@ -527,7 +531,8 @@ inteiro — o restore completo fica reservado para recuperação de desastre.
 Em **Leitura → Etiquetas em branco** você gera QR Codes **sem dono**: etiquetas
 "zeradas", para imprimir, colar no equipamento e cadastrar depois.
 
-1. Informe a **quantidade** e clique em *Gerar etiquetas em branco*.
+1. Informe a **quantidade** e clique em *Gerar etiquetas em branco*. Se houver
+   mais de uma planta ativa, o administrador deve selecionar a planta do lote.
 2. Escolha o destino: **impressora cadastrada** ou **PDF** (tamanho exato, para
    imprimir em qualquer impressora).
 3. Cole a etiqueta no equipamento.
@@ -540,8 +545,10 @@ Detalhes que valem saber:
 - O código impresso é curto e legível (ex.: `JXPM7P5FC8`), **sem caracteres
   ambíguos** (`I`, `O`, `0`, `1`), para permitir digitação manual se o leitor
   falhar.
-- Cada etiqueta só pode ser vinculada a **um** ativo. Tentar reutilizar devolve
-  uma mensagem dizendo qual equipamento já está com ela.
+- Cada etiqueta só pode ser vinculada a **um** ativo da planta do lote. Após o
+  vínculo, o acesso à etiqueta acompanha a planta atual do equipamento.
+- Etiquetas antigas já vinculadas continuam legíveis na planta atual do ativo.
+  Etiquetas antigas livres sem planta ficam disponíveis na visão consolidada.
 - A tela mostra quantas etiquetas estão **livres** por lote, e o botão de
   imprimir fica desabilitado quando o lote todo já foi usado.
 - O payload das etiquetas em branco é assinado com o **mesmo segredo** do QR

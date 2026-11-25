@@ -13,6 +13,7 @@ import pytest
 
 from app.core.rate_limit import login_limiter, scan_limiter
 from app.services.ldap_service import ResultadoLDAP
+from tests.conftest import marcar_primeiro_acesso_concluido
 
 
 @pytest.fixture(autouse=True)
@@ -199,6 +200,7 @@ class TestBuscaNoAD:
         client.post("/api/v1/usuarios",
                     json={"nome": "Tec", "email": "tec.adbusca@teste.com", "papel": "ti",
                           "senha": "senha123"}, headers=auth_headers)
+        marcar_primeiro_acesso_concluido("tec.adbusca@teste.com")
         login = client.post("/api/v1/auth/login",
                             data={"username": "tec.adbusca@teste.com", "password": "senha123"})
         h = {"Authorization": f"Bearer {login.json()['access_token']}"}

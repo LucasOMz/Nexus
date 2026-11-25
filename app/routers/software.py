@@ -36,7 +36,12 @@ from app.core.deps import (
     require_module,
     require_write,
 )
-from app.core.planta import aplicar_filtro, exigir_planta_do_usuario, planta_ativa
+from app.core.planta import (
+    aplicar_filtro,
+    exigir_planta_do_usuario,
+    planta_ativa,
+    planta_ativa_obrigatoria,
+)
 from app.database import get_db
 from app.models.core import Ativo, Usuario
 from app.models.enums import Dominio, SituacaoConformidade, SituacaoLicenca
@@ -682,7 +687,7 @@ def _linhas_conformidade(db: Session, planta: int | None) -> list[dict]:
 
     instalados = conformidade_service.instalados_por_nome(db, planta_id=planta)
     if not instalados:
-        instalados = conformidade_service.instalados_das_atribuicoes(db)
+        instalados = conformidade_service.instalados_das_atribuicoes(db, planta_id=planta)
 
     return conformidade_service.ordenar(
         conformidade_service.calcular(db, softwares, instalados)
@@ -768,8 +773,7 @@ def historico_da_licenca(
 @router.get("/conformidade.csv")
 def conformidade_csv(
     db: Session = Depends(get_db),
-    user: Usuario = Depends(get_current_user),
-    planta: int | None = Depends(planta_ativa),
+    planta: int | None = Depends(planta_ativa_obrigatoria),
 ):
     """O relatório de conformidade em CSV, com a explicação de cada linha.
 

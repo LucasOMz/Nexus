@@ -7,10 +7,12 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from sqlalchemy import case, func
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user
+from app.core.permissoes import permissoes_efetivas, pode_inventario
+from app.core.planta import aplicar_filtro, planta_ativa_obrigatoria
 from app.database import get_db
 from app.models.core import (
     Ativo,
@@ -78,9 +80,16 @@ def relatorio_inventario(
     status: str | None = Query(default=None),
     formato: str = Query(default="csv"),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
+    user: Usuario = Depends(get_current_user),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ):
-    q = db.query(Ativo).filter(Ativo.deleted_at.is_(None), Ativo.dominio == dominio)
+    if not pode_inventario(user, dominio.value):
+        raise HTTPException(403, "Sem acesso a este inventário")
+    q = aplicar_filtro(
+        db.query(Ativo).filter(Ativo.deleted_at.is_(None), Ativo.dominio == dominio),
+        Ativo,
+        planta_id,
+    )
     if status:
         q = q.filter(Ativo.status == status)
     ativos = q.order_by(Ativo.patrimonio).all()
@@ -101,16 +110,20 @@ def relatorio_inventario(
 def relatorio_ativos_por_usuario(
     formato: str = Query(default="csv"),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
+    user: Usuario = Depends(get_current_user),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ):
-    rows_q = (
+    q = (
         db.query(Usuario.nome, Ativo.patrimonio, Ativo.modelo, Movimentacao.data_mov)
         .join(Movimentacao, Movimentacao.destino_usuario_id == Usuario.id)
         .join(Ativo, Ativo.id == Movimentacao.ativo_id)
-        .filter(Movimentacao.tipo == TipoMov.ATRIBUICAO, Movimentacao.deleted_at.is_(None))
-        .order_by(Usuario.nome, Ativo.patrimonio)
-        .all()
+        .filter(
+            Movimentacao.tipo == TipoMov.ATRIBUICAO,
+            Movimentacao.deleted_at.is_(None),
+            Ativo.dominio.in_(permissoes_efetivas(user)["inventarios"]),
+        )
     )
+    rows_q = aplicar_filtro(q, Ativo, planta_id).order_by(Usuario.nome, Ativo.patrimonio).all()
     headers = ["Colaborador", "Patrimônio", "Modelo", "Data Atribuição"]
     rows = [[r[0], r[1], r[2], r[3]] for r in rows_q]
     return _deliver(formato, f"ativos_por_usuario.{formato}", "Ativos por Usuário", headers, rows)
@@ -122,9 +135,21 @@ def relatorio_movimentacoes(
     data_fim: datetime | None = Query(default=None),
     formato: str = Query(default="csv"),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
+    user: Usuario = Depends(get_current_user),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ):
-    q = db.query(Movimentacao).filter(Movimentacao.deleted_at.is_(None))
+    inventarios = permissoes_efetivas(user)["inventarios"]
+    q = (
+        db.query(Movimentacao)
+        .outerjoin(Ativo, Ativo.id == Movimentacao.ativo_id)
+        .filter(Movimentacao.deleted_at.is_(None))
+    )
+    if planta_id is None:
+        q = q.outerjoin(Produto, Produto.id == Movimentacao.produto_id).filter(
+            or_(Ativo.dominio.in_(inventarios), Produto.dominio.in_(inventarios)),
+        )
+    else:
+        q = aplicar_filtro(q, Ativo, planta_id).filter(Ativo.dominio.in_(inventarios))
     if data_inicio:
         q = q.filter(Movimentacao.data_mov >= data_inicio)
     if data_fim:
@@ -147,11 +172,18 @@ def relatorio_movimentacoes(
 def relatorio_manutencoes(
     formato: str = Query(default="csv"),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
+    user: Usuario = Depends(get_current_user),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ):
-    manuts = (
-        db.query(Manutencao).filter(Manutencao.deleted_at.is_(None)).order_by(Manutencao.data_abertura.desc()).all()
+    q = (
+        db.query(Manutencao)
+        .join(Ativo, Ativo.id == Manutencao.ativo_id)
+        .filter(
+            Manutencao.deleted_at.is_(None),
+            Ativo.dominio.in_(permissoes_efetivas(user)["inventarios"]),
+        )
     )
+    manuts = aplicar_filtro(q, Ativo, planta_id).order_by(Manutencao.data_abertura.desc()).all()
     headers = ["Ativo", "Status", "Abertura", "Conclusão", "Fornecedor", "Custo", "Técnico"]
     rows = [
         [
@@ -168,21 +200,22 @@ def relatorio_garantias(
     dias: int = Query(default=90, ge=1, le=365),
     formato: str = Query(default="csv"),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
+    user: Usuario = Depends(get_current_user),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ):
     hoje = date.today()
     limite = hoje + timedelta(days=dias)
-    ativos = (
+    q = (
         db.query(Ativo)
         .filter(
             Ativo.deleted_at.is_(None),
+            Ativo.dominio.in_(permissoes_efetivas(user)["inventarios"]),
             Ativo.data_garantia.isnot(None),
             Ativo.data_garantia >= hoje,
             Ativo.data_garantia <= limite,
         )
-        .order_by(Ativo.data_garantia)
-        .all()
     )
+    ativos = aplicar_filtro(q, Ativo, planta_id).order_by(Ativo.data_garantia).all()
     headers = ["Patrimônio", "Modelo", "Domínio", "Garantia", "Dias restantes"]
     rows = [
         [a.patrimonio, a.modelo, a.dominio.value, a.data_garantia, (a.data_garantia - hoje).days] for a in ativos
@@ -195,8 +228,11 @@ def relatorio_consumiveis_minimo(
     dominio: Dominio = Query(default=Dominio.TI),
     formato: str = Query(default="csv"),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ):
+    # Estoque de produtos e movimentos de consumíveis não têm uma planta de origem.
+    if planta_id is not None:
+        raise HTTPException(403, "O estoque de consumíveis está disponível na visão consolidada.")
     # Saldo derivado: entradas - saídas, comparado ao estoque mínimo.
     saldo = func.coalesce(
         func.sum(

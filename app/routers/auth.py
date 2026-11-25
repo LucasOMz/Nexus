@@ -11,36 +11,45 @@ Regra de autenticação:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from typing import Annotated
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app.core.deps import get_current_user
+from app.config import settings
+from app.core import cripto
+from app.core.deps import get_current_user, usuario_para_troca_de_senha
+from app.core.primeiro_acesso import (
+    Etapa,
+    etapa_pendente,
+)
 from app.core.rate_limit import login_limiter
 from app.core.security import (
+    SETUP_TTL,
     create_access_token,
     create_refresh_token,
+    create_setup_token,
     decode_token,
     hash_password,
     verify_password,
 )
+from app.core.segredos_instalacao import SENHAS_ADMIN_PADRAO_ANTIGAS
 from app.database import get_db
 from app.models.core import Usuario
+from app.models.enums import PapelUsuario
 from app.schemas.auth import RefreshRequest, Token, TrocaSenhaIn
 from app.schemas.common import UsuarioOut
+from app.services import sessoes
 from app.services.audit_service import audit
 from app.services.config_service import obter_config
 from app.services.ldap_service import autenticar
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-# Blacklist de refresh tokens em memória. OPCIONAL em produção: usar Redis
-# para sobreviver a múltiplas réplicas (ver seção 6 da especificação).
-_refresh_blacklist: set[str] = set()
 
 _ERRO_GENERICO = "Usuário ou senha inválidos"
 
@@ -58,14 +67,41 @@ def _sincronizar_nome_do_ad(user: Usuario, resultado) -> bool:
     return False
 
 
+def _par_de_tokens(user: Usuario, sid: str) -> Token:
+    argumentos = {"mfa_verificado": user.mfa_ativo, "sessao_id": sid}
+    return Token(
+        access_token=create_access_token(user.id, user.papel.value, user.email, **argumentos),
+        refresh_token=create_refresh_token(user.id, user.papel.value, user.email, **argumentos),
+        user=UsuarioOut.model_validate(user),
+    )
+
+
+def emitir_sessao(db: Session, user: Usuario) -> Token:
+    """Registra a sessão na transação que conclui a autenticação."""
+    sid = uuid4().hex
+    par = _par_de_tokens(user, sid)
+    sessoes.registrar(db, sid, user.id, timedelta(days=settings.refresh_token_expire_days), par.refresh_token)
+    return par
+
+
+def emitir_credencial_de_etapa(db: Session, user: Usuario, etapa: Etapa, mensagem: str | None = None) -> Token:
+    sid = uuid4().hex
+    sessoes.registrar(db, sid, user.id, SETUP_TTL)
+    return Token(
+        access_token=create_setup_token(user.id, user.papel.value, user.email, etapa, sid),
+        user=UsuarioOut.model_validate(user),
+        acao_requerida=etapa,
+        acao_mensagem=mensagem,
+    )
+
+
 @router.post("/login", response_model=Token)
 def login(
     request: Request,
     form: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
-    # Segunda etapa. Parametro separado de proposito: o formulario OAuth2
-    # tem campos fixos, e acrescentar um la quebraria o /docs e qualquer
-    # cliente que ja usa o login.
+    codigo_form: Annotated[str | None, Form(alias="codigo")] = None,
+    # Compatibilidade com clientes que enviavam o código na query.
     codigo: str | None = Query(default=None),
 ) -> Token:
     """Autentica o usuário e emite access + refresh tokens.
@@ -76,6 +112,7 @@ def login(
     client_ip = request.client.host if request.client else "unknown"
     if not login_limiter.is_allowed(client_ip):
         raise HTTPException(status_code=429, detail="Muitas tentativas. Aguarde um instante.")
+    codigo = codigo_form or codigo
 
     identificador = (form.username or "").strip()
     # Procura por e-mail OU pelo usuário de logon do AD: quem entra digita o
@@ -96,6 +133,12 @@ def login(
     if user is not None and user.origem == "local":
         # Conta local (inclui o root/admin): senha do sistema, sem AD.
         if not verify_password(form.password, user.senha_hash):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=_ERRO_GENERICO)
+        if (
+            settings.env.lower() == "production"
+            and user.papel == PapelUsuario.ADMIN
+            and form.password in SENHAS_ADMIN_PADRAO_ANTIGAS
+        ):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=_ERRO_GENERICO)
     else:
         autenticado = False
@@ -149,15 +192,10 @@ def login(
     # que o administrador definiu, ela e conhecida por outra pessoa - proteger
     # com MFA uma senha compartilhada nao protege nada.
     #
-    # Em todos os casos o token E emitido: para trocar a senha ou cadastrar o
-    # MFA e preciso estar autenticado. A trava de verdade nao e negar o token,
-    # e o servidor recusar as demais rotas enquanto isto nao se resolve
-    # (ver exigir_primeiro_acesso em core/deps.py).
-    acao = None
+    acao = etapa_pendente(user)
     mensagem = None
 
-    if user.senha_temporaria:
-        acao = "trocar_senha"
+    if acao == "trocar_senha":
         mensagem = "Sua senha foi definida pelo administrador. Escolha uma senha sua para continuar."
 
     elif user.mfa_ativo:
@@ -172,7 +210,7 @@ def login(
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="mfa_necessario"
             )
 
-        if not _plataforma.conferir_codigo(user.mfa_segredo or "", codigo):
+        if not _plataforma.conferir_codigo(cripto.decifrar(user.mfa_segredo) or "", codigo):
             # Nao sendo TOTP, pode ser um codigo de recuperacao (uso unico).
             if not consumir_recuperacao(db, user, codigo):
                 raise HTTPException(
@@ -180,24 +218,17 @@ def login(
                     detail="Codigo de verificacao invalido.",
                 )
 
-    elif user.mfa_obrigatorio:
+    elif acao == "cadastrar_mfa":
         # Conta nova (local ou AD): entra, mas o cadastro do MFA e obrigatorio.
-        acao = "cadastrar_mfa"
         mensagem = (
             "Bem-vindo! Antes de usar o sistema, cadastre a verificacao em duas "
             "etapas com o aplicativo autenticador."
         )
 
     audit(db, user, "login", "usuario", user.id, ip=client_ip)
+    token = emitir_credencial_de_etapa(db, user, acao, mensagem) if acao is not None else emitir_sessao(db, user)
     db.commit()
-
-    return Token(
-        access_token=create_access_token(user.id, user.papel.value, user.email),
-        refresh_token=create_refresh_token(user.id, user.papel.value),
-        user=UsuarioOut.model_validate(user),
-        acao_requerida=acao,
-        acao_mensagem=mensagem,
-    )
+    return token
 
 
 TEMAS_VALIDOS = {"light", "dark"}
@@ -259,7 +290,7 @@ def trocar_senha(
     body: TrocaSenhaIn,
     request: Request,
     db: Session = Depends(get_db),
-    user: Usuario = Depends(get_current_user),
+    user: Usuario = Depends(usuario_para_troca_de_senha),
 ) -> dict:
     """Troca a senha do próprio usuário.
 
@@ -267,6 +298,7 @@ def trocar_senha(
     para a troca voluntária. Nas duas, exige a senha atual: sessão aberta numa
     máquina destravada não pode virar troca de senha.
     """
+    db.refresh(user, with_for_update=True)
     if body.senha_nova != body.confirmacao:
         raise HTTPException(400, "A confirmação não confere com a senha nova.")
     if not verify_password(body.senha_atual, user.senha_hash):
@@ -282,6 +314,7 @@ def trocar_senha(
             400, "Sua conta usa a senha da rede. Troque-a no domínio, não aqui."
         )
 
+    sessoes.revogar_do_usuario(db, user)
     user.senha_hash = hash_password(body.senha_nova)
     user.senha_temporaria = False          # cumpriu a exigência do primeiro acesso
     if user.primeiro_acesso_em is None:
@@ -292,7 +325,7 @@ def trocar_senha(
     db.commit()
 
     # O que ainda falta depois da troca: cadastrar o MFA, se exigido.
-    proxima = "cadastrar_mfa" if (user.mfa_obrigatorio and not user.mfa_ativo) else None
+    proxima = etapa_pendente(user)
     return {
         "ok": True,
         "acao_requerida": proxima,
@@ -366,32 +399,47 @@ def salvar_preferencias(
 @router.post("/refresh", response_model=Token)
 def refresh(payload: RefreshRequest, db: Session = Depends(get_db)) -> Token:
     """Emite um novo par de tokens a partir de um refresh token válido."""
-    if payload.refresh_token in _refresh_blacklist:
-        raise HTTPException(status_code=401, detail="Refresh token revogado")
-    data = decode_token(payload.refresh_token)
-    if data is None or data.get("type") != "refresh":
-        raise HTTPException(status_code=401, detail="Refresh token inválido")
+    data = _ler_refresh(payload.refresh_token)
     user = db.get(Usuario, int(data["sub"]))
     if user is None or user.deleted_at is not None or not user.ativo:
         raise HTTPException(status_code=401, detail="Usuário inválido")
     # Mesma checagem de identidade do access token.
     if data.get("email") and data["email"] != user.email:
         raise HTTPException(status_code=401, detail="Sessão inválida")
+    if etapa_pendente(user) is not None or (user.mfa_ativo and data.get("mfa_verificado") is not True):
+        raise HTTPException(status_code=401, detail="Entre novamente para concluir a autenticação")
 
-    # Rotação: revoga o refresh anterior.
-    _refresh_blacklist.add(payload.refresh_token)
+    sid = data["sid"]
+    novo = _par_de_tokens(user, sid)
+    if not sessoes.renovar(
+        db, sid, user.id, payload.refresh_token, novo.refresh_token,
+        timedelta(days=settings.refresh_token_expire_days),
+    ):
+        # Um refresh já usado encerra a sessão, inclusive o par mais recente.
+        sessoes.revogar(db, sid, user.id)
+        db.commit()
+        raise HTTPException(status_code=401, detail="Sessão encerrada. Entre novamente.")
+    db.commit()
+    return novo
 
-    return Token(
-        access_token=create_access_token(user.id, user.papel.value, user.email),
-        refresh_token=create_refresh_token(user.id, user.papel.value, user.email),
-        user=UsuarioOut.model_validate(user),
-    )
+
+def _ler_refresh(token: str) -> dict:
+    dados = decode_token(token)
+    if (
+        dados is None or dados.get("type") != "refresh"
+        or not isinstance(dados.get("sid"), str) or not isinstance(dados.get("jti"), str)
+        or not isinstance(dados.get("sub"), str) or not dados["sub"].isdigit()
+    ):
+        raise HTTPException(status_code=401, detail="Refresh token inválido")
+    return dados
 
 
 @router.post("/logout")
-def logout(payload: RefreshRequest, user: Usuario = Depends(get_current_user)) -> dict:
-    """Revoga o refresh token informado."""
-    _refresh_blacklist.add(payload.refresh_token)
+def logout(payload: RefreshRequest, db: Session = Depends(get_db)) -> dict:
+    """O refresh assinado autoriza encerrar a própria sessão, mesmo com access expirado."""
+    dados = _ler_refresh(payload.refresh_token)
+    sessoes.revogar(db, dados["sid"], int(dados["sub"]))
+    db.commit()
     return {"ok": True}
 
 

@@ -13,11 +13,14 @@ from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.core.permissoes import eh_admin, pode_acao, pode_modulo
+from app.core.primeiro_acesso import Etapa, credencial_revogada, etapa_pendente
 from app.core.security import decode_token
 from app.database import get_db
 from app.models.core import Usuario
 from app.models.enums import PapelUsuario
+from app.services import sessoes
 
 # tokenUrl é usado apenas pelo Swagger UI ("Authorize").
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
@@ -25,10 +28,12 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=F
 _CREDENCIAIS_INVALIDAS = "Credenciais inválidas ou expiradas"
 
 
-def _resolver_usuario(db: Session, token: str | None) -> Usuario | None:
+def _resolver_usuario(
+    db: Session, token: str | None, etapa_permitida: Etapa | None = None,
+) -> Usuario | None:
     """Decodifica o token e devolve o usuário ativo, ou None."""
     payload = decode_token(token or "")
-    if payload is None or payload.get("type") != "access":
+    if payload is None or payload.get("type") not in ("access", "setup"):
         return None
     try:
         user_id = int(payload.get("sub", ""))
@@ -43,29 +48,21 @@ def _resolver_usuario(db: Session, token: str | None) -> Usuario | None:
     if email_token and email_token != user.email:
         return None
 
-    # --- o administrador derrubou as sessões desta pessoa? ----------------
-    #
-    # `forcar_logout_em` é um carimbo. O token sabe quando foi emitido
-    # (`iat`); se for anterior, a sessão não vale mais.
-    #
-    # Comparar com `iat` — e não com "agora" — é o que faz isto funcionar sem
-    # tabela de sessões: um token emitido DEPOIS do carimbo continua válido,
-    # então a própria pessoa pode logar de novo na hora.
-    if user.forcar_logout_em is not None:
-        emitido = payload.get("iat")
-        # `<=` e não `<`: o `iat` tem precisão de **segundos**, e a derrubada
-        # pode cair no mesmo segundo em que o token foi emitido. Com `<`, o
-        # token sobrevivia — e o teste ficava intermitente, dependendo de
-        # cruzar ou não a fronteira do segundo.
-        #
-        # O CI pegou isso e a máquina local não: lá, tudo roda em
-        # milissegundos e os dois instantes são sempre iguais.
-        #
-        # Efeito colateral: quem fizer login exatamente no segundo da própria
-        # derrubada é recusado. Edge case raro, e falhar fechado é o lado
-        # certo para uma trava.
-        if emitido is not None and int(emitido) <= int(user.forcar_logout_em.timestamp()):
+    etapa = etapa_pendente(user)
+    if payload["type"] == "setup":
+        if etapa_permitida is None or etapa != etapa_permitida or payload.get("etapa") != etapa:
             return None
+    elif etapa is not None or (user.mfa_ativo and payload.get("mfa_verificado") is not True):
+        return None
+
+    sid = payload.get("sid")
+    if sid is None:
+        if payload["type"] == "setup" or settings.env.lower() == "production":
+            return None
+        if credencial_revogada(user, payload.get("iat")):
+            return None
+    elif not isinstance(sid, str) or not sessoes.ativa(db, sid, user.id, setup=payload["type"] == "setup"):
+        return None
 
     # --- modo manutenção --------------------------------------------------
     #
@@ -89,6 +86,8 @@ def _resolver_usuario(db: Session, token: str | None) -> Usuario | None:
     # por chamada, e o pool é pequeno.
     #
     # Falhar aqui NUNCA pode derrubar a requisição: é telemetria.
+    if etapa is not None:
+        return user
     try:
         from datetime import datetime, timezone
 
@@ -103,11 +102,8 @@ def _resolver_usuario(db: Session, token: str | None) -> Usuario | None:
     return user
 
 
-def get_current_user(
-    token: str | None = Depends(oauth2_scheme), db: Session = Depends(get_db)
-) -> Usuario:
-    """Resolve o usuário autenticado a partir do header Authorization: Bearer."""
-    user = _resolver_usuario(db, token)
+def _exigir_usuario(db: Session, token: str | None, etapa: Etapa | None = None) -> Usuario:
+    user = _resolver_usuario(db, token, etapa)
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -115,6 +111,24 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     return user
+
+
+def get_current_user(
+    token: str | None = Depends(oauth2_scheme), db: Session = Depends(get_db),
+) -> Usuario:
+    return _exigir_usuario(db, token)
+
+
+def usuario_para_troca_de_senha(
+    token: str | None = Depends(oauth2_scheme), db: Session = Depends(get_db),
+) -> Usuario:
+    return _exigir_usuario(db, token, "trocar_senha")
+
+
+def usuario_para_configurar_mfa(
+    token: str | None = Depends(oauth2_scheme), db: Session = Depends(get_db),
+) -> Usuario:
+    return _exigir_usuario(db, token, "cadastrar_mfa")
 
 
 def get_current_user_query(

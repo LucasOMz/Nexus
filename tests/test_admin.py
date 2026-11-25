@@ -1,6 +1,8 @@
 """Testes da administração: dispositivos de impressão e banco de fotos."""
 from __future__ import annotations
 
+from tests.conftest import marcar_primeiro_acesso_concluido
+
 # Conteúdo mínimo com assinatura PNG (o endpoint valida o content-type).
 PNG_FALSO = b"\x89PNG\r\n\x1a\n" + b"conteudo-de-teste"
 
@@ -40,6 +42,7 @@ def test_apenas_admin_gerencia_dispositivos(client, auth_headers):
         json={"nome": "Op", "email": "op2@teste.com", "papel": "leitor", "senha": "senha123"},
         headers=auth_headers,
     )
+    marcar_primeiro_acesso_concluido("op2@teste.com")
     tok = client.post("/api/v1/auth/login", data={"username": "op2@teste.com", "password": "senha123"}).json()["access_token"]
     h = {"Authorization": f"Bearer {tok}"}
     res = client.post("/api/v1/admin/dispositivos", json={"nome": "Nao pode", "tipo": "cups"}, headers=h)

@@ -114,7 +114,7 @@ services:
       AUTO_CREATE_TABLES: "true"
       PRINT_AGENT_URL: ${PRINT_AGENT_URL:-http://raspberry:9100}
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@empresa.com}
-      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-admin123}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
       # Backups: pasta persistente DENTRO do container (volume abaixo).
       BACKUP_DIR: /app/backups
       BACKUP_RETER: ${BACKUP_RETER:-30}

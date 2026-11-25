@@ -162,7 +162,7 @@ class Usuario(BaseModel, Base):
     # --- MFA (segunda etapa) ----------------------------------------------
     # Segredo TOTP em base32, gravado só DEPOIS que a pessoa confirma um
     # código. Guardar antes deixaria um segredo pendente que ninguém usa.
-    mfa_segredo: Mapped[str | None] = mapped_column(String(64))
+    mfa_segredo: Mapped[str | None] = mapped_column(Text)
     mfa_ativo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     mfa_ativado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Códigos de recuperação (JSON, lista de hashes): uso único, para quando o
