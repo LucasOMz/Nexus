@@ -395,7 +395,7 @@ def redefinir_mfa_usuario(
     usr_id: int, request: Request, db: Session = Depends(get_db), admin: Usuario = Depends(require_admin),
 ) -> None:
     if usr_id == admin.id:
-        raise HTTPException(400, "Para trocar seu próprio autenticador, use a tela Segurança ou peça a outro administrador.")
+        raise HTTPException(400, "Peça a outro administrador para redefinir o MFA da sua conta.")
     usuario = db.query(Usuario).filter(
         Usuario.id == usr_id, Usuario.deleted_at.is_(None),
     ).with_for_update(of=Usuario).first()
