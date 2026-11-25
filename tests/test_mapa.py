@@ -16,7 +16,7 @@ from io import BytesIO
 from PIL import Image
 
 from app.core.security import create_access_token
-from app.models import Ativo, Planta, Usuario
+from app.models import Ativo, Departamento, Planta, Usuario
 from app.models.enums import Dominio, StatusAtivo, TipoItem
 
 
@@ -189,24 +189,55 @@ class TestEscopoPorPlanta:
         assert client.get("/api/v1/mapas/1", headers=headers).json()["paredes"][0]["id"] == "parede-a"
 
 
-def test_leitor_consulta_apenas_o_inventario_permitido(client):
+def test_leitor_consulta_apenas_equipamentos_do_departamento(client):
     from tests.conftest import TestingSession
 
     with TestingSession() as db:
         _planta_com_ativos(db)
+        engenharia = Departamento(nome="Engenharia", planta_id=1)
+        operacoes = Departamento(nome="Operações", planta_id=1)
+        ativos = db.query(Ativo).order_by(Ativo.patrimonio).all()
+        ativos[0].departamento = ativos[2].departamento = engenharia
+        ativos[1].departamento = operacoes
+        ativos[0].mapa_x = ativos[0].mapa_z = ativos[1].mapa_x = ativos[1].mapa_z = 0
+        pendente = Ativo(
+            planta_id=1, departamento=engenharia, dominio=Dominio.TI, tipo_item=TipoItem.ATIVO,
+            status=StatusAtivo.ESTOQUE, patrimonio="PAT-PENDENTE", numero_serie="SN-PENDENTE",
+        )
         leitor = Usuario(
             nome="Leitor", email="mapa@teste.com", senha_hash="teste", papel="leitor",
-            ativo=True, planta_id=1, permissoes={"inventarios": ["ti"]},
+            ativo=True, planta_id=1, departamento=engenharia,
+            permissoes={"inventarios": ["ti", "impressora"], "pode_escrever": True},
         )
-        db.add(leitor)
+        sem_departamento = Usuario(
+            nome="Sem departamento", email="sem-depto@teste.com", senha_hash="teste",
+            papel="leitor", ativo=True, planta_id=1,
+        )
+        db.add_all([pendente, leitor, sem_departamento])
         db.commit()
+        ativo_id = ativos[0].id
         headers = {"Authorization": f"Bearer {create_access_token(leitor.id, 'leitor')}"}
+        headers_sem_depto = {"Authorization": f"Bearer {create_access_token(sem_departamento.id, 'leitor')}"}
 
     resposta = client.get("/api/v1/mapas/1/ativos", headers=headers)
     assert resposta.status_code == 200, resposta.text
-    assert [item["dominio"] for item in resposta.json()["pendentes"]] == ["ti", "ti"]
-    alteracao = client.put("/api/v1/mapas/1/estado", headers=headers, json={"projeto": {"paredes": []}})
-    assert alteracao.status_code == 403
+    corpo = resposta.json()
+    assert corpo["acesso"] == {"editar": False, "departamento": "Engenharia"}
+    assert [item["patrimonio"] for item in corpo["posicionados"]] == ["PAT-11"]
+    assert [item["patrimonio"] for item in corpo["pendentes"]] == ["PAT-PENDENTE"]
+    assert all(item["numero_serie"] is None for item in corpo["posicionados"] + corpo["pendentes"])
+    assert client.get("/api/v1/mapas/1", headers=headers).status_code == 200
+    for sufixo in ("", "/ativos", "/imagem"):
+        assert client.get(f"/api/v1/mapas/1{sufixo}", headers=headers_sem_depto).status_code == 403
+    for metodo, caminho, dados in (
+        ("PUT", "/1", {"paredes": []}),
+        ("PUT", "/1/estado", {"projeto": {"paredes": []}}),
+        ("POST", "/1/imagem", None),
+        ("DELETE", "/1/imagem", None),
+        ("PATCH", f"/ativos/{ativo_id}/posicao", {"x": 1, "z": 1}),
+        ("DELETE", f"/ativos/{ativo_id}/posicao", None),
+    ):
+        assert client.request(metodo, f"/api/v1/mapas{caminho}", headers=headers, json=dados).status_code == 403
 
 
 def test_planta_baixa_calcula_escala_e_protege_imagem(client, auth_headers):

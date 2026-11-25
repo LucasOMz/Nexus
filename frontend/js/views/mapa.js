@@ -1,6 +1,7 @@
 /** Espaço de trabalho para localizar ativos e editar a planta da unidade. */
 import { api } from "../api.js";
 import { ctx } from "../context.js";
+import { criarPlantaConsulta } from "../mapa_planta.js";
 import { state } from "../state.js";
 import { dialog, el, icon, mostrarErro, skeleton, STATUS_LABEL as statusAtivo, toast } from "../ui.js";
 import { abrirDetalhes } from "./ativo_detalhes.js";
@@ -90,29 +91,37 @@ export async function renderMapa(root) {
     store = new StoreNexus(planta, dados, projeto, imagemUrl);
     const unidade = plantas.find(p => p.id === Number(planta));
     const nome = unidade?.nome || state.user?.planta_sigla || `Planta ${planta}`;
+    let carregamento;
     const painel = montarPainel(pagina, nome, store, projeto, signal, {
+      acesso: dados.acesso,
+      falhaImagem,
       imagemAlterada(url) {
         if (imagemUrl) URL.revokeObjectURL(imagemUrl);
         imagemUrl = url;
       },
       obterViewer: () => viewer,
+      carregarViewer() {
+        if (viewer) return Promise.resolve(viewer);
+        carregamento ??= abrirViewer().finally(() => { carregamento = null; });
+        return carregamento;
+      },
     });
-    try {
-      const { Viewer } = await import("../../lib/mapa3d/viewer.js");
-      if (signal.aborted) return;
-      viewer = new Viewer(painel.viewport, painel.canvas, store, {
-        editable: false, thumbnails: false, showPlaceholder: false,
-      });
-      viewer.init();
-      painel.ligarViewer(viewer);
-      if (matchMedia("(max-width: 740px)").matches) viewer.setMode("top");
-      if (falhaImagem) painel.aviso.textContent = falhaImagem;
-    } catch (e) {
-      if (signal.aborted) return;
-      viewer?.dispose();
-      viewer = null;
-      painel.mostrarAlternativa(imagemUrl);
-      console.warn("Mapa 3D indisponível", e);
+    async function abrirViewer() {
+      try {
+        const { Viewer } = await import("../../lib/mapa3d/viewer.js");
+        if (signal.aborted) return null;
+        viewer = new Viewer(painel.viewport, painel.canvas, store, {
+          editable: false, thumbnails: false, showPlaceholder: false,
+        });
+        viewer.init();
+        painel.ligarViewer(viewer);
+        return viewer;
+      } catch (e) {
+        viewer?.dispose();
+        viewer = null;
+        console.warn("Mapa 3D indisponível", e);
+        return null;
+      }
     }
   } catch (e) {
     if (signal.aborted) return;
@@ -126,30 +135,34 @@ export async function renderMapa(root) {
 
 function tituloMapa(unidade, acoes = null) {
   return el("header", { class: "mapa-cabecalho" },
-    el("div", {}, el("h1", {}, "Mapa 3D"), el("p", {}, unidade)),
+    el("div", {}, el("h1", {}, "Mapa de equipamentos"), el("p", {}, unidade)),
     acoes);
 }
 
-function montarPainel(pagina, unidade, store, projeto, signal, { imagemAlterada, obterViewer }) {
-  const canWrite = state.canWrite;
+function montarPainel(pagina, unidade, store, projeto, signal, { acesso, falhaImagem, imagemAlterada, obterViewer, carregarViewer }) {
+  const { editar: canWrite, departamento } = acesso;
   let editando = false;
+  let vista3d = false;
   let aba = store.project.equipment.some(eq => !eq.pendente) ? "mapa" : "pendentes";
   let limite = passoLista;
   let ativoSelecionado = null;
   let paredeSelecionada = null;
   let cenaPronta = false;
-  let avisoInicial = "";
   const desinscrever = [];
 
-  const canvas = el("canvas", { class: "mapa-canvas", tabindex: "0", "aria-label": "Cena do mapa da unidade" });
+  const canvas = el("canvas", { class: "mapa-canvas", hidden: "", tabindex: "0", "aria-label": "Cena do mapa da unidade" });
   const viewport = el("div", { class: "mapa-viewport" }, canvas);
+  const consulta = criarPlantaConsulta(id => {
+    const eq = store.findEquipment(id);
+    if (eq) selecionar(eq, false);
+  }, signal);
   const aviso = el("span", { role: "status" });
   const coordenada = el("span", { class: "mapa-coordenada" }, "X —  Z —");
-  const imagemAlternativa = el("img", { class: "mapa-alternativa", alt: "Planta baixa da unidade", hidden: "" });
   const vazioCena = el("div", { class: "mapa-vazio-cena", hidden: "" },
     el("span", { class: "mapa-vazio-icone", html: icon("grade", 27) }),
-    el("strong", {}, "Prepare o mapa desta unidade"),
-    el("p", {}, "Adicione uma planta baixa ou posicione um ativo."));
+    el("strong", {}, "Mapa em preparação"),
+    el("p", {}, canWrite ? "Use Editar mapa para adicionar a planta baixa ou posicionar equipamentos."
+      : "A planta baixa e os equipamentos aparecerão aqui conforme a TI preparar o mapa."));
   const concluirParede = botao("Concluir parede", () => obterViewer()?.finishWall(), { classe: "mapa-scene-button" });
   const cancelar = botao("Cancelar ferramenta", () => obterViewer()?.cancelCurrent(), { classe: "mapa-scene-button" });
   concluirParede.hidden = cancelar.hidden = true;
@@ -175,13 +188,15 @@ function montarPainel(pagina, unidade, store, projeto, signal, { imagemAlterada,
     } catch (e) { mostrarErro(e, "abrir a tela cheia"); }
   }, { classe: "mapa-scene-button" });
   telaCheia.hidden = !viewport.requestFullscreen;
-  viewport.append(imagemAlternativa, vazioCena, el("div", { class: "mapa-cena-topo" }, modos,
-    el("div", { class: "mapa-cena-acoes" }, enquadrar, telaCheia)),
-    el("div", { class: "mapa-cena-rodape" },
-      el("div", { class: "mapa-cena-info" }, aviso, coordenada), cenaAcoes));
+  const controles3d = el("div", { class: "mapa-cena-topo" }, modos,
+    el("div", { class: "mapa-cena-acoes" }, enquadrar, telaCheia));
+  const rodape3d = el("div", { class: "mapa-cena-rodape" },
+    el("div", { class: "mapa-cena-info" }, aviso, coordenada), cenaAcoes);
+  viewport.append(consulta.elemento, vazioCena, controles3d, rodape3d);
 
   const legenda = el("div", { class: "mapa-legenda" },
-    el("span", {}, pontoTipo("ti"), "TI"), el("span", {}, pontoTipo("impressora"), "Impressoras"));
+    el("span", {}, pontoTipo("ti"), "Equipamentos de TI"),
+    departamento ? null : el("span", {}, pontoTipo("impressora"), "Impressoras"));
   const dimensoes = el("span", { class: "mapa-dimensoes" });
   const cobertura = el("span", { class: "mapa-cobertura" });
   const estado = el("span", { class: "mapa-save", role: "status" });
@@ -190,7 +205,7 @@ function montarPainel(pagina, unidade, store, projeto, signal, { imagemAlterada,
   const editar = botao("Editar mapa", alternarEdicao, { classe: "mapa-button-primary", icone: "edit" });
   const cabAcoes = el("div", { class: "mapa-cab-acoes" }, estado, tentarSalvar, canWrite ? editar : null);
 
-  const busca = el("input", { type: "search", placeholder: "Buscar patrimônio, hostname…", "aria-label": "Buscar ativos no mapa" });
+  const busca = el("input", { type: "search", placeholder: "Buscar patrimônio, nome ou modelo", "aria-label": "Buscar equipamentos" });
   const dominios = filtro("Tipo de ativo", [["", "Todos os tipos"], ["ti", "TI"], ["impressora", "Impressoras"]], refiltrar);
   const setores = Array.from(new Set(store.project.equipment.map(eq => eq.sector).filter(Boolean))).sort((a, b) => a.localeCompare(b, "pt-BR"));
   const setoresFiltro = filtro("Departamento", [["", "Todos os setores"], ...setores.map(s => [s, s])], refiltrar);
@@ -199,13 +214,13 @@ function montarPainel(pagina, unidade, store, projeto, signal, { imagemAlterada,
   const noMapa = botao("", () => mudarAba("mapa"));
   const pendentes = botao("", () => mudarAba("pendentes"));
   tabs.append(noMapa, pendentes);
-  const lista = el("ul", { class: "mapa-lista", "aria-label": "Ativos da unidade" });
+  const lista = el("ul", { class: "mapa-lista", "aria-label": "Equipamentos" });
   const ficha = el("div", { class: "mapa-ficha", "aria-label": "Detalhes da seleção" });
   const lateral = el("aside", { class: "mapa-lateral" },
     el("div", { class: "mapa-lateral-head" },
-      el("h2", {}, "Ativos da unidade"), cobertura,
+      el("h2", {}, departamento || "Equipamentos da unidade"), cobertura,
       el("label", { class: "mapa-busca" }, el("span", { html: icon("search", 18) }), busca),
-      el("div", { class: "mapa-filtros" }, dominios, setoresFiltro, situacoes), tabs),
+      el("div", { class: "mapa-filtros" }, departamento ? null : dominios, departamento ? null : setoresFiltro, situacoes), tabs),
     lista, ficha);
 
   const camadas = el("details", { class: "mapa-camadas" }, el("summary", {}, "Camadas"),
@@ -233,10 +248,22 @@ function montarPainel(pagina, unidade, store, projeto, signal, { imagemAlterada,
   acoesEdicao.hidden = true;
   const barra = el("div", { class: "mapa-barra" },
     el("div", { class: "mapa-barra-grupo" }, camadas, medir, limparMedidas), acoesEdicao);
-  const palco = el("section", { class: "mapa-palco", "aria-label": "Ferramentas e visualização" }, barra, viewport,
-    el("div", { class: "mapa-palco-rodape" }, legenda, dimensoes));
+  const vista = botao("Vista 3D", alternarVista);
+  const menos = botao("−", () => consulta.ampliar(1 / 1.3), { titulo: "Diminuir zoom" });
+  const mais = botao("+", () => consulta.ampliar(1.3), { titulo: "Aumentar zoom" });
+  menos.setAttribute("aria-label", "Diminuir zoom");
+  mais.setAttribute("aria-label", "Aumentar zoom");
+  const zoomConsulta = el("div", { class: "mapa-zoom-consulta", role: "group", "aria-label": "Navegação da planta" },
+    menos, mais, botao("Enquadrar", consulta.enquadrar));
+  const tituloPalco = el("h2", {}, "Planta baixa");
+  const mensagemMapa = el("p", { class: "mapa-aviso-consulta", role: "status" }, falhaImagem ? "A imagem da planta baixa está indisponível." : "");
+  const verDetalhes = botao("Ver detalhes", () => ficha.focus(), { classe: "mapa-detalhes-mobile mapa-button-quiet" });
+  ficha.tabIndex = -1;
+  const palco = el("section", { class: "mapa-palco", "aria-label": "Visualização da planta" },
+    el("div", { class: "mapa-palco-topo" }, tituloPalco, departamento ? null : vista, zoomConsulta), barra, viewport,
+    el("div", { class: "mapa-palco-rodape" }, legenda, dimensoes, verDetalhes), mensagemMapa);
   pagina.replaceChildren(tituloMapa(unidade, cabAcoes),
-    el("div", { class: "mapa-grade-layout" }, lateral, palco));
+    el("div", { class: "mapa-grade-layout" }, palco, lateral));
 
   busca.addEventListener("input", refiltrar, { signal });
   pagina.addEventListener("keydown", ev => {
@@ -267,18 +294,64 @@ function montarPainel(pagina, unidade, store, projeto, signal, { imagemAlterada,
     return avisoDialogo;
   }
 
-  function alternarEdicao() {
-    const v = obterViewer();
+  async function alternarEdicao() {
     editando = !editando;
+    vista3d = editando;
     editar.setAttribute("aria-pressed", String(editando));
     editar.lastChild.textContent = editando ? "Concluir edição" : "Editar mapa";
-    if (v) {
-      v.editable = editando;
-      v.cancelCurrent();
-      if (editando && v.mode === "walk") v.setMode("top");
+    paredeSelecionada = null;
+    if (editando) {
+      await abrirCena("top");
+    } else {
+      const v = obterViewer();
+      if (v) {
+        v.editable = false;
+        v.cancelCurrent();
+        if (v.mode === "walk") v.setMode("3d");
+      }
+      restaurarMensagem();
+      store.flushSave().catch(e => mostrarErro(e, "salvar o mapa"));
     }
-    if (!editando) store.flushSave().catch(e => mostrarErro(e, "salvar o mapa"));
-    atualizar();
+    if (!signal.aborted) atualizar();
+  }
+
+  async function alternarVista() {
+    vista3d = !vista3d;
+    paredeSelecionada = null;
+    if (vista3d) await abrirCena("3d");
+    else {
+      const v = obterViewer();
+      if (v?.mode === "walk") v.setMode("3d");
+      restaurarMensagem();
+    }
+    if (!signal.aborted) atualizar();
+  }
+
+  function restaurarMensagem() {
+    mensagemMapa.textContent = falhaImagem ? "A imagem da planta baixa está indisponível." : "";
+  }
+
+  async function abrirCena(modo) {
+    vista.disabled = editar.disabled = true;
+    mensagemMapa.textContent = "Abrindo visualização…";
+    const v = await carregarViewer();
+    if (signal.aborted) return;
+    vista.disabled = editar.disabled = false;
+    if (!v) {
+      vista3d = false;
+      mensagemMapa.textContent = editando
+        ? "Cena 3D indisponível. Você ainda pode enviar uma planta baixa e editar posições pelas coordenadas."
+        : "Vista 3D indisponível. Use a planta baixa para localizar os equipamentos.";
+      return;
+    }
+    restaurarMensagem();
+    atualizarFerramentas();
+    v.editable = editando;
+    v.resize();
+    v.setMode(modo);
+    v.fitAll();
+    const eq = store.findEquipment(ativoSelecionado);
+    v.select(eq && !eq.pendente ? "equipment" : null, eq?.id, { silent: true });
   }
 
   function mudarAba(valor) {
@@ -292,15 +365,16 @@ function montarPainel(pagina, unidade, store, projeto, signal, { imagemAlterada,
     atualizar();
   }
 
-  function selecionar(eq) {
+  function selecionar(eq, centralizar = true) {
     ativoSelecionado = eq.id;
     paredeSelecionada = null;
+    aba = eq.pendente ? "pendentes" : "mapa";
     const v = obterViewer();
-    if (v) {
+    if (vista3d && v) {
       if (v.mode === "walk") v.setMode("top");
       if (!eq.pendente) v.select("equipment", eq.id, { focus: true, silent: true });
       else v.select(null, null, { silent: true });
-    }
+    } else if (centralizar && !eq.pendente) consulta.focar(eq);
     atualizar();
   }
 
@@ -323,6 +397,10 @@ function montarPainel(pagina, unidade, store, projeto, signal, { imagemAlterada,
     cobertura.textContent = `${noPiso} de ${todos.length} posicionados`;
 
     const visiveis = filtrados.filter(eq => eq.pendente === (aba === "pendentes"));
+    if (ativoSelecionado && !visiveis.some(eq => eq.id === ativoSelecionado)) {
+      ativoSelecionado = null;
+      obterViewer()?.select(null, null, { silent: true });
+    }
     lista.replaceChildren(...visiveis.slice(0, limite).map(eq =>
       el("li", {}, botaoAtivo(eq, ativoSelecionado === eq.id, () => selecionar(eq)))));
     if (!visiveis.length) {
@@ -335,10 +413,12 @@ function montarPainel(pagina, unidade, store, projeto, signal, { imagemAlterada,
         atualizar();
       }, { classe: "mapa-button-quiet" })));
     }
-    obterViewer()?.setEquipmentFilter(new Set(filtrados.filter(eq => !eq.pendente).map(eq => eq.id)));
+    const posicionados = filtrados.filter(eq => !eq.pendente);
+    consulta.atualizar(store.project, posicionados, ativoSelecionado);
+    obterViewer()?.setEquipmentFilter(new Set(posicionados.map(eq => eq.id)));
     const plan = store.project.plan;
-    vazioCena.hidden = !cenaPronta || !!plan || noPiso > 0 || store.project.walls.length > 0;
-    dimensoes.textContent = plan ? `${formatar(plan.widthM)} × ${formatar(plan.heightM)} m` : "Sem planta baixa";
+    vazioCena.hidden = !!plan || noPiso > 0 || store.project.walls.length > 0;
+    dimensoes.textContent = editando && plan ? `${formatar(plan.widthM)} × ${formatar(plan.heightM)} m` : "";
     desenhar.disabled = !cenaPronta || store.project.walls.length >= 400;
     calibrar.disabled = !cenaPronta || !plan;
     renderFicha();
@@ -349,6 +429,16 @@ function montarPainel(pagina, unidade, store, projeto, signal, { imagemAlterada,
     const v = obterViewer();
     const ferramenta = v?.getState();
     const historico = store.historyState();
+    const cena = vista3d && cenaPronta;
+    if (v) v.suspended = !cena;
+    canvas.hidden = controles3d.hidden = rodape3d.hidden = !cena;
+    consulta.elemento.hidden = cena;
+    viewport.classList.toggle("mapa-vista-consulta", !cena);
+    tituloPalco.textContent = editando ? "Edição da planta" : cena ? "Vista 3D" : "Planta baixa";
+    vista.hidden = editando;
+    vista.textContent = cena ? "Planta baixa" : "Vista 3D";
+    zoomConsulta.hidden = cena;
+    barra.hidden = !editando;
     acoesEdicao.hidden = !editando;
     desfazer.disabled = !historico.canUndo;
     refazer.disabled = !historico.canRedo;
@@ -366,7 +456,7 @@ function montarPainel(pagina, unidade, store, projeto, signal, { imagemAlterada,
       ? "Clique na cena · WASD ou setas para andar · Esc libera o cursor"
       : editando ? "Arraste um ativo para mover ou ajuste as coordenadas na ficha."
         : "Selecione um ativo para consultar sua ficha.";
-    if (!ferramenta || ferramenta.tool === "select") aviso.textContent = avisoInicial || texto;
+    if (!ferramenta || ferramenta.tool === "select") aviso.textContent = texto;
   }
 
   function ativarFerramenta(acao) {
@@ -379,8 +469,10 @@ function montarPainel(pagina, unidade, store, projeto, signal, { imagemAlterada,
   function renderFicha() {
     const eq = store.findEquipment(ativoSelecionado);
     const wall = store.findWall(paredeSelecionada);
+    verDetalhes.hidden = !eq || editando;
     if (!eq && !wall) {
-      ficha.replaceChildren(el("h3", {}, "Detalhes"), el("p", {}, "Selecione um ativo ou uma parede."));
+      ficha.replaceChildren(el("h3", {}, "Detalhes do equipamento"),
+        el("p", {}, "Selecione um equipamento no mapa ou na lista."));
       return;
     }
     const fechar = botao("Fechar", () => {
@@ -400,8 +492,10 @@ function montarPainel(pagina, unidade, store, projeto, signal, { imagemAlterada,
     ficha.replaceChildren(el("div", { class: "mapa-ficha-titulo" }, el("h3", {}, eq.name), fechar),
       el("div", { class: "mapa-ficha-tags" }, papelTipo(a.dominio), el("span", { class: "mapa-tag" }, statusAtivo[a.status] || a.status)),
       pares([["Modelo", [a.marca, a.modelo].filter(Boolean).join(" ")], ["Hostname", a.hostname],
-        ["Local", a.localizacao], ["Setor", a.departamento], ["IP", eq.ip], ["Série", a.numero_serie],
-        ["Posição", eq.pendente ? "Sem posição" : `X ${formatar(eq.x, 2)} · Z ${formatar(eq.z, 2)} m · ${formatar(eq.rotation, 0)}°`]]),
+        ["Local", a.localizacao], ["Setor", departamento ? null : a.departamento],
+        ["IP", editando ? eq.ip : null], ["Série", editando ? a.numero_serie : null],
+        ["Posição", eq.pendente ? "Sem posição" : editando
+          ? `X ${formatar(eq.x, 2)} · Z ${formatar(eq.z, 2)} m · ${formatar(eq.rotation, 0)}°` : "No mapa"]]),
       el("div", { class: "mapa-ficha-acoes" },
         editando && cenaPronta ? botao(eq.pendente ? "Posicionar" : "Mover no mapa", () => {
           ativarFerramenta(v => {
@@ -417,7 +511,7 @@ function montarPainel(pagina, unidade, store, projeto, signal, { imagemAlterada,
           ativoSelecionado = eq.id;
           atualizar();
         }, { classe: "mapa-button-quiet" }) : null,
-        a.dominio === "ti" && state.podeModulo("ativos") ? botao("Ficha técnica", () => abrirDetalhes(a), { icone: "doc" }) : null));
+        !departamento && a.dominio === "ti" && state.podeModulo("ativos") ? botao("Ficha técnica", () => abrirDetalhes(a), { icone: "doc" }) : null));
   }
 
   function configurarPosicao(eq) {
@@ -503,8 +597,9 @@ function montarPainel(pagina, unidade, store, projeto, signal, { imagemAlterada,
 
   function atualizarImagem(url) {
     imagemAlterada(url);
+    falhaImagem = "";
+    restaurarMensagem();
     store.atualizarPlanta(projeto, url);
-    if (!cenaPronta) mostrarAlternativa(url);
   }
 
   function calibracaoPronta(v, { worldDistance }) {
@@ -552,18 +647,8 @@ function montarPainel(pagina, unidade, store, projeto, signal, { imagemAlterada,
     atualizar();
   }
 
-  function mostrarAlternativa(url) {
-    cenaPronta = false;
-    canvas.hidden = true;
-    imagemAlternativa.hidden = !url;
-    if (url) imagemAlternativa.src = url;
-    else imagemAlternativa.removeAttribute("src");
-    avisoInicial = "Visualização 3D indisponível neste navegador. Use a lista para consultar ou editar coordenadas.";
-    atualizar();
-  }
-
   atualizar();
-  return { viewport, canvas, aviso, ligarViewer, mostrarAlternativa };
+  return { viewport, canvas, ligarViewer };
 }
 
 function pontoTipo(tipo) {

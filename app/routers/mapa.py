@@ -28,15 +28,17 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session, selectinload
 
 from app.config import settings
-from app.core.deps import require_module, require_write
-from app.core.permissoes import permissoes_efetivas
+from app.core.deps import require_module
+from app.core.permissoes import permissoes_efetivas, pode_acao
 from app.core.planta import planta_ativa_obrigatoria
 from app.core.uploads import MAX_PLANTA, ler_arquivo, validar_imagem
 from app.database import get_db
-from app.models.core import Ativo, Planta, Usuario
+from app.models.core import Ativo, Departamento, Planta, Usuario
+from app.models.enums import Dominio, PapelUsuario, TipoItem
 from app.models.mapa import MapaProjeto
 
 router = APIRouter(prefix="/mapas", tags=["mapa 3d"])
+_usuario_mapa = require_module("mapa")
 
 # Mesma pasta das fotos do sistema.
 PASTA = "mapas"
@@ -143,6 +145,25 @@ def _ativos_autorizados(db: Session, user: Usuario, planta_id: int | None):
     return q
 
 
+def _pode_editar(user: Usuario) -> bool:
+    return user.papel in (PapelUsuario.ADMIN, PapelUsuario.TI) and pode_acao(user, "pode_escrever")
+
+
+def _exigir_edicao(user: Usuario = Depends(_usuario_mapa)) -> Usuario:
+    if not _pode_editar(user):
+        raise HTTPException(403, "A edição do mapa é reservada à equipe de TI com acesso de escrita.")
+    return user
+
+
+def _departamento_consulta(db: Session, user: Usuario, planta_id: int) -> Departamento | None:
+    if user.papel != PapelUsuario.LEITOR:
+        return None
+    departamento = db.get(Departamento, user.departamento_id) if user.departamento_id else None
+    if departamento is None or departamento.deleted_at is not None or departamento.planta_id not in (None, planta_id):
+        raise HTTPException(403, "Peça ao administrador para vincular sua conta a um departamento desta unidade.")
+    return departamento
+
+
 def _aplicar_posicao(ativo: Ativo, dados: PosicaoEntrada | None) -> None:
     ativo.mapa_x = dados.x if dados else None
     ativo.mapa_z = dados.z if dados else None
@@ -153,20 +174,20 @@ def _aplicar_posicao(ativo: Ativo, dados: PosicaoEntrada | None) -> None:
 def ler_projeto(
     planta_id: int,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_module("mapa")),
+    user: Usuario = Depends(_usuario_mapa),
     planta: int | None = Depends(planta_ativa_obrigatoria),
 ) -> dict:
     """O projeto da planta. `planta` é a planta ativa do usuário."""
     _verificar_planta(db, planta_id, planta)
+    _departamento_consulta(db, user, planta_id)
     return _serializar(_projeto(db, planta_id))
 
 
-@router.put("/{planta_id}", dependencies=[Depends(require_write)])
+@router.put("/{planta_id}", dependencies=[Depends(_exigir_edicao)])
 def salvar_projeto(
     planta_id: int,
     dados: ProjetoEntrada,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_module("mapa")),
     planta: int | None = Depends(planta_ativa_obrigatoria),
 ) -> dict:
     """Grava escala, dimensões e paredes. A imagem tem rota própria."""
@@ -179,12 +200,12 @@ def salvar_projeto(
     return _serializar(p)
 
 
-@router.put("/{planta_id}/estado", dependencies=[Depends(require_write)])
+@router.put("/{planta_id}/estado")
 def salvar_estado(
     planta_id: int,
     dados: EstadoEntrada,
     db: Session = Depends(get_db),
-    user: Usuario = Depends(require_module("mapa")),
+    user: Usuario = Depends(_exigir_edicao),
     planta: int | None = Depends(planta_ativa_obrigatoria),
 ) -> dict:
     """Grava geometria e posições em uma transação."""
@@ -209,13 +230,12 @@ def salvar_estado(
     return {"ok": True}
 
 
-@router.post("/{planta_id}/imagem", dependencies=[Depends(require_write)])
+@router.post("/{planta_id}/imagem", dependencies=[Depends(_exigir_edicao)])
 def enviar_imagem(
     planta_id: int,
     arquivo: UploadFile = File(...),
     largura_metros: float | None = Form(default=None, gt=0, le=1000),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_module("mapa")),
     planta: int | None = Depends(planta_ativa_obrigatoria),
 ) -> dict:
     _verificar_planta(db, planta_id, planta, bloquear=True)
@@ -251,11 +271,12 @@ def enviar_imagem(
 def ler_imagem(
     planta_id: int,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_module("mapa")),
+    user: Usuario = Depends(_usuario_mapa),
     planta: int | None = Depends(planta_ativa_obrigatoria),
 ):
     """Serve o desenho. Fica atrás de login: a planta baixa é informação."""
     _verificar_planta(db, planta_id, planta)
+    _departamento_consulta(db, user, planta_id)
     p = db.query(MapaProjeto).filter(MapaProjeto.planta_id == planta_id).first()
     if p is None or not p.imagem:
         raise HTTPException(404, "Esta planta ainda não tem planta baixa.")
@@ -274,11 +295,10 @@ def _remover_arquivo(imagem: str) -> None:
         pass
 
 
-@router.delete("/{planta_id}/imagem", dependencies=[Depends(require_write)])
+@router.delete("/{planta_id}/imagem", dependencies=[Depends(_exigir_edicao)])
 def remover_imagem(
     planta_id: int,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_module("mapa")),
     planta: int | None = Depends(planta_ativa_obrigatoria),
 ) -> dict:
     _verificar_planta(db, planta_id, planta, bloquear=True)
@@ -296,7 +316,7 @@ def remover_imagem(
 def ativos_do_mapa(
     planta_id: int,
     db: Session = Depends(get_db),
-    user: Usuario = Depends(require_module("mapa")),
+    user: Usuario = Depends(_usuario_mapa),
     planta: int | None = Depends(planta_ativa_obrigatoria),
 ) -> dict:
     """Ativos da planta, com e sem posição.
@@ -306,6 +326,7 @@ def ativos_do_mapa(
     mapa — e ninguém notaria.
     """
     _verificar_planta(db, planta_id, planta)
+    departamento = _departamento_consulta(db, user, planta_id)
 
     consulta = (
         _ativos_autorizados(db, user, planta_id)
@@ -313,29 +334,36 @@ def ativos_do_mapa(
                  selectinload(Ativo.ti), selectinload(Ativo.impressora))
         .order_by(Ativo.dominio, Ativo.patrimonio, Ativo.id)
     )
+    if departamento is not None:
+        consulta = consulta.filter(
+            Ativo.departamento_id == departamento.id,
+            Ativo.dominio == Dominio.TI,
+            Ativo.tipo_item == TipoItem.ATIVO,
+        )
 
     posicionados = []
     pendentes = []
 
     for a in consulta.all():
+        impressora = a.impressora if departamento is None else None
         item = {
             "id": a.id,
             "dominio": a.dominio.value if hasattr(a.dominio, "value") else a.dominio,
             "patrimonio": a.patrimonio,
-            "numero_serie": a.numero_serie,
+            "numero_serie": a.numero_serie if departamento is None else None,
             "modelo": a.modelo,
             "marca": a.marca,
             "status": a.status.value if hasattr(a.status, "value") else a.status,
             "departamento": a.departamento.nome if a.departamento else None,
             "localizacao": a.localizacao.nome if a.localizacao else None,
-            "hostname": a.ti.hostname if a.ti else (a.impressora.hostname if a.impressora else None),
-            "ip": a.ti.ip if a.ti else None,
-            "impressora_ip": a.impressora.ip if a.impressora else None,
+            "hostname": a.ti.hostname if a.ti else (impressora.hostname if impressora else None),
+            "ip": a.ti.ip if a.ti and departamento is None else None,
+            "impressora_ip": impressora.ip if impressora else None,
             # Impressora não tem `modelo` na extensão: o modelo é o campo
             # base do ativo. `driver` e `colorida` existem e podem interessar
             # ao mapa — vão como extras.
-            "driver": a.impressora.driver if a.impressora else None,
-            "colorida": a.impressora.colorida if a.impressora else None,
+            "driver": impressora.driver if impressora else None,
+            "colorida": impressora.colorida if impressora else None,
         }
 
         if a.mapa_x is not None and a.mapa_z is not None:
@@ -346,15 +374,22 @@ def ativos_do_mapa(
         else:
             pendentes.append(item)
 
-    return {"posicionados": posicionados, "pendentes": pendentes}
+    return {
+        "posicionados": posicionados,
+        "pendentes": pendentes,
+        "acesso": {
+            "editar": _pode_editar(user),
+            "departamento": departamento.nome if departamento is not None else None,
+        },
+    }
 
 
-@router.patch("/ativos/{ativo_id}/posicao", dependencies=[Depends(require_write)])
+@router.patch("/ativos/{ativo_id}/posicao")
 def posicionar(
     ativo_id: int,
     dados: PosicaoEntrada,
     db: Session = Depends(get_db),
-    user: Usuario = Depends(require_module("mapa")),
+    user: Usuario = Depends(_exigir_edicao),
     planta: int | None = Depends(planta_ativa_obrigatoria),
 ) -> dict:
     """Move um ativo no mapa."""
@@ -367,11 +402,11 @@ def posicionar(
     return {"ok": True, "ativo_id": ativo_id, "x": a.mapa_x, "z": a.mapa_z}
 
 
-@router.delete("/ativos/{ativo_id}/posicao", dependencies=[Depends(require_write)])
+@router.delete("/ativos/{ativo_id}/posicao")
 def remover_do_mapa(
     ativo_id: int,
     db: Session = Depends(get_db),
-    user: Usuario = Depends(require_module("mapa")),
+    user: Usuario = Depends(_exigir_edicao),
     planta: int | None = Depends(planta_ativa_obrigatoria),
 ) -> dict:
     a = _ativos_autorizados(db, user, planta).filter(Ativo.id == ativo_id).with_for_update(of=Ativo).first()

@@ -1824,6 +1824,7 @@ export class Viewer extends Emitter {
   _loop() {
     if (this._disposed) return;
     this._raf = requestAnimationFrame(this._loop);
+    if (this.suspended) return;
     const dt = Math.min(0.05, this._clock.getDelta());
     const t = this._clock.elapsedTime;
 
