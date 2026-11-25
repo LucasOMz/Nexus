@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, require_admin, require_escrita, require_exclusao
 from app.core.planta import planta_ativa
+from app.core.primeiro_acesso import limpar_mfa
 from app.core.security import hash_password
 from app.database import get_db
 from app.models.core import Categoria, Departamento, Fornecedor, Localizacao, Planta, Usuario
@@ -387,6 +388,27 @@ def update_usuario(
     db.commit()
     db.refresh(obj)
     return obj
+
+
+@router.post("/usuarios/{usr_id}/mfa/redefinir", status_code=204)
+def redefinir_mfa_usuario(
+    usr_id: int, request: Request, db: Session = Depends(get_db), admin: Usuario = Depends(require_admin),
+) -> None:
+    if usr_id == admin.id:
+        raise HTTPException(400, "Para trocar seu próprio autenticador, use a tela Segurança ou peça a outro administrador.")
+    usuario = db.query(Usuario).filter(
+        Usuario.id == usr_id, Usuario.deleted_at.is_(None),
+    ).with_for_update(of=Usuario).first()
+    if usuario is None:
+        raise HTTPException(404, "Usuário não encontrado")
+
+    mfa_estava_ativo = usuario.mfa_ativo
+    limpar_mfa(usuario)
+    usuario.mfa_recadastro_pendente = True
+    sessoes.revogar_do_usuario(db, usuario)
+    audit(db, admin, "redefinir_mfa", "usuario", usuario.id, ip=_ip(request),
+          diff={"mfa_estava_ativo": mfa_estava_ativo, "mfa_recadastro_pendente": True})
+    db.commit()
 
 
 @router.delete("/usuarios/{usr_id}", status_code=204)

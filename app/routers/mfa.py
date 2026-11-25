@@ -9,8 +9,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from app.core import cripto
-from app.core.deps import get_current_user, usuario_para_configurar_mfa
-from app.core.primeiro_acesso import mfa_exigido
+from app.core.deps import get_current_user, oauth2_scheme, usuario_para_configurar_mfa
+from app.core.primeiro_acesso import credencial_revogada, limpar_mfa, mfa_exigido
+from app.core.security import decode_token
 from app.database import get_db
 from app.models.core import Usuario
 from app.models.enums import PapelUsuario
@@ -28,6 +29,18 @@ class CodigoIn(BaseModel):
 
 def _hash_recuperacao(codigo: str) -> str:
     return hashlib.sha256(plataforma.normalizar_codigo_recuperacao(codigo).encode()).hexdigest()
+
+
+def _bloquear_configuracao(db: Session, user: Usuario, token: str | None) -> None:
+    db.refresh(user, with_for_update={"of": Usuario})
+    dados = decode_token(token or "") or {}
+    sid = dados.get("sid")
+    sessao_revogada = (
+        not sessoes.ativa(db, sid, user.id, setup=dados.get("type") == "setup") if isinstance(sid, str)
+        else credencial_revogada(user, dados.get("iat"))
+    )
+    if user.deleted_at is not None or not user.ativo or sessao_revogada:
+        raise HTTPException(401, "Entre novamente para configurar a segunda etapa.")
 
 
 def exigir_admin(user: Usuario) -> None:
@@ -91,13 +104,14 @@ def situacao(
 def iniciar(
     db: Session = Depends(get_db),
     user: Usuario = Depends(usuario_para_configurar_mfa),
+    token: str | None = Depends(oauth2_scheme),
 ):
     """Gera um segredo novo e o endereço do QR Code.
 
     **Não ativa nada.** O segredo fica pendente até alguém provar que o
     aplicativo está configurado, confirmando um código.
     """
-    db.refresh(user, with_for_update={"of": Usuario})
+    _bloquear_configuracao(db, user, token)
     if user.senha_temporaria:
         raise HTTPException(401, "Troque a senha antes de configurar a segunda etapa.")
     if user.mfa_ativo:
@@ -123,9 +137,10 @@ def confirmar(
     request: Request,
     db: Session = Depends(get_db),
     user: Usuario = Depends(usuario_para_configurar_mfa),
+    token: str | None = Depends(oauth2_scheme),
 ):
     """Confirma o código e **então** ativa. Devolve os códigos de recuperação."""
-    db.refresh(user, with_for_update={"of": Usuario})
+    _bloquear_configuracao(db, user, token)
     if user.senha_temporaria:
         raise HTTPException(401, "Troque a senha antes de configurar a segunda etapa.")
     if user.mfa_ativo:
@@ -144,6 +159,7 @@ def confirmar(
     user.mfa_ativo = True
     user.mfa_ativado_em = datetime.now(timezone.utc)
     user.mfa_recuperacao = [_hash_recuperacao(c) for c in codigos]
+    user.mfa_recadastro_pendente = False
 
     audit(db, user, "ativar_mfa", "usuario", user.id,
           ip=request.client.host if request.client else None)
@@ -182,10 +198,7 @@ def desativar(
         if not consumir_recuperacao(db, user, body.codigo):
             raise HTTPException(400, "Código incorreto.")
 
-    user.mfa_ativo = False
-    user.mfa_segredo = None
-    user.mfa_recuperacao = None
-    user.mfa_ativado_em = None
+    limpar_mfa(user)
     sessoes.revogar_do_usuario(db, user)
 
     audit(db, user, "desativar_mfa", "usuario", user.id,

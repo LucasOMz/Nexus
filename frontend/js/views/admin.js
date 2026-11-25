@@ -286,6 +286,21 @@ async function abaUsuarios(root) {
         el("div", { class: "list-sub" }, `${u.email} · ${(perms.modulos || []).length} módulos · ${perms.pode_escrever ? "pode editar" : "somente leitura"}${perms.pode_excluir ? " · pode excluir" : ""}`),
       ),
       el("div", { class: "row" },
+        u.id !== state.user?.id ? el("button", {
+          class: "iconbtn", title: "Redefinir MFA", "aria-label": `Redefinir MFA de ${u.nome}`,
+          onclick: async (ev) => {
+            const botao = ev.currentTarget;
+            botao.disabled = true;
+            try {
+              const confirmou = await confirmSheet("Redefinir MFA", `Redefinir a verificação em duas etapas de ${u.nome}? As sessões serão encerradas e a pessoa precisará cadastrar um autenticador no próximo login.`,
+                { confirmLabel: "Redefinir MFA" });
+              if (!confirmou) return;
+              await api.request("POST", `/usuarios/${u.id}/mfa/redefinir`, { enfileirar: false });
+              toast("MFA redefinido. O usuário deve cadastrar um autenticador no próximo login.");
+            } catch (e) { mostrarErro(e, "redefinir o MFA"); }
+            finally { botao.disabled = false; }
+          }, html: icon("shield", 20),
+        }) : null,
         el("button", { class: "iconbtn", title: "Editar", onclick: () => abrirUsuario(u, lookups), html: icon("edit", 20) }),
         el("button", { class: "iconbtn", title: "Excluir", onclick: async () => {
           if (await confirmSheet("Excluir usuário", `Excluir ${u.nome}?`)) {

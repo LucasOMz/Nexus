@@ -10,7 +10,7 @@ Etapa = Literal["trocar_senha", "cadastrar_mfa"]
 
 
 def mfa_exigido(user: Usuario) -> bool:
-    return user.mfa_obrigatorio or (
+    return user.mfa_recadastro_pendente or user.mfa_obrigatorio or (
         settings.env.lower() == "production" and user.papel == PapelUsuario.ADMIN
     )
 
@@ -21,6 +21,13 @@ def etapa_pendente(user: Usuario) -> Etapa | None:
     if mfa_exigido(user) and not user.mfa_ativo:
         return "cadastrar_mfa"
     return None
+
+
+def limpar_mfa(user: Usuario) -> None:
+    user.mfa_segredo = None
+    user.mfa_ativo = False
+    user.mfa_ativado_em = None
+    user.mfa_recuperacao = None
 
 
 def credencial_revogada(user: Usuario, emitido: int | float | None) -> bool:

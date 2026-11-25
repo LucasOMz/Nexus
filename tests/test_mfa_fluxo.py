@@ -11,9 +11,10 @@ from sqlalchemy import event
 from sqlalchemy.dialects import postgresql
 
 from app.core import cripto
-from app.models.core import Usuario
+from app.core.security import hash_password
+from app.models.core import LogAuditoria, Usuario
 from app.services import plataforma
-from tests.conftest import engine
+from tests.conftest import TestingSession, engine
 
 
 @pytest.fixture
@@ -65,7 +66,7 @@ def test_alteracoes_de_senha_e_mfa_bloqueiam_somente_usuarios_no_postgresql(clie
     finally:
         event.remove(engine, "before_execute", capturar)
 
-    assert len(bloqueios) == 4
+    assert len(bloqueios) == 5
     assert all(sql.endswith("FOR UPDATE OF usuarios") for sql in bloqueios), bloqueios
     assert any("LEFT OUTER JOIN plantas" in sql for sql in bloqueios)
 
@@ -286,3 +287,60 @@ def _confirmar(client, headers, segredo):
     )
     assert resposta.status_code == 200, resposta.text
     return {"Authorization": f"Bearer {resposta.json()['sessao']['access_token']}"}
+
+
+def test_admin_redefine_mfa_e_exige_recadastro_no_proximo_login(client, auth_headers, eu):
+    credenciais = {"username": "usuario-mfa@teste.com", "password": "SenhaUsuario123"}
+    with TestingSession() as db:
+        usuario = Usuario(nome="Usuário MFA", email=credenciais["username"],
+                          senha_hash=hash_password(credenciais["password"]), papel="leitor", planta_id=1)
+        db.add(usuario)
+        db.commit()
+        uid = usuario.id
+
+    def login(**campos):
+        return client.post("/api/v1/auth/login", data={**credenciais, **campos})
+
+    def bearer(sessao):
+        return {"Authorization": f"Bearer {sessao['access_token']}"}
+
+    rota = f"/api/v1/usuarios/{uid}/mfa/redefinir"
+    sessao = login().json()
+    segredo = client.post("/api/v1/mfa/iniciar", headers=bearer(sessao)).json()["segredo"]
+    ativacao = client.post("/api/v1/mfa/confirmar", headers=bearer(sessao),
+                           json={"codigo": plataforma.gerar_codigo(segredo)}).json()
+    sessao_antiga = ativacao["sessao"]
+    assert client.post(rota, headers=bearer(sessao_antiga)).status_code == 403
+    assert client.post(f"/api/v1/usuarios/{eu}/mfa/redefinir", headers=auth_headers).status_code == 400
+    assert login().json()["detail"] == "mfa_necessario"
+
+    reset = client.post(rota, headers=auth_headers)
+    assert reset.status_code == 204, reset.text
+    assert _segredo_no_banco(uid) == (None, False, [])
+    assert client.get("/api/v1/auth/me", headers=bearer(sessao_antiga)).status_code == 401
+    assert client.post("/api/v1/auth/refresh", json={"refresh_token": sessao_antiga["refresh_token"]}).status_code == 401
+    with TestingSession() as db:
+        usuario = db.get(Usuario, uid)
+        assert usuario.mfa_ativado_em is None and usuario.mfa_recadastro_pendente
+        assert usuario.mfa_obrigatorio is False
+        evento = db.query(LogAuditoria).filter_by(acao="redefinir_mfa", entidade_id=uid).one()
+        assert evento.usuario_id == eu
+
+    cadastro = login().json()
+    assert cadastro["acao_requerida"] == "cadastrar_mfa"
+    assert cadastro["refresh_token"] is None
+    assert client.get("/api/v1/auth/me", headers=bearer(cadastro)).status_code == 401
+    assert client.post("/api/v1/mfa/iniciar", headers=bearer(cadastro)).status_code == 200
+
+    # Redefinir de novo também revoga credenciais provisórias já emitidas.
+    assert client.post(rota, headers=auth_headers).status_code == 204
+    assert client.post("/api/v1/mfa/iniciar", headers=bearer(cadastro)).status_code == 401
+    novo_headers = bearer(login().json())
+    novo_segredo = client.post("/api/v1/mfa/iniciar", headers=novo_headers).json()["segredo"]
+    assert novo_segredo != segredo
+    novo_acesso = _confirmar(client, novo_headers, novo_segredo)
+    assert client.get("/api/v1/auth/me", headers=novo_acesso).status_code == 200
+    assert login(codigo=ativacao["codigos_recuperacao"][0]).status_code == 401
+    assert login(codigo=plataforma.gerar_codigo(novo_segredo)).status_code == 200
+    with TestingSession() as db:
+        assert db.get(Usuario, uid).mfa_recadastro_pendente is False

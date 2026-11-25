@@ -201,6 +201,7 @@ class Usuario(BaseModel, Base):
     # Cadastro do MFA exigido no primeiro acesso. Vale para conta nova (local
     # ou AD): quem entra pela primeira vez precisa registrar a segunda etapa.
     mfa_obrigatorio: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    mfa_recadastro_pendente: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     primeiro_acesso_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # --- presença e expulsão --------------------------------------------

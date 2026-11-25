@@ -130,6 +130,8 @@ def login(
         .first()
     )
     cfg = obter_config(db)
+    revogacao_antes = user.forcar_logout_em if user is not None else None
+    resultado_ad = None
 
     if user is not None and user.origem == "local":
         # Conta local (inclui o root/admin): senha do sistema, sem AD.
@@ -156,7 +158,7 @@ def login(
                         detail="Seu usuário de rede ainda não tem acesso a este sistema. "
                                "Peça ao administrador para cadastrá-lo.",
                     )
-                _sincronizar_nome_do_ad(user, resultado)
+                resultado_ad = resultado
         # Compatibilidade: conta que existe localmente e não é do AD.
         if not autenticado and user is not None and user.origem != "ad":
             if verify_password(form.password, user.senha_hash):
@@ -165,8 +167,15 @@ def login(
             # Mensagem única: não revela se o usuário existe ou não.
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=_ERRO_GENERICO)
 
+    # A redefinição do MFA revoga sessões sob o mesmo bloqueio. Caso uma
+    # revogação tenha ocorrido durante a autenticação, recomece o login.
+    db.refresh(user, with_for_update={"of": Usuario})
+    if user.deleted_at is not None or user.forcar_logout_em != revogacao_antes:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=_ERRO_GENERICO)
     if not user.ativo:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Usuário inativo")
+    if resultado_ad is not None:
+        _sincronizar_nome_do_ad(user, resultado_ad)
 
     # --- modo manutenção --------------------------------------------------
     #
@@ -220,10 +229,10 @@ def login(
                 )
 
     elif acao == "cadastrar_mfa":
-        # Conta nova (local ou AD): entra, mas o cadastro do MFA e obrigatorio.
         mensagem = (
-            "Bem-vindo! Antes de usar o sistema, cadastre a verificacao em duas "
-            "etapas com o aplicativo autenticador."
+            "Sua verificação em duas etapas foi redefinida. Cadastre o aplicativo autenticador para continuar."
+            if user.mfa_recadastro_pendente
+            else "Bem-vindo! Antes de usar o sistema, cadastre a verificação em duas etapas com o aplicativo autenticador."
         )
 
     audit(db, user, "login", "usuario", user.id, ip=client_ip)
