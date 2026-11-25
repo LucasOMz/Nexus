@@ -17,6 +17,7 @@ from typing import Any
 # O antigo "dashboard" foi incorporado a "relatorios".
 MODULOS: dict[str, str] = {
     "ativos": "Ativos",
+    "mapa": "Mapa 3D",
     "produtos": "Consumíveis",
     "movimentacoes": "Movimentações",
     "manutencoes": "Manutenções",
@@ -60,21 +61,21 @@ def permissoes_padrao(papel: str) -> dict[str, Any]:
     if papel == "ti":
         return {
             "inventarios": todos_inv,
-            "modulos": ["ativos", "produtos", "movimentacoes", "manutencoes", "scanner", "contagens", "contratos", "descarte", "software", "financeiro", "emprestimos", "monitor", "seguranca", "relatorios", "impressao", "calendario", "reporte"],
+            "modulos": ["ativos", "mapa", "produtos", "movimentacoes", "manutencoes", "scanner", "contagens", "contratos", "descarte", "software", "financeiro", "emprestimos", "monitor", "seguranca", "relatorios", "impressao", "calendario", "reporte"],
             "pode_escrever": True,
             "pode_excluir": False,
         }
     if papel == "auditor":
         return {
             "inventarios": todos_inv,
-            "modulos": ["ativos", "produtos", "movimentacoes", "manutencoes", "contagens", "contratos", "descarte", "software", "financeiro", "emprestimos", "monitor", "seguranca", "relatorios", "calendario", "reporte"],
+            "modulos": ["ativos", "mapa", "produtos", "movimentacoes", "manutencoes", "contagens", "contratos", "descarte", "software", "financeiro", "emprestimos", "monitor", "seguranca", "relatorios", "calendario", "reporte"],
             "pode_escrever": False,
             "pode_excluir": False,
         }
     # leitor — o calendário é visível para TODOS (cada um vê a sua planta).
     return {
         "inventarios": todos_inv,
-        "modulos": ["ativos", "produtos", "movimentacoes", "manutencoes", "scanner", "contagens", "contratos", "descarte", "software", "financeiro", "emprestimos", "monitor", "seguranca", "calendario", "reporte"],
+        "modulos": ["ativos", "mapa", "produtos", "movimentacoes", "manutencoes", "scanner", "contagens", "contratos", "descarte", "software", "financeiro", "emprestimos", "monitor", "seguranca", "calendario", "reporte"],
         "pode_escrever": False,
         "pode_excluir": False,
     }

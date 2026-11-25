@@ -15,8 +15,8 @@ export class ApiError extends Error {
 
 const BASE = "/api/v1";
 
-function incluirPlanta(headers) {
-  if (state.plantaAtiva) headers["X-Planta-Id"] = String(state.plantaAtiva);
+function incluirPlanta(headers, planta = state.plantaAtiva) {
+  if (planta) headers["X-Planta-Id"] = String(planta);
   else if (state.isAdmin) headers["X-Planta-Id"] = "todas";
 }
 
@@ -80,7 +80,7 @@ export async function encerrarSessao() {
 export const api = {
   base: BASE,
 
-  async request(method, path, { body, query, renovar = true } = {}) {
+  async request(method, path, { body, query, planta, renovar = true, enfileirar = true } = {}) {
     let url = this.base + path;
     if (query) {
       const qs = new URLSearchParams();
@@ -94,7 +94,7 @@ export const api = {
     if (body !== undefined) headers["Content-Type"] = "application/json";
     const acesso = state.access;
     if (acesso) headers["Authorization"] = "Bearer " + acesso;
-    incluirPlanta(headers);
+    incluirPlanta(headers, planta);
 
     // Prazo para a resposta.
     //
@@ -135,7 +135,7 @@ export const api = {
         );
       }
       // Offline: fila a escrita para reenvio posterior.
-      if (method !== "GET" && !path.startsWith("/auth/") && !path.startsWith("/mfa/")) {
+      if (enfileirar && method !== "GET" && !path.startsWith("/auth/") && !path.startsWith("/mfa/")) {
         await enqueue(method, path, body);
       }
       throw new ApiError(0, "Sem conexão com o servidor");
@@ -145,7 +145,9 @@ export const api = {
 
     // 401 → tenta refresh uma vez e repete a requisição.
     if (renovar && res.status === 401 && state.refresh && (!path.startsWith("/auth/") || path === "/auth/me")) {
-      if (await refreshTokens(acesso)) return this.request(method, path, { body, query, renovar: false });
+      if (await refreshTokens(acesso)) {
+        return this.request(method, path, { body, query, planta, enfileirar, renovar: false });
+      }
     }
 
     let data = null;

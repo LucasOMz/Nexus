@@ -28,11 +28,17 @@ function disposeMaterials(root) {
 }
 
 export class Viewer extends Emitter {
-  constructor(container, canvas, store) {
+  constructor(container, canvas, store, { thumbnails = true, editable = true, showPlaceholder = true } = {}) {
     super();
     this.container = container;
     this.canvas = canvas;
     this.store = store;
+    this.editable = editable;
+    this.thumbnailsEnabled = thumbnails;
+    this.showPlaceholder = showPlaceholder;
+    this.equipmentFilter = null;
+    this._events = new AbortController();
+    this._subscriptions = [];
     this.mode = '3d';
     this.tool = 'select';
     this.placementType = null;
@@ -191,9 +197,10 @@ export class Viewer extends Emitter {
     this._bindEvents();
     this._resizeObserver = new ResizeObserver(() => this.resize());
     this._resizeObserver.observe(this.container);
-    window.addEventListener('resize', () => this.resize());
+    window.addEventListener('resize', () => this.resize(), { signal: this._events.signal });
 
     this.resize();
+    this.compactEquipment = this.store.project.equipment.filter(item => !item.pendente).length > 200;
     this._applySettings(this.store.project.settings);
     this.applyPlan(this.store.project.plan, { fit: true });
     this.syncAll();
@@ -201,36 +208,38 @@ export class Viewer extends Emitter {
     this._loop = this._loop.bind(this);
     this._raf = requestAnimationFrame(this._loop);
 
-    setTimeout(() => this._generateThumbnails(), 180);
+    if (this.thumbnailsEnabled) setTimeout(() => this._generateThumbnails(), 180);
     return this;
   }
 
   _bindStore() {
-    this.store.on('equipment:add', (item) => this.addItem(item));
-    this.store.on('equipment:update', ({ item }) => this.updateItem(item));
-    this.store.on('equipment:remove', ({ id }) => this.removeItem(id));
-    this.store.on('walls:change', () => this.rebuildWalls());
-    this.store.on('plan:change', (plan) => this.applyPlan(plan, { fit: true }));
-    this.store.on('settings:change', (settings) => this._applySettings(settings));
-    this.store.on('sync', () => this.syncAll());
-    this.store.on('request:select', ({ kind, id }) => {
+    const on = (event, callback) => this._subscriptions.push(this.store.on(event, callback));
+    on('equipment:add', (item) => this.addItem(item));
+    on('equipment:update', ({ item }) => this.updateItem(item));
+    on('equipment:remove', ({ id }) => this.removeItem(id));
+    on('walls:change', () => this.rebuildWalls());
+    on('plan:change', (plan) => this.applyPlan(plan, { fit: true }));
+    on('settings:change', (settings) => this._applySettings(settings));
+    on('sync', () => this.syncAll());
+    on('request:select', ({ kind, id }) => {
       if (this.tool !== 'select') this.setTool('select');
       this.select(kind, id, { focus: false });
     });
   }
 
   _bindEvents() {
-    this.canvas.addEventListener('pointerdown', (e) => this._onPointerDown(e));
-    this.canvas.addEventListener('pointermove', (e) => this._onPointerMove(e));
-    this.canvas.addEventListener('pointerup', (e) => this._onPointerUp(e));
-    this.canvas.addEventListener('pointerleave', () => this._onPointerLeave());
+    const options = { signal: this._events.signal };
+    this.canvas.addEventListener('pointerdown', (e) => this._onPointerDown(e), options);
+    this.canvas.addEventListener('pointermove', (e) => this._onPointerMove(e), options);
+    this.canvas.addEventListener('pointerup', (e) => this._onPointerUp(e), options);
+    this.canvas.addEventListener('pointerleave', () => this._onPointerLeave(), options);
     this.canvas.addEventListener('dblclick', () => {
       if (this.tool === 'wall') this.finishWall();
-    });
+    }, options);
     this.canvas.addEventListener('click', () => {
       if (this.mode === 'walk' && document.pointerLockElement !== this.canvas) this.requestWalkLock();
-    });
-    this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    }, options);
+    this.canvas.addEventListener('contextmenu', (e) => e.preventDefault(), options);
 
     this._onKeyDown = (e) => {
       if (this.mode !== 'walk') return;
@@ -240,18 +249,18 @@ export class Viewer extends Emitter {
       }
     };
     this._onKeyUp = (e) => this._walkKeys.delete(e.code);
-    document.addEventListener('keydown', this._onKeyDown);
-    document.addEventListener('keyup', this._onKeyUp);
+    document.addEventListener('keydown', this._onKeyDown, options);
+    document.addEventListener('keyup', this._onKeyUp, options);
 
     document.addEventListener('pointerlockchange', () => {
       this._locked = document.pointerLockElement === this.canvas;
       this.emit('walk:locked', this._locked);
-    });
+    }, options);
     document.addEventListener('mousemove', (e) => {
       if (this.mode !== 'walk' || !this._locked) return;
       this._walkYaw -= e.movementX * 0.0022;
       this._walkPitch = clamp(this._walkPitch - e.movementY * 0.0022, -1.35, 1.35);
-    });
+    }, options);
   }
 
   resize() {
@@ -317,6 +326,7 @@ export class Viewer extends Emitter {
       this.emit('plan:ready', plan);
       if (fit) this.fitAll({ animate: true });
     } catch (err) {
+      if (this._disposed || token !== this.planToken) return;
       console.error('[Mapa3D] planta', err);
       this.emit('error', { message: 'Não foi possível carregar a imagem da planta.' });
       this._buildPlaceholder();
@@ -425,9 +435,10 @@ export class Viewer extends Emitter {
     this.floorGroup.add(border);
 
     this.floorGrid = this._makeGrid(W, H);
-    this.floorGrid.visible = true;
+    this.floorGrid.visible = !!this.store.project.settings.showGrid;
     this.floorGroup.add(this.floorGrid);
 
+    if (!this.showPlaceholder) return;
     // Texto no piso
     const c = document.createElement('canvas');
     c.width = 1024;
@@ -523,14 +534,15 @@ export class Viewer extends Emitter {
   }
 
   addItem(item) {
-    if (!item || this.items.has(item.id)) return;
+    if (!item || item.pendente || this.items.has(item.id)) return;
     const type = getType(item.type);
     const category = categoryOf(item.type);
     const group = new THREE.Group();
     group.name = `equip:${item.id}`;
+    group.visible = !this.equipmentFilter || this.equipmentFilter.has(item.id);
     group.userData.equipmentId = item.id;
 
-    const model = buildModel(item.type);
+    const model = this.compactEquipment ? this._buildMapPin(item) : buildModel(item.type);
     model.scale.setScalar(item.scale || 1);
     model.traverse((o) => {
       if (o.isMesh) {
@@ -544,10 +556,10 @@ export class Viewer extends Emitter {
     group.position.set(item.x, item.elevation || 0, item.z);
     group.rotation.y = deg2rad(item.rotation || 0);
 
-    const label = this.makeLabel(item, model);
-    group.add(label);
+    const label = this.compactEquipment ? null : this.makeLabel(item, model);
+    if (label) group.add(label);
 
-    const ring = createSelectionRing(category.color);
+    const ring = createSelectionRing(item.mapColor || category.color);
     ring.raycast = () => {};
     ring.position.y = -(item.elevation || 0) + 0.025;
     const box = new THREE.Box3().setFromObject(model);
@@ -558,14 +570,18 @@ export class Viewer extends Emitter {
     group.add(ring);
 
     this.equipmentGroup.add(group);
-    this.items.set(item.id, { group, model, label, ring, item, baseScale, labelY: label.position.y });
+    this.items.set(item.id, { group, model, label, ring, item, baseScale, labelY: label?.position.y });
     if (!this.plan && this.placeholderText) this.placeholderText.visible = false;
-    if (this.store.project.settings.showLabels && this.mode !== 'walk') label.visible = true;
+    if (label && this.store.project.settings.showLabels && this.mode !== 'walk') label.visible = true;
     if (this.selected?.kind === 'equipment' && this.selected.id === item.id) ring.visible = true;
     this.emit('item:added', item);
   }
 
   updateItem(item) {
+    if (item.pendente) {
+      this.removeItem(item.id);
+      return;
+    }
     const rec = this.items.get(item.id);
     if (!rec) {
       this.addItem(item);
@@ -578,18 +594,53 @@ export class Viewer extends Emitter {
     rec.ring.position.y = -(item.elevation || 0) + 0.025;
 
     // recria o rótulo (nome/status/setor podem ter mudado)
-    const oldLabel = rec.label;
-    const label = this.makeLabel(item, rec.model);
-    rec.group.add(label);
-    rec.label = label;
-    oldLabel.parent?.remove(oldLabel);
-    oldLabel.material?.map?.dispose?.();
-    oldLabel.material?.dispose?.();
-    rec.labelY = label.position.y;
+    if (rec.label && !this.compactEquipment) {
+      const oldLabel = rec.label;
+      const label = this.makeLabel(item, rec.model);
+      rec.group.add(label);
+      rec.label = label;
+      oldLabel.parent?.remove(oldLabel);
+      oldLabel.material?.map?.dispose?.();
+      oldLabel.material?.dispose?.();
+      rec.labelY = label.position.y;
+    }
     this._applyLabelVisibility();
 
     const category = categoryOf(item.type);
-    rec.ring.material.color.set(category.color);
+    rec.ring.material.color.set(item.mapColor || category.color);
+  }
+
+  _buildMapPin(item) {
+    if (!this.pinGeometry) {
+      this.pinGeometry = new THREE.CylinderGeometry(0.17, 0.22, 0.45, 8);
+      this.pinGeometry.userData.shared = true;
+      this.pinMaterials = new Map();
+    }
+    const color = item.mapColor || categoryOf(item.type).color;
+    if (!this.pinMaterials.has(color)) {
+      this.pinMaterials.set(color, new THREE.MeshBasicMaterial({ color }));
+    }
+    const pin = new THREE.Mesh(this.pinGeometry, this.pinMaterials.get(color));
+    pin.position.y = 0.22;
+    const model = new THREE.Group();
+    model.add(pin);
+    return model;
+  }
+
+  _clearCompactLabel() {
+    if (!this.compactEquipment || this.selected?.kind !== 'equipment') return;
+    const rec = this.items.get(this.selected.id);
+    if (!rec?.label) return;
+    rec.group.remove(rec.label);
+    rec.label.material?.map?.dispose?.();
+    rec.label.material?.dispose?.();
+    rec.label = null;
+  }
+
+  setEquipmentFilter(ids) {
+    this.equipmentFilter = ids;
+    for (const [id, rec] of this.items) rec.group.visible = !ids || ids.has(id);
+    this._applyLabelVisibility();
   }
 
   removeItem(id, { silent = false } = {}) {
@@ -646,7 +697,7 @@ export class Viewer extends Emitter {
     ctx.arcTo(x, y, x + w, y, r);
     ctx.closePath();
     ctx.clip();
-    ctx.fillStyle = category.color;
+    ctx.fillStyle = item.mapColor || category.color;
     ctx.fillRect(x, y, 7, h);
     ctx.restore();
 
@@ -668,7 +719,7 @@ export class Viewer extends Emitter {
 
     ctx.font = '600 18px "Segoe UI", system-ui, sans-serif';
     ctx.fillStyle = status.color;
-    const statusText = status.label.toUpperCase();
+    const statusText = (item.statusLabel || status.label).toUpperCase();
     ctx.textAlign = 'right';
     ctx.fillText(statusText, 610, 54);
     ctx.textAlign = 'left';
@@ -739,6 +790,10 @@ export class Viewer extends Emitter {
     for (const [id, rec] of this.items) {
       const label = rec.label;
       if (!label) continue;
+      if (!rec.group.visible) {
+        label.visible = false;
+        continue;
+      }
       label.getWorldPosition(world);
       ndc.copy(world).project(cam);
       if (ndc.z < -1 || ndc.z > 1) {
@@ -860,6 +915,7 @@ export class Viewer extends Emitter {
   /* ======================= seleção ======================= */
 
   select(kind, id, { focus = false, silent = false } = {}) {
+    this._clearCompactLabel();
     if (!kind || !id) {
       this.selected = null;
       for (const rec of this.items.values()) rec.ring.visible = false;
@@ -878,6 +934,10 @@ export class Viewer extends Emitter {
       if (!rec) return;
       rec.ring.visible = true;
       this.selected = { kind, id };
+      if (this.compactEquipment) {
+        rec.label = this.makeLabel(rec.item, rec.model);
+        rec.group.add(rec.label);
+      }
       if (focus) this.focusOn(id);
       if (!silent) this.emit('selection', { kind, id, item: rec.item });
     } else if (kind === 'wall') {
@@ -974,15 +1034,27 @@ export class Viewer extends Emitter {
   }
 
   fitAll({ animate = true } = {}) {
-    const w = Math.max(this.planW, 4);
-    const h = Math.max(this.planH, 4);
-    const center = new THREE.Vector3(0, 0.4, 0);
+    let minX = -this.planW / 2, maxX = this.planW / 2;
+    let minZ = -this.planH / 2, maxZ = this.planH / 2;
+    const incluir = (x, z) => {
+      minX = Math.min(minX, x - 2);
+      minZ = Math.min(minZ, z - 2);
+      maxX = Math.max(maxX, x + 2);
+      maxZ = Math.max(maxZ, z + 2);
+    };
+    for (const { group, item } of this.items.values()) {
+      if (group.visible) incluir(item.x, item.z);
+    }
+    for (const wall of this.store.project.walls) wall.points.forEach(([x, z]) => incluir(x, z));
+    const w = Math.max(maxX - minX, 4);
+    const h = Math.max(maxZ - minZ, 4);
+    const center = new THREE.Vector3((minX + maxX) / 2, 0.4, (minZ + maxZ) / 2);
     const aspect = this._aspect();
     if (this.mode === 'top') {
       this.topViewHeight = Math.max(h, w / aspect) * 1.08;
       this.topCamera.zoom = 1;
       this.orbitTop.target.copy(center);
-      this.topCamera.position.set(0, 100, 0.001);
+      this.topCamera.position.set(center.x, 100, center.z + 0.001);
       this.updateTopFrustum();
       this.orbitTop.update();
       this._hasFitted = true;
@@ -1186,7 +1258,8 @@ export class Viewer extends Emitter {
     this.emit('toolchange', { tool, typeId: this.placementType });
   }
 
-  startPlacement(typeId) {
+  startPlacement(typeId, equipmentId = null) {
+    this.placementId = equipmentId;
     this.placementType = typeId;
     this.setTool('add', { typeId });
   }
@@ -1232,14 +1305,22 @@ export class Viewer extends Emitter {
   _handleAdd(p) {
     if (!this.placementType) return;
     const type = getType(this.placementType);
-    const item = this.store.addEquipment({
+    const position = {
       type: this.placementType,
       x: this._snap(p.x),
       z: this._snap(p.z),
       elevation: type.elevation || 0,
       rotation: 0,
       sector: '',
-    });
+    };
+    if (Math.max(Math.abs(position.x), Math.abs(position.z)) > 500) {
+      this.emit('error', { message: 'Escolha um ponto dentro dos limites do mapa.' });
+      return;
+    }
+    const item = this.placementId
+      ? this.store.updateEquipment(this.placementId, { x: position.x, z: position.z, pendente: false })
+      : this.store.addEquipment(position);
+    if (!item) return;
     this.setTool('select');
     this.select('equipment', item.id, { focus: false });
     this.emit('placed', item);
@@ -1323,10 +1404,10 @@ export class Viewer extends Emitter {
   applyCalibration(realMeters) {
     if (!this.calibration?.worldDistance || !(realMeters > 0)) return;
     const ratio = realMeters / this.calibration.worldDistance;
+    this.store.scaleBy(ratio);
     this.emit('calibration:apply', { ratio });
     this.clearCalibration({ keepTool: true });
     this.setTool('select');
-    this.store.scaleBy(ratio);
     this.fitAll({ animate: true });
     this.emit('calibrated', { ratio, meters: realMeters });
   }
@@ -1409,6 +1490,10 @@ export class Viewer extends Emitter {
   _handleWallPoint(p) {
     if (!this.wallDraft) this.wallDraft = { points: [] };
     const pt = [this._snap(p.x), this._snap(p.z)];
+    if (this.wallDraft.points.length >= 120 || pt.some(n => Math.abs(n) > 500)) {
+      this.emit('error', { message: 'Finalize a parede antes de adicionar novos pontos.' });
+      return;
+    }
     const last = this.wallDraft.points[this.wallDraft.points.length - 1];
     if (last && Math.hypot(last[0] - pt[0], last[1] - pt[1]) < 0.05) return;
     this.wallDraft.points.push(pt);
@@ -1517,13 +1602,14 @@ export class Viewer extends Emitter {
       while (obj && !obj.userData?.equipmentId) obj = obj.parent;
       if (obj?.userData?.equipmentId) {
         const rec = this.items.get(obj.userData.equipmentId);
-        if (rec) return rec;
+        if (rec?.group.visible) return rec;
       }
     }
     return null;
   }
 
   _pickWall(e) {
+    if (!this.store.project.settings.showWalls) return null;
     const ndc = this._pointerNdc(e);
     this._raycaster.setFromCamera(ndc, this._activeCamera());
     const hits = this._raycaster.intersectObjects(this.wallMeshes, false);
@@ -1564,6 +1650,7 @@ export class Viewer extends Emitter {
       this.hovered = null;
       this.emit('hover', { item: null });
       this.select('equipment', rec.item.id, { focus: false });
+      if (!this.editable) return;
       const p = this._floorPointFromEvent(e);
       if (p) {
         this.drag = {
@@ -1575,6 +1662,7 @@ export class Viewer extends Emitter {
           moved: false,
         };
         this.orbit.enabled = false;
+        this.orbitTop.enabled = false;
         this.canvas.classList.add('grabbing');
       }
       return;
@@ -1662,9 +1750,14 @@ export class Viewer extends Emitter {
       const nz = rec ? rec.group.position.z : 0;
       this.drag = null;
       this.orbit.enabled = this.mode === '3d';
+      this.orbitTop.enabled = this.mode === 'top';
       this.canvas.classList.remove('grabbing');
-      if (rec && wasMoved) {
+      if (rec && wasMoved && Math.max(Math.abs(nx), Math.abs(nz)) <= 500) {
         this.store.updateEquipment(rec.item.id, { x: nx, z: nz }, { coalesceKey: `move:${rec.item.id}` });
+      } else if (rec && wasMoved) {
+        rec.group.position.x = pos.x;
+        rec.group.position.z = pos.z;
+        this.emit('error', { message: 'Escolha um ponto dentro dos limites do mapa.' });
       }
       return;
     }
@@ -1868,8 +1961,19 @@ export class Viewer extends Emitter {
 
   dispose() {
     this._disposed = true;
+    this.planToken++;
+    this._events.abort();
+    this._subscriptions.forEach(off => off());
+    if (document.pointerLockElement === this.canvas) document.exitPointerLock?.();
     cancelAnimationFrame(this._raf);
     this._resizeObserver?.disconnect();
+    this.orbit?.dispose();
+    this.orbitTop?.dispose();
+    if (this.scene) disposeGeometries(this.scene);
+    this.planTexture?.dispose();
+    this.pinGeometry?.dispose();
+    this.pinMaterials?.forEach(mat => mat.dispose());
+    this.envRT?.dispose();
     this.renderer?.dispose();
   }
 }

@@ -11,7 +11,12 @@
 """
 from __future__ import annotations
 
-from app.models import Ativo, Planta
+from io import BytesIO
+
+from PIL import Image
+
+from app.core.security import create_access_token
+from app.models import Ativo, Planta, Usuario
 from app.models.enums import Dominio, StatusAtivo, TipoItem
 
 
@@ -29,7 +34,7 @@ def _planta_com_ativos(db, planta_id=1):
 
 
 class TestProjeto:
-    def test_cria_o_projeto_na_primeira_visita(self, client, auth_headers):
+    def test_entrega_o_projeto_vazio_na_primeira_visita(self, client, auth_headers):
         r = client.get("/api/v1/mapas/1", headers=auth_headers)
         assert r.status_code == 200, r.text
         corpo = r.json()
@@ -152,3 +157,72 @@ class TestEscopoPorPlanta:
         todos = corpo["posicionados"] + corpo["pendentes"]
         assert len(todos) == 3
         assert all((x["patrimonio"] or "").startswith("PAT-1") for x in todos)
+
+    def test_lote_de_outro_escopo_nao_grava_parte_das_posicoes(self, client, auth_headers):
+        from tests.conftest import TestingSession
+
+        with TestingSession() as db:
+            db.add(Planta(nome="Outra", sigla="OUT", ativa=True))
+            db.commit()
+            _planta_com_ativos(db, planta_id=1)
+            _planta_com_ativos(db, planta_id=2)
+            primeiro = db.query(Ativo.id).filter_by(planta_id=1).first().id
+            externo = db.query(Ativo.id).filter_by(planta_id=2).first().id
+
+        posicao = {"x": 4, "z": 2, "rotacao": 90}
+        headers = {**auth_headers, "X-Planta-Id": "1"}
+        r = client.put("/api/v1/mapas/1/estado", headers=headers, json={
+            "projeto": {"paredes": [{"id": "parede-a", "points": [[0, 0], [4, 2]]}]},
+            "posicoes": {str(primeiro): posicao, str(externo): posicao},
+        })
+        assert r.status_code == 404
+        assert client.get("/api/v1/mapas/1/ativos", headers=headers).json()["posicionados"] == []
+        assert client.get("/api/v1/mapas/1", headers=headers).json()["paredes"] == []
+        assert client.get("/api/v1/mapas/2", headers=headers).status_code == 404
+
+        r = client.put("/api/v1/mapas/1/estado", headers=headers, json={
+            "projeto": {"paredes": [{"id": "parede-a", "points": [[0, 0], [4, 2]]}]},
+            "posicoes": {str(primeiro): posicao},
+        })
+        assert r.status_code == 200, r.text
+        assert client.get("/api/v1/mapas/1/ativos", headers=headers).json()["posicionados"][0]["id"] == primeiro
+        assert client.get("/api/v1/mapas/1", headers=headers).json()["paredes"][0]["id"] == "parede-a"
+
+
+def test_leitor_consulta_apenas_o_inventario_permitido(client):
+    from tests.conftest import TestingSession
+
+    with TestingSession() as db:
+        _planta_com_ativos(db)
+        leitor = Usuario(
+            nome="Leitor", email="mapa@teste.com", senha_hash="teste", papel="leitor",
+            ativo=True, planta_id=1, permissoes={"inventarios": ["ti"]},
+        )
+        db.add(leitor)
+        db.commit()
+        headers = {"Authorization": f"Bearer {create_access_token(leitor.id, 'leitor')}"}
+
+    resposta = client.get("/api/v1/mapas/1/ativos", headers=headers)
+    assert resposta.status_code == 200, resposta.text
+    assert [item["dominio"] for item in resposta.json()["pendentes"]] == ["ti", "ti"]
+    alteracao = client.put("/api/v1/mapas/1/estado", headers=headers, json={"projeto": {"paredes": []}})
+    assert alteracao.status_code == 403
+
+
+def test_planta_baixa_calcula_escala_e_protege_imagem(client, auth_headers):
+    imagem = BytesIO()
+    Image.new("RGB", (160, 80), "white").save(imagem, format="PNG")
+    caminho = "/api/v1/mapas/1/imagem"
+    envio = client.post(caminho, headers=auth_headers, data={"largura_metros": "16"},
+                        files={"arquivo": ("planta.png", imagem.getvalue(), "image/png")})
+    assert envio.status_code == 200, envio.text
+    projeto = envio.json()
+    assert projeto["largura_px"] == 160 and projeto["altura_px"] == 80
+    assert projeto["escala_metros_por_pixel"] == 0.1
+    assert client.get(caminho).status_code == 401
+    assert client.get(caminho, headers=auth_headers).content == imagem.getvalue()
+    invalida = client.post(caminho, headers=auth_headers, files={"arquivo": ("planta.png", b"texto", "image/png")})
+    assert invalida.status_code == 422
+    assert client.get(caminho, headers=auth_headers).content == imagem.getvalue()
+    assert client.delete(caminho, headers=auth_headers).status_code == 200
+    assert client.get(caminho, headers=auth_headers).status_code == 404

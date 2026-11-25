@@ -93,6 +93,12 @@ class TestFluxoDeDuplaAprovacao:
 
     def test_aprovacao_do_admin_muda_a_planta_do_ativo(self, client, auth_headers):
         a, b, ha, hb, ativo = self._cenario(client, auth_headers)
+        posicionado = client.patch(
+            f"/api/v1/mapas/ativos/{ativo['id']}/posicao",
+            headers={**auth_headers, "X-Planta-Id": str(a)},
+            json={"x": 2, "z": 3, "rotacao": 90},
+        )
+        assert posicionado.status_code == 200, posicionado.text
         tid = _solicitar(client, ha, a, ativo["id"], b).json()["id"]
         client.post(f"/api/v1/transferencias/{tid}/aprovar", headers={**hb, "X-Planta-Id": str(b)})
 
@@ -102,6 +108,9 @@ class TestFluxoDeDuplaAprovacao:
 
         depois = client.get(f"/api/v1/ativos/{ativo['id']}", headers=auth_headers).json()
         assert depois["planta_id"] == b, "o ativo deveria ter mudado de planta"
+        mapa_destino = client.get(f"/api/v1/mapas/{b}/ativos", headers=auth_headers).json()
+        assert mapa_destino["posicionados"] == []
+        assert [item["id"] for item in mapa_destino["pendentes"]] == [ativo["id"]]
 
     def test_origem_nao_aprova_a_propria_transferencia(self, client, auth_headers):
         """Quem envia não decide a chegada — senão não haveria aprovação."""

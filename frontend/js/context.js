@@ -16,4 +16,6 @@ export const ctx = {
   goHome: () => {},
   /** Re-renderiza a rota atual. */
   rerender: () => {},
+  /** Libera recursos da tela antes de navegar ou atualizar o escopo. */
+  limpar: () => {},
 };

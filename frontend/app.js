@@ -689,6 +689,8 @@ function openDrawer() {
 // Roteamento
 // ---------------------------------------------------------------------------
 function renderRoute(path) {
+  ctx.limpar();
+  ctx.limpar = () => {};
   currentPath = path;
 
   if (path === "selecao") {

@@ -210,7 +210,7 @@ export const state = {
 
   /** Módulos que este usuário pode acessar. */
   modulosPermitidos() {
-    if (this.isAdmin) return ["ativos", "produtos", "movimentacoes", "manutencoes", "scanner", "relatorios", "cadastros", "impressao", "calendario", "reporte", "kanban"];
+    if (this.isAdmin) return ["ativos", "mapa", "produtos", "movimentacoes", "manutencoes", "scanner", "relatorios", "cadastros", "impressao", "calendario", "reporte", "kanban"];
     return this.perms.modulos || [];
   },
 

@@ -275,12 +275,13 @@ def aprovar(
         if _papel(user) != "admin":
             raise HTTPException(403, "Esta etapa é do administrador.")
         # Aprovação final: o ativo muda de planta e o histórico é registrado.
-        ativo = db.get(Ativo, t.ativo_id)
+        ativo = db.get(Ativo, t.ativo_id, populate_existing=True, with_for_update={"of": Ativo})
         if ativo is None or ativo.deleted_at is not None:
             raise HTTPException(404, "O ativo desta transferência não existe mais.")
 
         origem = t.planta_origem_id
         ativo.planta_id = t.planta_destino_id
+        ativo.mapa_x = ativo.mapa_z = ativo.mapa_rotacao = None
         t.status = "aprovada"
         t.aprovado_admin_por = user
         t.aprovado_admin_em = agora

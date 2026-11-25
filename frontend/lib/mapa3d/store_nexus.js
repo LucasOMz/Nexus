@@ -1,253 +1,162 @@
-/**
- * Store do mapa 3D servido pelo Nexus.
- *
- * ## O que este arquivo faz
- *
- * **Estende o `Store` original do projeto "Mapa 3D"** — 533 linhas de lógica
- * de projeto, histórico (desfazer/refazer) e manipulação de equipamentos —
- * trocando **apenas duas coisas**:
- *
- * 1. `load()`: em vez de `localStorage`, busca o projeto na API do Nexus.
- * 2. `saveLocal()`: em vez de gravar no navegador, envia para a API.
- *
- * Todo o resto (mover, rotacionar, escalar, desfazer) continua igual ao
- * original e funciona de graça.
- *
- * ## As duas traduções
- *
- * * **Ativo do Nexus → equipamento do mapa**: `patrimonio` → `tag`,
- *   `departamento` → `sector`, `mapa_x`/`mapa_z` → `x`/`z`.
- * * **Tipo do catálogo**: `ti` vira `desktop`, `impressora` vira `printer`.
- *
- * Sem essas traduções, o Viewer desenharia quadrados genéricos e as etiquetas
- * ficariam vazias.
- *
- * @module lib/mapa3d/store_nexus
- */
+/** Adapta o editor 3D ao projeto e aos ativos reais do Nexus. */
 import { api } from "../../js/api.js";
+import { STATUS_LABEL } from "../../js/ui.js";
 import { Store, createEquipment } from "./store.js";
 
-const TIPO_POR_DOMINIO = {
-  ti: "desktop",
-  impressora: "printer",
+const statusVisual = {
+  estoque: "estoque", reservado: "estoque", em_uso: "online",
+  manutencao: "manutencao", descartado: "offline", emprestado: "online",
 };
 
-const STATUS_POR_VALOR = {
-  estoque: "estoque",
-  em_uso: "online",
-  manutencao: "manutencao",
-  descarte: "offline",
-  emprestado: "online",
-};
+function tipoDoAtivo(ativo) {
+  if (ativo.dominio === "impressora") return "printer";
+  const modelo = ativo.modelo || "";
+  if (/notebook|laptop|thinkpad|latitude|vivobook|macbook|elitebook|ideapad/i.test(modelo)) return "notebook";
+  if (/servidor|poweredge|proliant/i.test(modelo)) return "server";
+  if (/switch|roteador|router|nobreak|rack/i.test(modelo)) {
+    if (/switch/i.test(modelo)) return "switch";
+    if (/roteador|router/i.test(modelo)) return "router";
+    if (/nobreak/i.test(modelo)) return "nobreak";
+    return "rack";
+  }
+  return "desktop";
+}
 
-/**
- * Traduz um ativo do Nexus para um equipamento do mapa.
- *
- * O `id` vira `String(ativo.id)` para casar com o formato do original
- * (`eq-xxxx`), e é por ele que o `updateEquipment` sabe qual ativo mover.
- */
-export function equipamentoDeAtivo(ativo) {
-  return createEquipment(TIPO_POR_DOMINIO[ativo.dominio] || "desktop", {
+function equipamentoDeAtivo(ativo, pendente) {
+  return createEquipment(tipoDoAtivo(ativo), {
     id: String(ativo.id),
-    name: ativo.patrimonio || ativo.numero_serie || `#${ativo.id}`,
+    name: ativo.patrimonio || ativo.hostname || ativo.numero_serie || `Ativo #${ativo.id}`,
     tag: ativo.patrimonio || "",
     sector: ativo.departamento || "",
-    // `status` do Nexus: estoque, em_uso, manutencao, descarte.
-    status: STATUS_POR_VALOR[ativo.status] || "online",
+    status: statusVisual[ativo.status] || "estoque",
+    statusLabel: STATUS_LABEL[ativo.status],
+    mapColor: ativo.dominio === "impressora" ? "#aa88ea" : "#43c4bd",
     ip: ativo.ip || ativo.impressora_ip || "",
     model: ativo.modelo || "",
     serial: ativo.numero_serie || "",
-    responsible: ativo.ultimo_usuario || "",
     notes: ativo.localizacao || "",
-    x: Number(ativo.x ?? 0),
-    z: Number(ativo.z ?? 0),
-    rotation: Number(ativo.rotacao ?? 0),
-    // Guardado para o clique abrir a ficha certa do Nexus.
-    ativoId: ativo.id,
-    dominio: ativo.dominio,
+    x: ativo.x ?? 0,
+    z: ativo.z ?? 0,
+    rotation: ativo.rotacao ?? 0,
+    pendente,
+    ativo,
   });
 }
 
+function paredesDoProjeto(paredes = []) {
+  return paredes.flatMap((parede, indice) => {
+    if (!parede) return [];
+    const points = parede.points || [[parede.x1, parede.z1], [parede.x2, parede.z2]];
+    if (points.length < 2 || !points.every(p => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite))) return [];
+    return [{
+      id: parede.id || `parede-${indice}`,
+      points,
+      height: parede.height ?? parede.altura ?? 3,
+      thickness: parede.thickness ?? parede.espessura ?? 0.16,
+    }];
+  });
+}
+
+export function plantaDoProjeto(projeto, dataUrl) {
+  if (!dataUrl) return null;
+  const widthPx = projeto.largura_px || 1024;
+  const heightPx = projeto.altura_px || 768;
+  const escala = projeto.escala_metros_por_pixel || 0.02;
+  return { dataUrl, widthPx, heightPx, widthM: widthPx * escala, heightM: heightPx * escala };
+}
+
+const metros = valor => Math.round(valor * 1000) / 1000;
+
 export class StoreNexus extends Store {
-  /**
-   * @param {number} plantaId  planta cujo mapa está aberto
-   * @param {object} dados     `{posicionados, pendentes}` vindo da API
-   * @param {object} projeto   `{imagem, largura_px, altura_px, escala, paredes}`
-   */
-  constructor(plantaId, dados, projeto) {
-    // O `Store` original chama `load()` no construtor; passamos um storage
-    // inerte para ele não tentar `localStorage`.
-    super({ storage: { getItem: () => null, setItem: () => {} } });
-
+  constructor(plantaId, dados, projeto, imagemUrl) {
+    super({ storage: null });
     this.plantaId = plantaId;
-    this._projetoApi = projeto || {};
-    this._salvando = null;
-
-    // Aplica o projeto já carregado pela tela, sem nova ida à API.
-    this.project = this._montarProjeto(dados, projeto);
+    this.project.plan = plantaDoProjeto(projeto, imagemUrl);
+    this.project.walls = paredesDoProjeto(projeto.paredes);
+    this.project.equipment = [
+      ...dados.posicionados.map(ativo => equipamentoDeAtivo(ativo, false)),
+      ...dados.pendentes.map(ativo => equipamentoDeAtivo(ativo, true)),
+    ];
+    this.project.settings.showGrid = true;
+    this.salvo = this._estadoParaSalvar();
   }
 
-  _montarProjeto(dados, projeto) {
-    const equipamentos = [];
-
-    for (const a of dados?.posicionados || []) {
-      equipamentos.push(equipamentoDeAtivo(a));
-    }
-
-    // Os pendentes entram no projeto em (0,0) para o Viewer poder
-    // desenhá-los; a tela os lista à parte para o técnico arrastar.
-    for (const a of dados?.pendentes || []) {
-      const eq = equipamentoDeAtivo(a);
-      eq.pendente = true;
-      equipamentos.push(eq);
-    }
-
-    const plan = projeto?.imagem
-      ? {
-        dataUrl: `/api/v1/mapas/${this.plantaId}/imagem`,
-        widthPx: projeto.largura_px || 1024,
-        heightPx: projeto.altura_px || 768,
-        widthM: (projeto.largura_px || 1024) * (projeto.escala_metros_por_pixel || 0.02),
-        heightM: (projeto.altura_px || 768) * (projeto.escala_metros_por_pixel || 0.02),
-        sourceName: "planta",
-        page: 1,
-        createdAt: new Date().toISOString(),
-      }
-      : null;
-
+  _estadoParaSalvar() {
+    const { plan, walls, equipment } = this.project;
     return {
-      version: 1,
-      name: `Planta ${this.plantaId}`,
-      isDemo: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      plan,
-      equipment: equipamentos,
-      walls: Array.isArray(projeto?.paredes) ? projeto.paredes : [],
-      settings: {
-        showLabels: true,
-        showGrid: false,
-        showWalls: true,
-        snap: true,
-        snapSize: 0.25,
-        autoRotate: false,
+      projeto: {
+        paredes: JSON.parse(JSON.stringify(walls)),
+        ...(plan ? {
+          largura_px: plan.widthPx,
+          altura_px: plan.heightPx,
+          escala_metros_por_pixel: plan.widthM / plan.widthPx,
+        } : {}),
       },
+      posicoes: Object.fromEntries(equipment.map(eq => [eq.id, eq.pendente ? null : {
+        x: metros(eq.x),
+        z: metros(eq.z),
+        rotacao: metros(((eq.rotation % 360) + 360) % 360) % 360,
+      }])),
     };
   }
 
-  /* ------------------------------------------------------------ API */
-
-  /**
-   * Grava a posição de **um** ativo. Chamado quando o Viewer move algo.
-   *
-   * Só os posicionados têm `ativoId` válido — os pendentes usam o mesmo id,
-   * então a rota serve para os dois.
-   */
-  async _gravarPosicao(eq) {
-    if (!eq?.ativoId) return;
-    try {
-      await api.patch(`/mapas/ativos/${eq.ativoId}/posicao`, {
-        x: Math.round(Number(eq.x) * 100) / 100,
-        z: Math.round(Number(eq.z) * 100) / 100,
-        rotacao: Math.round(Number(eq.rotation) || 0),
-      });
-    } catch (e) {
-      console.warn("mapa: posição não gravada", e);
-    }
-  }
-
-  /** Grava paredes e escala — o projeto inteiro, em uma chamada. */
-  async _gravarProjeto() {
-    const p = this.project;
-    const plan = p.plan;
-
-    const corpo = {
-      paredes: p.walls,
-    };
-
-    if (plan?.widthPx && plan?.widthM) {
-      corpo.largura_px = Math.round(plan.widthPx);
-      corpo.altura_px = Math.round(plan.heightPx);
-      corpo.escala_metros_por_pixel = plan.widthM / plan.widthPx;
-    }
-
-    try {
-      await api.put(`/mapas/${this.plantaId}`, corpo);
-    } catch (e) {
-      console.warn("mapa: projeto não gravado", e);
-    }
-  }
-
-  /* ------------------------------------------ sobrescreve o original */
-
-  /**
-   * O original grava no `localStorage` a cada mudança, com debounce de 850ms.
-   *
-   * Aqui o mesmo debounce vira uma chamada à API — e ele evita que arrastar
-   * um equipamento gere 40 requisições.
-   */
-  saveLocal(_opts = {}) {
-    clearTimeout(this._timer);
-    this._timer = setTimeout(async () => {
-      const mudancas = this._mudancasPendentes || new Set();
-      this._mudancasPendentes = new Set();
-
-      for (const eq of mudancas) await this._gravarPosicao(eq);
-      if (this._projetoMudou) {
-        this._projetoMudou = false;
-        await this._gravarProjeto();
-      }
+  saveLocal() {
+    if (this.gravacao) return this.gravacao.then(() => this.saveLocal());
+    const estado = this._estadoParaSalvar();
+    const posicoes = Object.fromEntries(Object.entries(estado.posicoes).filter(([id, posicao]) =>
+      JSON.stringify(posicao) !== JSON.stringify(this.salvo.posicoes[id])));
+    const projeto = JSON.stringify(estado.projeto) !== JSON.stringify(this.salvo.projeto)
+      ? estado.projeto : null;
+    if (!projeto && !Object.keys(posicoes).length) {
+      this._dirty = false;
       this.emit("save:state", { state: "saved" });
-    }, 850);
+      return Promise.resolve();
+    }
+
+    this.emit("save:state", { state: "saving" });
+    this.gravacao = api.request("PUT", `/mapas/${this.plantaId}/estado`, {
+      body: { projeto, posicoes }, planta: this.plantaId, enfileirar: false,
+    }).then(() => {
+      this.salvo = estado;
+      this._dirty = JSON.stringify(this._estadoParaSalvar()) !== JSON.stringify(estado);
+      this.emit("save:state", { state: this._dirty ? "saving" : "saved" });
+    }).catch(erro => {
+      this.emit("save:state", { state: "error", message: erro.message });
+      throw erro;
+    }).finally(() => { this.gravacao = null; });
+    return this.gravacao;
   }
 
-  /** Marca que um equipamento específico precisa ser gravado. */
-  _marcarAtivo(eq) {
-    if (!eq) return;
-    this._mudancasPendentes = this._mudancasPendentes || new Set();
-    this._mudancasPendentes.add(eq);
+  scheduleSave() {
+    this._dirty = true;
+    this.emit("save:state", { state: "saving" });
+    clearTimeout(this._saveTimer);
+    this._saveTimer = setTimeout(() => this.saveLocal().catch(() => {}), 420);
   }
 
-  /** `updateEquipment` é o que o Viewer chama ao arrastar. */
-  updateEquipment(id, patch, opts) {
-    const r = super.updateEquipment(id, patch, opts);
-    const eq = this.project.equipment.find((x) => x.id === id);
-    if (eq) this._marcarAtivo(eq);
-    return r;
+  flushSave() {
+    clearTimeout(this._saveTimer);
+    return this._dirty ? this.saveLocal() : Promise.resolve();
   }
 
-  addEquipment(partial, opts) {
-    const r = super.addEquipment(partial, opts);
-    this._projetoMudou = true;
-    return r;
+  atualizarPlanta(projeto, imagemUrl) {
+    this.project.plan = plantaDoProjeto(projeto, imagemUrl);
+    this.salvo.projeto = this._estadoParaSalvar().projeto;
+    this.clearHistory();
+    this.emit("plan:change", this.project.plan);
   }
 
-  addWall(points, opts) {
-    const r = super.addWall(points, opts);
-    this._projetoMudou = true;
-    return r;
-  }
-
-  updateWall(id, patch) {
-    const r = super.updateWall(id, patch);
-    this._projetoMudou = true;
-    return r;
-  }
-
-  removeWall(id) {
-    const r = super.removeWall(id);
-    this._projetoMudou = true;
-    return r;
-  }
-
-  setPlan(plan) {
-    super.setPlan(plan);
-    this._projetoMudou = true;
+  setSettings(patch) {
+    Object.assign(this.project.settings, patch);
+    this.emit("settings:change", this.project.settings);
   }
 
   scaleBy(ratio) {
-    const r = super.scaleBy(ratio);
-    this._projetoMudou = true;
-    return r;
+    const { plan, equipment, walls } = this.project;
+    const valido = Number.isFinite(ratio) && ratio > 0 && plan && plan.widthM * ratio / plan.widthPx <= 5
+      && equipment.every(eq => eq.pendente || Math.max(Math.abs(eq.x), Math.abs(eq.z)) * ratio <= 500)
+      && walls.every(w => w.points.every(p => p.every(n => Math.abs(n * ratio) <= 500)));
+    if (!valido) throw new Error("A escala produz medidas fora dos limites do mapa.");
+    super.scaleBy(ratio);
   }
 }

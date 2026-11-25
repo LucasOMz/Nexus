@@ -259,7 +259,7 @@ export function fmtMoneyCurto(v) {
   return fmtMoney(n);
 }
 
-const STATUS_LABEL = {
+export const STATUS_LABEL = {
   estoque: "Em estoque", reservado: "Reservado", em_uso: "Em uso",
   manutencao: "Manutenção", descartado: "Descartado", emprestado: "Emprestado",
 };

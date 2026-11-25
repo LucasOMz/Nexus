@@ -18,28 +18,30 @@ ver o mapa de outra sem trocar a planta ativa — o desenho é do prédio.
 from __future__ import annotations
 
 import json
-import os
 import uuid
+from io import BytesIO
 from pathlib import Path
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
+from PIL import Image, UnidentifiedImageError
+from pydantic import BaseModel, Field, model_validator
+from sqlalchemy.orm import Session, selectinload
 
 from app.config import settings
 from app.core.deps import require_module, require_write
-from app.core.planta import exigir_planta, planta_ativa
+from app.core.permissoes import permissoes_efetivas
+from app.core.planta import planta_ativa_obrigatoria
 from app.database import get_db
 from app.models.core import Ativo, Planta, Usuario
-from app.models.enums import Dominio
 from app.models.mapa import MapaProjeto
 
 router = APIRouter(prefix="/mapas", tags=["mapa 3d"])
 
 # Mesma pasta das fotos do sistema.
 PASTA = "mapas"
-EXTENSOES = {".png", ".jpg", ".jpeg", ".webp"}
+FORMATOS = {"PNG": ".png", "JPEG": ".jpg", "WEBP": ".webp"}
 MAX_BYTES = 12 * 1024 * 1024
 
 
@@ -54,15 +56,17 @@ def cfg_media() -> str:
     return settings.media_dir
 
 
+def _verificar_planta(db: Session, planta_id: int, planta: int | None, *, bloquear: bool = False) -> None:
+    if planta is not None and planta != planta_id:
+        raise HTTPException(404, "Planta não encontrada no seu escopo.")
+    unidade = db.get(Planta, planta_id, with_for_update=bloquear)
+    if unidade is None or unidade.deleted_at is not None:
+        raise HTTPException(404, "Planta não encontrada.")
+
+
 def _projeto(db: Session, planta_id: int) -> MapaProjeto:
-    """O projeto da planta, criando um vazio na primeira visita."""
     p = db.query(MapaProjeto).filter(MapaProjeto.planta_id == planta_id).first()
-    if p is None:
-        p = MapaProjeto(planta_id=planta_id, escala_metros_por_pixel=0.02)
-        db.add(p)
-        db.commit()
-        db.refresh(p)
-    return p
+    return p or MapaProjeto(planta_id=planta_id, escala_metros_por_pixel=0.02)
 
 
 def _serializar(p: MapaProjeto) -> dict:
@@ -70,7 +74,7 @@ def _serializar(p: MapaProjeto) -> dict:
     if p.paredes:
         try:
             paredes = json.loads(p.paredes)
-        except Exception:
+        except json.JSONDecodeError:
             paredes = []
     return {
         "planta_id": p.planta_id,
@@ -78,36 +82,84 @@ def _serializar(p: MapaProjeto) -> dict:
         "largura_px": p.largura_px,
         "altura_px": p.altura_px,
         "escala_metros_por_pixel": p.escala_metros_por_pixel,
-        "paredes": paredes,
+        "paredes": paredes if isinstance(paredes, list) else [],
         "observacoes": p.observacoes,
     }
+
+
+Coordenada = Annotated[float, Field(ge=-500, le=500)]
+
+
+class ParedeEntrada(BaseModel):
+    id: str = Field(default_factory=lambda: uuid.uuid4().hex, max_length=80)
+    points: list[tuple[Coordenada, Coordenada]] = Field(min_length=2, max_length=120)
+    height: float = Field(default=3, ge=0.1, le=30)
+    thickness: float = Field(default=0.16, ge=0.05, le=5)
+
+    @model_validator(mode="before")
+    @classmethod
+    def aceitar_segmento_legado(cls, dados):
+        if isinstance(dados, dict) and all(chave in dados for chave in ("x1", "z1", "x2", "z2")):
+            return {
+                "points": [(dados["x1"], dados["z1"]), (dados["x2"], dados["z2"])],
+                "height": dados.get("altura", 3),
+                "thickness": dados.get("espessura", 0.16),
+            }
+        return dados
 
 
 class ProjetoEntrada(BaseModel):
     escala_metros_por_pixel: float | None = Field(default=None, gt=0, le=5)
     largura_px: int | None = Field(default=None, ge=1, le=20000)
     altura_px: int | None = Field(default=None, ge=1, le=20000)
-    paredes: list[dict] | None = None
+    paredes: list[ParedeEntrada] | None = Field(default=None, max_length=400)
     observacoes: str | None = Field(default=None, max_length=2000)
 
 
 class PosicaoEntrada(BaseModel):
-    x: float = Field(ge=-500, le=500)
-    z: float = Field(ge=-500, le=500)
+    x: Coordenada
+    z: Coordenada
     rotacao: float = Field(default=0, ge=-360, le=360)
+
+
+class EstadoEntrada(BaseModel):
+    projeto: ProjetoEntrada | None = None
+    posicoes: dict[int, PosicaoEntrada | None] = Field(default_factory=dict, max_length=5000)
+
+
+def _atualizar_projeto(p: MapaProjeto, dados: ProjetoEntrada) -> None:
+    campos = dados.model_dump(exclude_none=True)
+    if "paredes" in campos:
+        campos["paredes"] = json.dumps(campos["paredes"])
+    for campo, valor in campos.items():
+        setattr(p, campo, valor)
+
+
+def _ativos_autorizados(db: Session, user: Usuario, planta_id: int | None):
+    q = db.query(Ativo).filter(
+        Ativo.deleted_at.is_(None),
+        Ativo.dominio.in_(permissoes_efetivas(user)["inventarios"]),
+    )
+    if planta_id is not None:
+        q = q.filter(Ativo.planta_id == planta_id)
+    return q
+
+
+def _aplicar_posicao(ativo: Ativo, dados: PosicaoEntrada | None) -> None:
+    ativo.mapa_x = dados.x if dados else None
+    ativo.mapa_z = dados.z if dados else None
+    ativo.mapa_rotacao = dados.rotacao if dados else None
 
 
 @router.get("/{planta_id}")
 def ler_projeto(
     planta_id: int,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_module("ativos")),
-    planta: int | None = Depends(planta_ativa),
+    _: Usuario = Depends(require_module("mapa")),
+    planta: int | None = Depends(planta_ativa_obrigatoria),
 ) -> dict:
     """O projeto da planta. `planta` é a planta ativa do usuário."""
-    exigir_planta(planta, planta_id)
-    if db.get(Planta, planta_id) is None:
-        raise HTTPException(404, "Planta não encontrada.")
+    _verificar_planta(db, planta_id, planta)
     return _serializar(_projeto(db, planta_id))
 
 
@@ -116,71 +168,93 @@ def salvar_projeto(
     planta_id: int,
     dados: ProjetoEntrada,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_module("ativos")),
-    planta: int | None = Depends(planta_ativa),
+    _: Usuario = Depends(require_module("mapa")),
+    planta: int | None = Depends(planta_ativa_obrigatoria),
 ) -> dict:
     """Grava escala, dimensões e paredes. A imagem tem rota própria."""
-    exigir_planta(planta, planta_id)
+    _verificar_planta(db, planta_id, planta, bloquear=True)
     p = _projeto(db, planta_id)
-
-    if dados.escala_metros_por_pixel is not None:
-        p.escala_metros_por_pixel = dados.escala_metros_por_pixel
-    if dados.largura_px is not None:
-        p.largura_px = dados.largura_px
-    if dados.altura_px is not None:
-        p.altura_px = dados.altura_px
-    if dados.paredes is not None:
-        p.paredes = json.dumps(dados.paredes[:400])
-    if dados.observacoes is not None:
-        p.observacoes = dados.observacoes
-
+    _atualizar_projeto(p, dados)
+    db.add(p)
     db.commit()
     db.refresh(p)
     return _serializar(p)
+
+
+@router.put("/{planta_id}/estado", dependencies=[Depends(require_write)])
+def salvar_estado(
+    planta_id: int,
+    dados: EstadoEntrada,
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(require_module("mapa")),
+    planta: int | None = Depends(planta_ativa_obrigatoria),
+) -> dict:
+    """Grava geometria e posições em uma transação."""
+    _verificar_planta(db, planta_id, planta, bloquear=dados.projeto is not None)
+    if dados.posicoes:
+        ativos = (
+            _ativos_autorizados(db, user, planta_id)
+            .filter(Ativo.id.in_(dados.posicoes))
+            .order_by(Ativo.id)
+            .with_for_update(of=Ativo)
+            .all()
+        )
+        if len(ativos) != len(dados.posicoes):
+            raise HTTPException(404, "Um dos ativos não está disponível nesta planta.")
+        for ativo in ativos:
+            _aplicar_posicao(ativo, dados.posicoes[ativo.id])
+    if dados.projeto is not None:
+        p = _projeto(db, planta_id)
+        _atualizar_projeto(p, dados.projeto)
+        db.add(p)
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/{planta_id}/imagem", dependencies=[Depends(require_write)])
 def enviar_imagem(
     planta_id: int,
     arquivo: UploadFile = File(...),
+    largura_metros: float | None = Form(default=None, gt=0, le=1000),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_module("ativos")),
-    planta: int | None = Depends(planta_ativa),
+    _: Usuario = Depends(require_module("mapa")),
+    planta: int | None = Depends(planta_ativa_obrigatoria),
 ) -> dict:
-    """Sobe a planta baixa (PDF convertido, PNG ou JPG).
-
-    **Só imagem.** PDF precisa ser convertido antes — o navegador não desenha
-    PDF numa textura, e converter aqui exigiria uma dependência de sistema
-    (Poppler) só para isso.
-    """
-    exigir_planta(planta, planta_id)
-
-    ext = os.path.splitext(arquivo.filename or "")[1].lower()
-    if ext not in EXTENSOES:
-        raise HTTPException(
-            422,
-            "Envie a planta como PNG ou JPG. "
-            "Para PDF, converta a página em imagem antes.",
-        )
-
-    conteudo = arquivo.file.read()
+    _verificar_planta(db, planta_id, planta, bloquear=True)
+    conteudo = arquivo.file.read(MAX_BYTES + 1)
     if len(conteudo) > MAX_BYTES:
         raise HTTPException(413, "Imagem acima de 12 MB.")
 
-    pasta = _pasta_abs()
-    nome = f"{uuid.uuid4().hex}{ext}"
-    (pasta / nome).write_bytes(conteudo)
+    try:
+        with Image.open(BytesIO(conteudo), formats=list(FORMATOS)) as imagem:
+            largura, altura = imagem.size
+            if max(largura, altura) > 20000 or largura * altura > 30_000_000:
+                raise HTTPException(422, "A imagem da planta é grande demais para renderizar.")
+            ext = FORMATOS[imagem.format]
+            imagem.verify()
+    except (UnidentifiedImageError, OSError, SyntaxError, Image.DecompressionBombError) as exc:
+        raise HTTPException(422, "Envie uma imagem válida em PNG, JPEG ou WebP.") from exc
+    escala = largura_metros / largura if largura_metros is not None else None
+    if escala is not None and escala > 5:
+        raise HTTPException(422, "A largura real é muito grande para a resolução desta imagem.")
 
     p = _projeto(db, planta_id)
-
-    # Apaga a anterior — senão a pasta cresce a cada troca de planta.
-    if p.imagem:
-        antigo = pasta / Path(p.imagem).name
-        if antigo.exists():
-            antigo.unlink(missing_ok=True)
-
-    p.imagem = f"{PASTA}/{nome}"
-    db.commit()
+    imagem_anterior = p.imagem
+    destino = _pasta_abs() / f"{uuid.uuid4().hex}{ext}"
+    try:
+        destino.write_bytes(conteudo)
+        p.imagem = f"{PASTA}/{destino.name}"
+        p.largura_px, p.altura_px = largura, altura
+        if escala is not None:
+            p.escala_metros_por_pixel = escala
+        db.add(p)
+        db.commit()
+    except Exception:
+        db.rollback()
+        destino.unlink(missing_ok=True)
+        raise
+    if imagem_anterior:
+        _remover_arquivo(imagem_anterior)
     db.refresh(p)
     return _serializar(p)
 
@@ -189,27 +263,53 @@ def enviar_imagem(
 def ler_imagem(
     planta_id: int,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_module("ativos")),
-    planta: int | None = Depends(planta_ativa),
+    _: Usuario = Depends(require_module("mapa")),
+    planta: int | None = Depends(planta_ativa_obrigatoria),
 ):
     """Serve o desenho. Fica atrás de login: a planta baixa é informação."""
-    exigir_planta(planta, planta_id)
+    _verificar_planta(db, planta_id, planta)
     p = db.query(MapaProjeto).filter(MapaProjeto.planta_id == planta_id).first()
     if p is None or not p.imagem:
         raise HTTPException(404, "Esta planta ainda não tem planta baixa.")
 
-    caminho = Path(cfg_media()) / p.imagem
-    if not caminho.exists():
+    caminho = Path(cfg_media()) / PASTA / Path(p.imagem).name
+    if not caminho.is_file():
         raise HTTPException(404, "Arquivo da planta baixa não encontrado.")
-    return FileResponse(caminho)
+    return FileResponse(caminho, headers={"Cache-Control": "private, no-store"})
+
+
+def _remover_arquivo(imagem: str) -> None:
+    try:
+        (Path(cfg_media()) / PASTA / Path(imagem).name).unlink(missing_ok=True)
+    except OSError:
+        # A referência já foi atualizada. Um arquivo órfão pode ser limpo depois.
+        pass
+
+
+@router.delete("/{planta_id}/imagem", dependencies=[Depends(require_write)])
+def remover_imagem(
+    planta_id: int,
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(require_module("mapa")),
+    planta: int | None = Depends(planta_ativa_obrigatoria),
+) -> dict:
+    _verificar_planta(db, planta_id, planta, bloquear=True)
+    p = _projeto(db, planta_id)
+    if p.imagem:
+        nome = p.imagem
+        p.imagem = None
+        p.largura_px = p.altura_px = None
+        db.commit()
+        _remover_arquivo(nome)
+    return _serializar(p)
 
 
 @router.get("/{planta_id}/ativos")
 def ativos_do_mapa(
     planta_id: int,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_module("ativos")),
-    planta: int | None = Depends(planta_ativa),
+    user: Usuario = Depends(require_module("mapa")),
+    planta: int | None = Depends(planta_ativa_obrigatoria),
 ) -> dict:
     """Ativos da planta, com e sem posição.
 
@@ -217,16 +317,13 @@ def ativos_do_mapa(
     pendentes (para arrastar). Sem a segunda, um ativo novo nunca chegaria ao
     mapa — e ninguém notaria.
     """
-    exigir_planta(planta, planta_id)
+    _verificar_planta(db, planta_id, planta)
 
     consulta = (
-        db.query(Ativo)
-        .filter(
-            Ativo.planta_id == planta_id,
-            Ativo.deleted_at.is_(None),
-            Ativo.dominio.in_([Dominio.TI, Dominio.IMPRESSORA]),
-        )
-        .order_by(Ativo.dominio, Ativo.patrimonio)
+        _ativos_autorizados(db, user, planta_id)
+        .options(selectinload(Ativo.departamento), selectinload(Ativo.localizacao),
+                 selectinload(Ativo.ti), selectinload(Ativo.impressora))
+        .order_by(Ativo.dominio, Ativo.patrimonio, Ativo.id)
     )
 
     posicionados = []
@@ -269,16 +366,15 @@ def posicionar(
     ativo_id: int,
     dados: PosicaoEntrada,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_module("ativos")),
+    user: Usuario = Depends(require_module("mapa")),
+    planta: int | None = Depends(planta_ativa_obrigatoria),
 ) -> dict:
     """Move um ativo no mapa."""
-    a = db.get(Ativo, ativo_id)
-    if a is None or a.deleted_at is not None:
+    a = _ativos_autorizados(db, user, planta).filter(Ativo.id == ativo_id).with_for_update(of=Ativo).first()
+    if a is None:
         raise HTTPException(404, "Ativo não encontrado.")
 
-    a.mapa_x = dados.x
-    a.mapa_z = dados.z
-    a.mapa_rotacao = dados.rotacao
+    _aplicar_posicao(a, dados)
     db.commit()
     return {"ok": True, "ativo_id": ativo_id, "x": a.mapa_x, "z": a.mapa_z}
 
@@ -287,14 +383,13 @@ def posicionar(
 def remover_do_mapa(
     ativo_id: int,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_module("ativos")),
+    user: Usuario = Depends(require_module("mapa")),
+    planta: int | None = Depends(planta_ativa_obrigatoria),
 ) -> dict:
-    a = db.get(Ativo, ativo_id)
-    if a is None or a.deleted_at is not None:
+    a = _ativos_autorizados(db, user, planta).filter(Ativo.id == ativo_id).with_for_update(of=Ativo).first()
+    if a is None:
         raise HTTPException(404, "Ativo não encontrado.")
 
-    a.mapa_x = None
-    a.mapa_z = None
-    a.mapa_rotacao = None
+    _aplicar_posicao(a, None)
     db.commit()
     return {"ok": True}
