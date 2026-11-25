@@ -120,10 +120,9 @@ class TestChaveDoCliente:
     def test_cai_para_o_ip_sem_usuario(self):
         assert rate_limit.chave_do_cliente(self._Req()) == "ip:10.0.0.1"
 
-    def test_respeita_o_x_forwarded_for(self):
-        """Atrás de proxy, o IP do socket é o do proxy — não do cliente."""
+    def test_usa_o_ip_apurado_pelo_servidor_asgi(self):
         r = self._Req(encaminhado="203.0.113.9, 10.0.0.1")
-        assert rate_limit.chave_do_cliente(r) == "ip:203.0.113.9"
+        assert rate_limit.chave_do_cliente(r) == "ip:10.0.0.1"
 
     def test_sem_cliente_nao_estoura(self):
         class SemCliente:

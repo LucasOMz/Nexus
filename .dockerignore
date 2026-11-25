@@ -7,6 +7,8 @@ __pycache__
 *.db
 *.sqlite3
 .env
+tls/
+ldap-ca/
 .pytest_cache
 .coverage
 htmlcov

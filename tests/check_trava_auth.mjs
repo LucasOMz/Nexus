@@ -6,11 +6,10 @@ const real = fs.readFileSync(new URL("../frontend/js/views/admin_auth.js", impor
 // Quebra simulada: a função auxiliar deixa de ser chamada.
 const quebrado = real.replace(/opcao\(/g, "opcaoXX(");
 
-const EXIGIDOS = ["ldap_ativo", "ldap_tls", "ldap_ignorar_certificado"];
-
 function travaPassa(fonte) {
   const achados = [...fonte.matchAll(/opcao\("(\w+)"/g)].map((m) => m[1]);
-  return { achados, passa: EXIGIDOS.every((k) => achados.includes(k)) };
+  const ldapsObrigatorio = /ldap_tls: true/.test(fonte) && /ldap_ignorar_certificado: false/.test(fonte);
+  return { achados, passa: achados.join(",") === "ldap_ativo" && ldapsObrigatorio };
 }
 
 const ok = travaPassa(real);

@@ -718,8 +718,8 @@ class DispositivoImpressao(BaseModel, Base):
        roda grava os bytes crus (ZPL/TSPL) na fila; o spooler do Windows entrega
        à impressora. Exige a API rodando **no Windows**, com a impressora
        compartilhada na máquina de origem.
-    2. **Agente** — `tipo="agente"` e `agente_url`/`hostname`. Um agente HTTP
-       (Raspberry Pi) recebe o trabalho e repassa à impressora.
+    2. **Agente** — `tipo="agente"` e `agente_url`/`hostname`. O Raspberry Pi
+       recebe o trabalho por HTTPS autenticado e repassa à impressora.
     3. **CUPS** — `tipo="cups"` e `fila_cups`. Para servidores Linux.
 
     Cada planta cadastra a **sua** impressora. O técnico da planta gerencia
@@ -743,7 +743,7 @@ class DispositivoImpressao(BaseModel, Base):
     tipo: Mapped[str] = mapped_column(String(30), default="agente", nullable=False)
     hostname: Mapped[str | None] = mapped_column(String(160))
     compartilhamento: Mapped[str | None] = mapped_column(String(300))  # \\RTAT0001\sip
-    agente_url: Mapped[str | None] = mapped_column(String(300))        # http://RTAT0001:9100
+    agente_url: Mapped[str | None] = mapped_column(String(300))        # https://RTAT0001:9100
     fila_cups: Mapped[str | None] = mapped_column(String(160))         # fila no CUPS
     formato: Mapped[str] = mapped_column(String(10), default="zpl")    # zpl | tspl | pdf
     dominio: Mapped[Dominio | None] = mapped_column(sa_enum(Dominio), nullable=True)

@@ -1,33 +1,13 @@
 # =====================================================================
-# Nexus — stack (api + postgres)
+# Nexus — stack (Nginx HTTPS + API + PostgreSQL)
 # Suba tudo com:  docker compose up -d --build
 #
 # IMPORTANTE: os volumes abaixo guardam os dados que NÃO podem se perder.
 # Sem eles, fotos/termos/anexos e backups vivem dentro do container e
 # desaparecem ao recriar a stack (docker compose up --build).
 #
-# ---------------------------------------------------------------------
-# Sobre o NGINX (removido em 3.24.0)
-#
-# Esta stack tinha um `nginx` fazendo proxy para a API. Ele foi removido
-# porque **não fazia nada**: o TLS estava comentado, não havia cache nem
-# compressão, e a API já é publicada direto na porta 8000.
-#
-# Pior: o `client_max_body_size 25m` dele não protegia nada, porque a porta
-# 8000 está aberta — qualquer um chamava a API direto, ao lado do proxy.
-# Era um posto de pedágio ao lado de uma estrada aberta.
-#
-# ## Quando ele volta
-#
-# Quando houver domínio e certificado. Aí ele deixa de ser enfeite e passa
-# a ser a peça que termina o TLS — e o ajuste que importa é **fechar a porta
-# 8000**, deixando só o nginx exposto. Sem isso, o limite continua
-# contornável.
-#
-# ## Antes de expor na internet
-#
-# Sem TLS, senha e token trafegam em texto claro. Em rede interna ou VPN,
-# tudo bem. Na internet aberta, não.
+# Configure NEXUS_PUBLIC_HOST e os arquivos fullchain.pem e privkey.pem
+# antes de subir. Somente o Nginx publica portas no host.
 # =====================================================================
 services:
   db:
@@ -62,6 +42,9 @@ services:
   api:
     build: .
     restart: unless-stopped
+    networks:
+      - default
+      - ingresso
     depends_on:
       db:
         condition: service_healthy
@@ -111,8 +94,11 @@ services:
       # quem fosse procurar por que algo era bloqueado perderia tempo ali.
       CORS_ORIGINS: ${CORS_ORIGINS:-}
       ENV: production
+      FORWARDED_ALLOW_IPS: ${NEXUS_PROXY_IP:-172.30.254.2}
+      LDAP_CA_FILE: ${LDAP_CA_FILE:-}
       AUTO_CREATE_TABLES: "true"
-      PRINT_AGENT_URL: ${PRINT_AGENT_URL:-http://raspberry:9100}
+      PRINT_AGENT_URL: ${PRINT_AGENT_URL:-https://raspberry:9100}
+      PRINT_AGENT_TOKENS: ${PRINT_AGENT_TOKENS:-null}
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@empresa.com}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
       # Backups: pasta persistente DENTRO do container (volume abaixo).
@@ -159,13 +145,31 @@ services:
       # Aponte para uma pasta real do servidor. O caminho padrão serve para
       # teste local.
       - ${NEXUS_BACKUP_DIR:-./backups}:/app/backups
+      - ${NEXUS_LDAP_CA_DIR:-./ldap-ca}:/etc/nexus/ldap-ca:ro
+
+  nginx:
+    image: nginx:stable-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      NEXUS_PUBLIC_HOST: ${NEXUS_PUBLIC_HOST:?Defina o nome DNS que consta no certificado do Nexus}
+      NGINX_ENVSUBST_FILTER: ^NEXUS_PUBLIC_HOST$
+    networks:
+      ingresso:
+        ipv4_address: ${NEXUS_PROXY_IP:-172.30.254.2}
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/templates/default.conf.template:ro
+      - ${NEXUS_TLS_DIR:-./tls}:/etc/nginx/nexus-tls:ro
     ports:
-      # Host : Container. Os dois lados precisam bater com o `--port` do
-      # Dockerfile. Quando divergiram (aqui 5000, lá 8000), o Docker publicou
-      # uma porta em que nada escutava — a conexão era aceita e fechada na
-      # hora, e o `curl` respondia com
-      # `recv failure: conexão fechada pela outra ponta`.
-      - "${API_PORT:-4545}:4545"
+      - "80:80"
+      - "443:443"
+
+networks:
+  ingresso:
+    ipam:
+      config:
+        - subnet: ${NEXUS_PROXY_SUBNET:-172.30.254.0/29}
 
 # =====================================================================
 # VOLUMES — bind mounts, não volumes nomeados

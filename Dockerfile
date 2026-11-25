@@ -64,4 +64,4 @@ COPY alembic.ini .
 # hora, com `recv failure: conexão fechada pela outra ponta`.
 EXPOSE 4545
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "4545"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "4545", "--proxy-headers"]

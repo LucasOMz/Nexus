@@ -333,7 +333,7 @@ async function abrirDispositivo(disp) {
       <div class="field span-2"><label>Como enviar a impressão</label>
         <select name="tipo">
           <option value="compartilhamento" ${d.tipo === "compartilhamento" ? "selected" : ""}>Windows — fila compartilhada (\\\\host\\impressora)</option>
-          <option value="agente" ${d.tipo === "agente" ? "selected" : ""}>Agente no Raspberry Pi (HTTP :9100)</option>
+          <option value="agente" ${d.tipo === "agente" ? "selected" : ""}>Agente no Raspberry Pi (HTTPS)</option>
           <option value="cups" ${d.tipo === "cups" ? "selected" : ""}>Fila local do CUPS (lp)</option>
         </select>
       </div>
@@ -341,7 +341,7 @@ async function abrirDispositivo(disp) {
         <input name="compartilhamento" value="${esc(d.compartilhamento)}" placeholder="\\\\DTAT7777\\SATO">
         <span class="hint">Fila compartilhada no formato <code>\\\\servidor\\impressora</code> — ex.: <code>\\\\DTAT7777\\SATO</code>. Funciona nos dois sistemas: <b>no Windows</b> o sistema grava os bytes crus na fila (spooler); <b>no Linux</b> envia pelo <code>smbclient</code> (instale o pacote <code>smbclient</code>). Use formato ZPL ou TSPL.</span>
       </div>
-      <div class="field"><label>URL do agente</label><input name="agente_url" value="${esc(d.agente_url)}" placeholder="http://RTAT0001:9100"></div>
+      <div class="field"><label>URL do agente</label><input name="agente_url" value="${esc(d.agente_url)}" placeholder="https://impressao.exemplo.com:9100"></div>
       <div class="field"><label>Fila no CUPS</label><input name="fila_cups" value="${esc(d.fila_cups)}" placeholder="sip"></div>
       <div class="field"><label>Formato da etiqueta</label>
         <select name="formato">${["zpl", "tspl", "pdf"].map((f) => `<option ${d.formato === f ? "selected" : ""}>${f}</option>`).join("")}</select>

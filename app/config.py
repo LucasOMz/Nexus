@@ -8,7 +8,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Annotated
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -36,6 +36,7 @@ class Settings(BaseSettings):
 
     # --- Impressão ---
     print_agent_url: str = "http://127.0.0.1:9100"
+    print_agent_tokens: dict[str, SecretStr] | None = None
     print_agent_timeout: int = 30
     cups_printer_default: str = "zebra"
     # Credenciais da fila compartilhada no LINUX (smbclient). Em branco, tenta
@@ -101,6 +102,9 @@ class Settings(BaseSettings):
     # derrubava a aplicação. Com NoDecode o texto chega cru no validador abaixo.
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:4545", "http://127.0.0.1:4545"]
 
+    # CA privada do Active Directory em PEM. Vazio usa as CAs do sistema.
+    ldap_ca_file: str = ""
+
     # --- App ---
     env: str = "development"
     seed_admin_email: str = "admin@empresa.com"
@@ -144,6 +148,10 @@ class Settings(BaseSettings):
         return self.cors_origins
 
     @property
+    def em_producao(self) -> bool:
+        return self.env.strip().lower() == "production"
+
+    @property
     def eh_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite")
 
@@ -169,7 +177,7 @@ class Settings(BaseSettings):
 
         `ENV=production` é o que separa os dois mundos. O compose já define.
         """
-        if self.eh_sqlite and (self.env or "").lower() == "production":
+        if self.eh_sqlite and self.em_producao:
             raise ValueError(
                 "DATABASE_URL aponta para SQLite, mas ENV=production. "
                 "Em container, o arquivo do SQLite vive na camada efêmera: "

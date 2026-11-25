@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from ldap3 import SUBTREE, Connection, Server, Tls
 from ldap3.core.exceptions import LDAPException
 
+from app.config import settings
 from app.core.cripto import decifrar
 from app.models.core import ConfiguracaoSistema
 
@@ -47,17 +48,20 @@ def _normalizar(valor: str | None) -> str:
 
 
 def _server(cfg: ConfiguracaoSistema) -> Server:
-    tls = None
-    if cfg.ldap_tls:
-        validate = ssl.CERT_NONE if cfg.ldap_ignorar_certificado else ssl.CERT_REQUIRED
-        tls = Tls(validate=validate)
-    return Server(
+    if not cfg.ldap_tls or cfg.ldap_ignorar_certificado:
+        raise LDAPException("Salve a configuração com LDAPS e validação do certificado antes de conectar.")
+
+    servidor = Server(
         cfg.ldap_servidor,
         port=cfg.ldap_porta,
-        use_ssl=bool(cfg.ldap_tls),
-        tls=tls,
+        use_ssl=True,
+        tls=Tls(validate=ssl.CERT_REQUIRED, ca_certs_file=settings.ldap_ca_file or None),
         connect_timeout=8,
     )
+    # O esquema presente no endereço pode sobrescrever use_ssl no ldap3.
+    if not servidor.ssl:
+        raise LDAPException("Use o nome DNS do controlador de domínio ou um endereço ldaps://.")
+    return servidor
 
 
 def _conectar(cfg: ConfiguracaoSistema) -> Connection:
@@ -67,6 +71,7 @@ def _conectar(cfg: ConfiguracaoSistema) -> Connection:
         user=cfg.ldap_bind_dn,
         password=decifrar(cfg.ldap_bind_senha),
         auto_bind=False,
+        auto_referrals=False,
         receive_timeout=15,
     )
     return conn
@@ -212,7 +217,9 @@ def autenticar(cfg: ConfiguracaoSistema, usuario: str, senha: str) -> ResultadoL
         conn = None
 
         # 3) Valida a senha com um bind usando o DN do próprio usuário.
-        conn_user = Connection(_server(cfg), user=dn_usuario, password=senha, auto_bind=False, receive_timeout=15)
+        conn_user = Connection(
+            _server(cfg), user=dn_usuario, password=senha, auto_bind=False, auto_referrals=False, receive_timeout=15,
+        )
         try:
             if not conn_user.bind():
                 return ResultadoLDAP(False, "Usuário ou senha inválidos.")

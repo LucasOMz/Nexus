@@ -5,7 +5,7 @@ A geração usa `app/services/label_layout.py` (geometria única) — o mesmo c�
 alimenta ZPL, TSPL, PDF e a pré-visualização da tela de Administração.
 
 Destinos suportados:
-  * `agente`           → HTTP POST para o agente no Raspberry Pi (porta 9100)
+  * `agente`           → HTTPS autenticado para o agente no Raspberry Pi
   * `compartilhamento` → grava o job no compartilhamento (ex.: ``\\\\RTAT0001\\sip``)
   * `cups`             → envia para uma fila local do CUPS via `lp`
 """
@@ -149,11 +149,24 @@ def pdf_de_layouts(layouts: list[dict], titulo: str = "Etiquetas") -> bytes:
     return buf.getvalue()
 
 
-def _erro(detail: str, job_id: str) -> dict[str, Any]:
-    return {"job_id": job_id, "status": "error", "detail": detail, "retryable": True}
+def _erro(detail: str, job_id: str, *, retryable: bool = True) -> dict[str, Any]:
+    return {"job_id": job_id, "status": "error", "detail": detail, "retryable": retryable}
 
 
 def _via_agente(url: str, formato: str, label: bytes, printer: str, copies: int, job_id: str) -> dict[str, Any]:
+    try:
+        agente = httpx.URL(url)
+    except httpx.InvalidURL:
+        return _erro("URL do agente de impressão inválida.", job_id, retryable=False)
+    local = agente.scheme == "http" and agente.host in {"127.0.0.1", "::1"}
+    if not agente.host or agente.userinfo or agente.query or agente.fragment or not (agente.scheme == "https" or local):
+        return _erro("Use HTTPS e uma URL sem credenciais ou parâmetros para o agente.", job_id, retryable=False)
+
+    origem = str(agente.copy_with(path="/")).rstrip("/")
+    token = (settings.print_agent_tokens or {}).get(origem)
+    if not token or not token.get_secret_value():
+        return _erro("Credencial do agente de impressão não configurada para este endereço.", job_id, retryable=False)
+
     body = {
         "job_id": job_id,
         "format": formato,
@@ -161,19 +174,38 @@ def _via_agente(url: str, formato: str, label: bytes, printer: str, copies: int,
         "printer": printer,
         "copies": copies,
     }
-    destino = url.rstrip("/") + "/print"
-    ultimo_erro = ""
+    destino = agente.copy_with(path=agente.path.rstrip("/") + "/print")
+    headers = {"Authorization": f"Bearer {token.get_secret_value()}"}
     for tentativa in range(3):
         try:
-            resp = httpx.post(destino, json=body, timeout=settings.print_agent_timeout)
+            resp = httpx.post(
+                destino, json=body, headers=headers, timeout=settings.print_agent_timeout,
+                follow_redirects=False, trust_env=not local,
+            )
+            if resp.status_code == 403:
+                return _erro("Impressora não autorizada no agente. Confira as filas e os destinos permitidos.",
+                             job_id, retryable=False)
+            if resp.status_code in (401, 503):
+                return _erro("Agente sem credencial válida ou indisponível. Confira a configuração nos dois serviços.",
+                             job_id, retryable=False)
+            if resp.status_code == 413:
+                return _erro("Lote acima do limite de 12 MiB do agente. Divida as etiquetas em lotes menores.",
+                             job_id, retryable=False)
+            if resp.status_code == 429:
+                return _erro("Limite de trabalhos por minuto atingido no agente. Aguarde antes de reenviar.", job_id)
             resp.raise_for_status()
             data = resp.json()
+            if not isinstance(data, dict) or data.get("status") not in ("ok", "error"):
+                raise ValueError("Resposta inesperada do agente.")
             data["job_id"] = job_id
             data["attempts"] = tentativa + 1
             return data
-        except httpx.HTTPError as exc:
-            ultimo_erro = str(exc)
-    return _erro(f"Agente de impressão indisponível ({ultimo_erro})", job_id)
+        except (httpx.ConnectError, httpx.ConnectTimeout):
+            continue
+        except (httpx.HTTPError, ValueError):
+            return _erro("Não foi possível confirmar a impressão. Confira a fila antes de reenviar.",
+                         job_id, retryable=False)
+    return _erro("Não foi possível conectar ao agente de impressão. Confira o endereço e o certificado.", job_id)
 
 
 def _eh_windows() -> bool:
@@ -439,7 +471,7 @@ def send_print_job(
 
     url = getattr(dispositivo, "agente_url", None)
     if not url and getattr(dispositivo, "hostname", None):
-        url = f"http://{dispositivo.hostname}:9100"
+        url = f"https://{dispositivo.hostname}:9100"
     if not url:
         url = settings.print_agent_url
     fila = getattr(dispositivo, "fila_cups", None) or printer or settings.cups_printer_default

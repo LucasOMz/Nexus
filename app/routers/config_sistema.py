@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, ConfigDict, Field
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -34,8 +34,8 @@ class ConfigUpdate(BaseModel):
 
     ldap_ativo: bool | None = None
     ldap_servidor: str | None = None
-    ldap_porta: int | None = None
-    ldap_tls: bool | None = None
+    ldap_porta: int = Field(default=636, ge=1, le=65535)
+    ldap_tls: bool = True
     ldap_base_dn: str | None = None
     ldap_bind_dn: str | None = None
     # Se enviado, substitui a senha guardada. Vazio/NULL = mantém a atual.
@@ -45,11 +45,20 @@ class ConfigUpdate(BaseModel):
     ldap_grupo_admin: str | None = None
     ldap_provisionar: bool | None = None
     ldap_grupos_aninhados: bool | None = None
-    ldap_ignorar_certificado: bool | None = None
+    ldap_ignorar_certificado: bool = False
     ldap_admin_por_cargo: bool | None = None
     # De quantas em quantas horas o agente envia a lista de programas.
     # 1 a 168 (uma semana). O agente consulta a cada ciclo.
     intervalo_software_horas: int | None = Field(default=None, ge=1, le=168)
+
+    @field_validator("ldap_servidor")
+    @classmethod
+    def validar_endereco_ldaps(cls, valor: str | None) -> str | None:
+        if valor:
+            valor = valor.strip()
+            if "://" in valor and not valor.lower().startswith("ldaps://"):
+                raise ValueError("Informe o nome DNS do servidor ou use ldaps://.")
+        return valor
 
 
 class TesteLogin(BaseModel):
@@ -130,6 +139,8 @@ def salvar_config(
 ) -> dict:
     cfg = obter_config(db)
     dados = body.model_dump(exclude_unset=True)
+    if not body.ldap_tls or body.ldap_ignorar_certificado:
+        raise HTTPException(422, "O Active Directory exige LDAPS com validação do certificado.")
 
     if "ldap_bind_senha" in dados:
         senha = dados.pop("ldap_bind_senha")
@@ -210,6 +221,7 @@ def diagnostico(db: Session = Depends(get_db), _: Usuario = Depends(require_admi
         "provisionar": cfg.ldap_provisionar,
         "grupos_aninhados": cfg.ldap_grupos_aninhados,
         "ignorar_certificado": cfg.ldap_ignorar_certificado,
+        "ca_privada_configurada": bool(settings.ldap_ca_file),
         "admin_local": settings.seed_admin_email,
         "qr_exigir_assinatura": settings.qr_exigir_assinatura,
         "segredos_qr_aceitos": len(settings.segredos_qr),

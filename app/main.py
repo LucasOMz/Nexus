@@ -148,8 +148,8 @@ async def security_headers(request, call_next):
     caminho = request.url.path
     if caminho == "/" or caminho.endswith((".html", ".js", ".css", ".json")):
         response.headers["Cache-Control"] = "no-cache, must-revalidate"
-    if settings.env == "production":
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    if settings.em_producao and request.scope["scheme"] == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000"
     return response
 
 
@@ -193,6 +193,19 @@ async def limite_de_requisicoes(request: Request, call_next):
             headers={"Retry-After": "60"},
         )
 
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def exigir_https(request: Request, call_next):
+    # O esquema é definido pelo servidor ASGI. Uvicorn só consulta cabeçalhos
+    # encaminhados quando a conexão vem de um proxy de confiança.
+    if settings.em_producao and request.scope["scheme"] != "https":
+        return JSONResponse(
+            status_code=426,
+            content={"detail": "Acesse o Nexus usando HTTPS."},
+            headers={"Cache-Control": "no-store"},
+        )
     return await call_next(request)
 
 

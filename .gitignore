@@ -20,6 +20,8 @@ htmlcov/
 .tmp/
 media/
 backups/
+/tls/
+/ldap-ca/
 .ruff_cache/
 
 # Node/frontend (se usar build)

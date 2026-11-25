@@ -392,15 +392,14 @@ verificar("nenhum interruptor dentro da grade de campos",
   gruposDeCampos.every((g) => !g.includes('type="checkbox"')));
 
 const interruptoresAuth = [...fonteAuth.matchAll(/opcao\("(\w+)"/g)].map((m) => m[1]);
-verificar("os 3 interruptores do AD usam a linha padronizada",
-  ["ldap_ativo", "ldap_tls", "ldap_ignorar_certificado"]
-    .every((k) => interruptoresAuth.includes(k)));
+verificar("ativar AD usa a linha padronizada e LDAPS fica obrigatório",
+  interruptoresAuth.join(",") === "ldap_ativo" &&
+  /ldap_tls: true/.test(fonteAuth) && /ldap_ignorar_certificado: false/.test(fonteAuth));
 
 verificar("os campos do AD continuam existindo",
   ["ldap_servidor", "ldap_porta", "ldap_base_dn", "ldap_bind_dn", "ldap_bind_senha",
    "ldap_filtro_usuario"]
-    .every((k) => fonteAuth.includes(`name="${k}"`))
-  && interruptoresAuth.length === 3);
+    .every((k) => fonteAuth.includes(`name="${k}"`)));
 
 verificar("o estilo das opcoes existe no CSS",
   /\.opcao \{/.test(fonteCss) && /\.opcoes \{/.test(fonteCss) && /\.opcao-dica \{/.test(fonteCss));

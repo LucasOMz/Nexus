@@ -54,18 +54,12 @@ def chave_do_cliente(request) -> str:
     quatro pessoas atrás do mesmo NAT dividiriam o mesmo teto — punindo o
     grupo pelo consumo de um.
 
-    Sem token, cai para o IP. `X-Forwarded-For` só entra quando existe, e
-    pega o PRIMEIRO endereço: é o cliente original; os demais são proxies.
+    Sem token, usa o endereço que o servidor ASGI apurou. O Uvicorn
+    resolve o IP encaminhado somente para proxies de confiança.
     """
     usuario = getattr(getattr(request, "state", None), "usuario_id", None)
     if usuario:
         return f"u:{usuario}"
-
-    encaminhado = request.headers.get("x-forwarded-for")
-    if encaminhado:
-        primeiro = encaminhado.split(",")[0].strip()
-        if primeiro:
-            return f"ip:{primeiro}"
 
     cliente = getattr(request, "client", None)
     return f"ip:{cliente.host}" if cliente else "ip:desconhecido"

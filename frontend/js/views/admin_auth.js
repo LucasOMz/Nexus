@@ -64,17 +64,15 @@ export async function renderAuth(root) {
       <div class="form-grid">
         <div class="field"><label>Servidor *</label><input name="ldap_servidor" value="${esc(cfg.ldap_servidor)}" placeholder="dc01.empresa.local"></div>
         <div class="field"><label>Porta</label><input type="number" name="ldap_porta" value="${cfg.ldap_porta ?? 636}">
-          <span class="hint">LDAPS costuma usar 636; LDAP sem TLS usa 389.</span></div>
+          <span class="hint">A porta padrão do LDAPS é 636.</span></div>
       </div>
       <h5 class="sub-titulo">Segurança da conexão</h5>
-      <div class="opcoes">
-        ${opcao("ldap_tls", "Usar SSL/TLS (LDAPS)",
-          "Recomendado. Sem TLS, a senha do usuário trafega em texto claro na rede.",
-          cfg.ldap_tls !== false)}
-        ${opcao("ldap_ignorar_certificado", "Ignorar a validação do certificado",
-          "Use <b>apenas</b> se o certificado da sua CA interna não estiver instalado no servidor do sistema.",
-          cfg.ldap_ignorar_certificado)}
-      </div>
+      <p class="muted">LDAPS com validação do certificado é obrigatório. Use o nome DNS do
+        controlador que consta no certificado. Para uma CA interna, configure o arquivo PEM
+        no servidor do Nexus.</p>
+      ${cfg.ldap_tls === false || cfg.ldap_ignorar_certificado || /^ldap:\/\//i.test(cfg.ldap_servidor || "")
+        ? '<p class="muted">A configuração anterior não atende ao LDAPS obrigatório. Confira o servidor e a porta, salve e teste a conexão.</p>'
+        : ""}
     </div>
 
     <div class="form-section"><h4>Base e conta de serviço</h4>
@@ -151,8 +149,8 @@ export async function renderAuth(root) {
       ldap_ativo: Boolean(fd.get("ldap_ativo")),
       ldap_servidor: fd.get("ldap_servidor") || null,
       ldap_porta: Number(fd.get("ldap_porta")) || 636,
-      ldap_tls: Boolean(fd.get("ldap_tls")),
-      ldap_ignorar_certificado: Boolean(fd.get("ldap_ignorar_certificado")),
+      ldap_tls: true,
+      ldap_ignorar_certificado: false,
       ldap_base_dn: fd.get("ldap_base_dn") || null,
       ldap_bind_dn: fd.get("ldap_bind_dn") || null,
       ldap_filtro_usuario: fd.get("ldap_filtro_usuario") || "(sAMAccountName={usuario})",
@@ -188,6 +186,7 @@ export async function renderAuth(root) {
       el("div", { class: "section-title", style: "margin:0 0 10px" }, "Diagnóstico"),
       ...[
         ["Login via AD", diag.ldap_ativo ? "ativado" : "desativado"],
+        ["Confiança do certificado AD", diag.ca_privada_configurada ? "CA privada configurada" : "CAs do sistema"],
         ["Administrador local (não depende do AD)", diag.admin_local],
         ["Senha da conta de serviço guardada", diag.senha_servico_guardada ? (diag.senha_servico_decifravel ? "sim (cifrada)" : "sim, mas não foi possível decifrar") : "não"],
         ["Quem libera o acesso", "o cadastro de usuário (o AD não libera)"],

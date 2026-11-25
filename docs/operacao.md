@@ -198,17 +198,24 @@ pytest -q
 
 ---
 
-## 4. Produção com Docker Compose (PostgreSQL 16 + Nginx)
+## 4. Produção com Docker Compose (PostgreSQL 15 + Nginx)
 
-```bash
-cd estoque-qr
-# Ajuste .env com segredos fortes (JWT_SECRET, QR_HMAC_SECRET, senha admin)
-docker compose up -d --build
-```
+1. Aponte o DNS do Nexus para o servidor e defina esse nome em
+   `NEXUS_PUBLIC_HOST` no `.env`. Informe apenas o nome DNS.
+2. Coloque a cadeia do certificado (`fullchain.pem`) e sua chave
+   (`privkey.pem`) em `NEXUS_TLS_DIR` no host. O padrão é `./tls`. Use um
+   certificado confiável pelos navegadores e pelos agentes que chamam o Nexus.
+3. Execute `docker compose up -d --build` e abra a URL HTTPS com o DNS configurado.
 
-Sobe `api` + `postgres:16` + `nginx`. A API roda em `:8000` e o Nginx em `:80`
-(reverso para a API). Para HTTPS Let's Encrypt, descomente os blocos em
-`nginx/nginx.conf` e emita o certificado com certbot.
+A porta 80 redireciona para 443. A porta 4545 da API fica dentro do Docker. A
+API confia nos cabeçalhos encaminhados somente pelo IP do Nginx na rede de
+ingresso. Em caso de conflito de sub-rede, ajuste `NEXUS_PROXY_SUBNET` e
+`NEXUS_PROXY_IP` juntos.
+
+Ao atualizar uma instalação, troque os endereços HTTP antigos em agentes,
+monitores (inclusive `/health`) e integrações para o novo endereço HTTPS antes
+do corte. Remova publicações manuais da porta 4545. Após renovar os arquivos
+do certificado na pasta montada, execute `docker compose exec nginx nginx -s reload`.
 
 > Migrações: o `AUTO_CREATE_TABLES=true` cria o schema no boot (prático para o
 > 1º deploy). Para fluxo versionado, gere a migração inicial e aplique:
@@ -282,18 +289,42 @@ No Raspberry Pi (ou qualquer Linux com CUPS):
 # Instala dependências e o agente
 pip install fastapi uvicorn pydantic
 # Configure sua impressora térmica no CUPS (lpadmin -p zebra -E -v ... -m raw)
-python raspberry_print_agent.py          # escuta em 0.0.0.0:9100
+python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-Aponte `PRINT_AGENT_URL` no `.env` da API para `http://<IP-do-Pi>:9100`.
+Configure o valor gerado como `RPI_PRINT_TOKEN` no ambiente do agente.
+Por padrão, `python raspberry_print_agent.py` escuta em `127.0.0.1:9100`.
+Para acessar de outro host, publique HTTPS por um proxy reverso no Raspberry
+ou configure `RPI_PRINT_HOST`, `RPI_PRINT_TLS_CERT` e `RPI_PRINT_TLS_KEY` para
+o agente servir HTTPS diretamente.
 
-O agente recebe `POST /print` com o conteúdo da etiqueta em base64 e o formato
-(`zpl`/`tspl`/`pdf`) e:
+No ambiente do Nexus, configure `PRINT_AGENT_URL` com o endereço publicado e
+`PRINT_AGENT_TOKENS` com o mesmo segredo, associado à origem do agente.
+Inclua a porta quando diferente de 443 e substitua os valores de exemplo.
 
-1. Se `printer` for um host/IP e o formato for `zpl`/`tspl`, envia **bytes crus via socket** (impressora térmica em rede);
-2. Caso contrário, usa **CUPS** (`lp -d printer -n copies [-o raw]`).
+```dotenv
+PRINT_AGENT_URL=https://impressao.exemplo.com:9100
+PRINT_AGENT_TOKENS='{"https://impressao.exemplo.com:9100":"SUBSTITUA_PELO_TOKEN_GERADO"}'
+```
 
-`GET /health` retorna o heartbeat e as impressoras CUPS disponíveis.
+Para vários agentes, cadastre uma origem e um token para cada um no JSON.
+Atualize as URLs dos dispositivos existentes em **Administração → Impressão**.
+O certificado deve corresponder ao endereço e ser confiável para o Nexus.
+Use HTTP somente para `127.0.0.1` ou `::1`, quando ambos os processos
+compartilham o mesmo loopback.
+
+As rotas `POST /print` e `GET /health` exigem `Authorization: Bearer <token>`.
+Configure as listas de destinos no agente, separadas por vírgula.
+
+- `RPI_PRINT_QUEUES` lista as filas CUPS autorizadas e vem com `zebra` por padrão.
+- `RPI_PRINT_RAW_DESTINATIONS` lista os IPs ou nomes DNS completos das
+  impressoras de rede autorizadas, com `:porta` se diferente de 9100. Começa
+  vazia e só aceita trabalhos ZPL e TSPL para esses destinos.
+
+O agente limita o corpo JSON de cada trabalho a 12 MiB e recebe até 60
+requisições de impressão por minuto por processo. O `GET /health` informa o
+estado do agente e as filas CUPS. No firewall do Raspberry, permita a entrada
+na porta publicada apenas a partir do Nexus e do monitoramento autorizado.
 
 ### systemd (exemplo)
 
@@ -304,6 +335,7 @@ Description=Raspberry Print Agent
 After=network.target
 
 [Service]
+EnvironmentFile=/etc/nexus-print-agent.env
 ExecStart=/usr/bin/python3 /opt/estoque/raspberry_print_agent.py
 Restart=always
 User=pi
@@ -311,6 +343,8 @@ User=pi
 [Install]
 WantedBy=multi-user.target
 ```
+
+Restrinja o arquivo de ambiente ao administrador do Raspberry.
 
 ---
 
@@ -439,22 +473,26 @@ possível saber quando alguém usou uma etiqueta sem assinatura conferida.
 > **Importante:** guarde o `QR_HMAC_SECRET` junto com o backup. Ele faz parte do
 > backup, não só o banco.
 
-### 9.2 Login pelo Active Directory (LDAP)
+### 9.2 Login pelo Active Directory (LDAPS)
 
-Configurável em **Administração → Autenticação (AD)**, sem mexer em arquivo:
+Configure o DNS do controlador de domínio e a porta LDAPS em
+**Administração → Autenticação (AD)**. A porta padrão é 636. O DNS precisa
+constar no certificado do servidor. O Nexus valida a cadeia e o nome do
+servidor nas conexões com a conta de serviço e com a conta do usuário.
 
-- Servidor, porta, TLS/LDAPS e validação de certificado
-- Base DN e conta de serviço (a senha é gravada **cifrada** no banco)
-- Filtro de usuário (ex.: `(sAMAccountName={usuario})`)
-- **Grupo de acesso** (ex.: `YM_ESTOQUE_TI`) — quem estiver nele entra no sistema
-- Grupo de administradores (opcional)
-- Provisão automática no primeiro login
+Para uma CA interna, coloque a cadeia de confiança em PEM em
+`NEXUS_LDAP_CA_DIR` no host e aponte `LDAP_CA_FILE` para o caminho dentro do
+contêiner, por exemplo `/etc/nexus/ldap-ca/empresa.pem`. Se o campo ficar
+vazio, o Nexus usa as autoridades de certificação do sistema.
 
-Dois botões antes de ativar: **Testar conexão** e **Testar login de um usuário**
-(que informa se a pessoa autenticou *e* se pertence ao grupo).
+Preencha a Base DN, a conta de leitura e o filtro de usuário, por exemplo
+`(sAMAccountName={usuario})`. Use **Testar conexão** e **Testar login de um
+usuário** para validar o diretório. O cadastro de usuários do Nexus determina
+quem tem acesso ao produto.
 
-**O administrador local é a exceção:** `SEED_ADMIN_EMAIL` autentica pela senha do
-sistema e **não depende do grupo do AD** — é a rota de emergência se o AD cair.
+Se a instalação usava LDAP sem TLS ou ignorava o certificado, entre com o
+administrador local, corrija o DNS, a porta e a CA, salve e teste. O
+administrador local continua usando a senha do Nexus durante essa migração.
 
 > A chave de cifragem é derivada do `JWT_SECRET`. Se você trocar o `JWT_SECRET`,
 > a senha da conta de serviço fica ilegível — basta recadastrá-la na tela.
@@ -601,7 +639,7 @@ No Portainer: **Stacks → Add stack → Web editor**, cole o `docker-compose.ym
 - Para backup em pasta de rede: monte o compartilhamento **no host** e troque o
   volume `backups` por um bind mount (`- /mnt/backups/estoque:/app/backups`).
   Não monte SMB dentro do container (exigiria `SYS_ADMIN`).
-- Portas `80`/`443` (nginx) e `8000` (API) livres, ou ajuste `API_PORT`.
+- Portas `80` e `443` livres para o Nginx e certificado correspondente a `NEXUS_PUBLIC_HOST`.
 - O arquivo `nginx/nginx.conf` precisa existir no repositório clonado.
 
 > O banco é o serviço `db` (PostgreSQL 16). Para **restaurar** um backup no
