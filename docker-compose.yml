@@ -1,13 +1,12 @@
 # =====================================================================
-# Nexus — stack (Nginx HTTPS + API + PostgreSQL)
+# Nexus — stack (API + PostgreSQL)
 # Suba tudo com:  docker compose up -d --build
 #
 # IMPORTANTE: os volumes abaixo guardam os dados que NÃO podem se perder.
 # Sem eles, fotos/termos/anexos e backups vivem dentro do container e
 # desaparecem ao recriar a stack (docker compose up --build).
 #
-# Configure NEXUS_PUBLIC_HOST e os arquivos fullchain.pem e privkey.pem
-# antes de subir. Somente o Nginx publica portas no host.
+# A API serve o frontend e publica HTTP na porta 4545 por padrão.
 # =====================================================================
 services:
   db:
@@ -47,8 +46,6 @@ services:
     security_opt: ["no-new-privileges:true"]
     tmpfs:
       - /tmp:rw,nosuid,nodev,noexec,mode=1777
-    # Só o Nginx monta o volume do socket. A API não abre uma porta TCP.
-    command: ["uvicorn", "app.main:app", "--uds", "/run/nexus/uvicorn.sock", "--proxy-headers", "--forwarded-allow-ips=*"]
     depends_on:
       db:
         condition: service_healthy
@@ -92,8 +89,7 @@ services:
       #
       # O frontend é servido pela mesma aplicação que serve a API, e chama
       # `/api/v1/...` em caminho relativo — o navegador nunca faz requisição
-      # cross-origin. Isso vale também atrás de proxy reverso: o navegador vê
-      # o domínio, o proxy encaminha pelo socket, e a origem continua a mesma.
+      # cross-origin no uso normal.
       #
       # O default antigo (`https://seu-dominio.com`) era pior que vazio: não
       # quebrava nada, mas fazia parecer que havia uma origem configurada — e
@@ -155,7 +151,8 @@ services:
         bind:
           create_host_path: false
       - ${NEXUS_LDAP_CA_DIR:-./ldap-ca}:/etc/nexus/ldap-ca:ro
-      - proxy_socket:/run/nexus
+    ports:
+      - "${API_PORT:-4545}:4545"
 
   ajustar-volumes:
     build: .
@@ -177,28 +174,6 @@ services:
         chmod 750 /app/media
         chmod 700 /app/segredos
         echo "Nexus: permissões de mídia e segredos conferidas."
-
-  nginx:
-    image: nginx:stable-alpine
-    restart: unless-stopped
-    depends_on:
-      - api
-    environment:
-      NEXUS_PUBLIC_HOST: ${NEXUS_PUBLIC_HOST:?Defina o nome DNS que consta no certificado do Nexus}
-      NEXUS_HTTPS_PORT: ${NEXUS_HTTPS_PORT:-443}
-      NGINX_ENVSUBST_FILTER: ^NEXUS_(PUBLIC_HOST|HTTPS_PORT)$
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/templates/default.conf.template:ro
-      - ${NEXUS_TLS_DIR:-./tls}:/etc/nginx/nexus-tls:ro
-      - type: volume
-        source: proxy_socket
-        target: /run/nexus
-        read_only: true
-        volume:
-          nocopy: true
-    ports:
-      - "${NEXUS_HTTP_PORT:-80}:80"
-      - "${NEXUS_HTTPS_PORT:-443}:443"
 
 # =====================================================================
 # VOLUMES — bind mounts, não volumes nomeados
@@ -230,4 +205,3 @@ volumes:
   pgdata:
   media:
   segredos:
-  proxy_socket:

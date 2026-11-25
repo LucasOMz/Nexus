@@ -19,9 +19,11 @@ sem aviso. Daí o teste de tabela sem soft delete.
 """
 from __future__ import annotations
 
+import json
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -84,6 +86,34 @@ class TestResumoDoBackup:
 
         resumo = backup_service._resumo_sqlite(str(arquivo))
         assert resumo.get("usuarios") == 1, resumo
+
+
+def test_pasta_sem_gravacao_mostra_o_historico_e_bloqueia_novo_backup(client, auth_headers, tmp_path, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "backup_dir", str(tmp_path))
+    nome = "backup_exemplo.dump"
+    (tmp_path / nome).write_bytes(b"backup existente")
+    (tmp_path / "backup_exemplo.json").write_text(
+        json.dumps({"arquivo": nome, "criado_em": "2026-01-01T00:00:00+00:00"}), encoding="utf-8",
+    )
+
+    def negar_gravacao(**_):
+        raise PermissionError("Acesso negado no teste.")
+
+    monkeypatch.setattr(backup_service, "tempfile", SimpleNamespace(TemporaryFile=negar_gravacao))
+    resposta = client.get("/api/v1/admin/backups", headers=auth_headers)
+    assert resposta.status_code == 200, resposta.text
+    painel = resposta.json()
+    assert painel["status"]["gravavel"] is False
+    assert painel["status"]["ok"] is False
+    assert "NEXUS_BACKUP_DIR" in painel["status"]["mensagem"]
+    assert [b["arquivo"] for b in painel["itens"]] == [nome]
+
+    resposta = client.post("/api/v1/admin/backups", headers=auth_headers, json={"motivo": "manual"})
+    assert resposta.status_code == 500
+    assert "NEXUS_BACKUP_DIR" in resposta.json()["detail"]
+    assert (tmp_path / nome).read_bytes() == b"backup existente"
 
 
 def test_restauracao_sqlite_remove_sessoes_da_copia(tmp_path, monkeypatch):

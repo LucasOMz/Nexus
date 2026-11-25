@@ -25,10 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       COMPOSE_PROJECT_NAME: nexus-ci-runtime
-      NEXUS_PUBLIC_HOST: nexus-ci.example
-      NEXUS_HTTP_PORT: 18080
-      NEXUS_HTTPS_PORT: 18443
-      NEXUS_TLS_DIR: ${{ runner.temp }}/nexus-runtime-tls
+      API_PORT: 14545
       NEXUS_BACKUP_DIR: ${{ runner.temp }}/nexus-runtime-backups
     steps:
       - uses: actions/checkout@v4
@@ -72,27 +69,15 @@ jobs:
               assert arquivo.stat().st_uid == 10001
           assert Path("/app/segredos/legado.txt").stat().st_mode & 0o777 == 0o600
           PY
-      - name: Verificar HTTPS após recriar os containers
+      - name: Verificar HTTP após recriar a API
         run: |
-          mkdir -p "$NEXUS_TLS_DIR"
-          openssl req -x509 -newkey rsa:2048 -noenc -days 1 \
-            -subj "/CN=$NEXUS_PUBLIC_HOST" -addext "subjectAltName=DNS:$NEXUS_PUBLIC_HOST" \
-            -keyout "$NEXUS_TLS_DIR/privkey.pem" -out "$NEXUS_TLS_DIR/fullchain.pem"
-          docker compose up -d nginx
-
-          verificar_https() {
+          verificar_http() {
             curl --fail --silent --show-error --retry 15 --retry-delay 1 --retry-all-errors \
-              --cacert "$NEXUS_TLS_DIR/fullchain.pem" \
-              --resolve "$NEXUS_PUBLIC_HOST:$NEXUS_HTTPS_PORT:127.0.0.1" \
-              "https://$NEXUS_PUBLIC_HOST:$NEXUS_HTTPS_PORT/health" | grep -F '"database":true'
+              "http://127.0.0.1:$API_PORT/health" | grep -F '"database":true'
           }
-          verificar_https
-          redirecionamento=$(curl --silent --show-error --output /dev/null \
-            --write-out '%{http_code} %{redirect_url}' \
-            --header 'Host: outro.exemplo' "http://127.0.0.1:$NEXUS_HTTP_PORT/health?teste=1")
-          test "$redirecionamento" = "308 https://$NEXUS_PUBLIC_HOST:$NEXUS_HTTPS_PORT/health?teste=1"
-          docker compose up -d --no-deps --force-recreate api nginx
-          verificar_https
+          verificar_http
+          docker compose up -d --no-deps --force-recreate api
+          verificar_http
       - name: Encerrar ambiente descartável
         if: always()
         run: docker compose down --volumes

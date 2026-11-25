@@ -44,7 +44,7 @@ class BackupRequest(BaseModel):
 @router.get("/backups")
 def listar_backups(_: Usuario = Depends(require_admin)) -> dict:
     """Status + lista dos backups encontrados na pasta configurada."""
-    return {"status": backup_service.status_backup(), "itens": backup_service.listar_backups()}
+    return backup_service.painel_backups()
 
 
 @router.post("/backups")

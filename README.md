@@ -139,8 +139,6 @@ quem revelou e quando.
 
 **Instalação com Docker** (o único caminho suportado):
 
-Configure `NEXUS_PUBLIC_HOST` com o DNS do Nexus e coloque `fullchain.pem` e
-`privkey.pem` na pasta indicada por `NEXUS_TLS_DIR` (padrão `./tls`).
 A API usa o UID/GID `10001:10001`. Prepare a pasta de backups e, em uma
 instalação já existente, siga o [ajuste dos volumes](docs/operacao.md#preparar-os-volumes-da-api).
 
@@ -148,8 +146,8 @@ instalação já existente, siga o [ajuste dos volumes](docs/operacao.md#prepara
 docker compose up -d --build
 ```
 
-Abra `https://` seguido do DNS configurado. O Nginx publica HTTPS na porta 443
-e redireciona HTTP na porta 80. Use o e-mail definido em `SEED_ADMIN_EMAIL`. Se
+Abra `http://IP-DO-SERVIDOR:4545`. A variável `API_PORT` define a porta no
+host. Use o e-mail definido em `SEED_ADMIN_EMAIL`. Se
 `SEED_ADMIN_PASSWORD` estiver vazia, a senha temporária é gerada e guardada
 em `/app/segredos/seed_admin_password.txt`, no volume de segredos. No primeiro
 acesso, troque a senha e cadastre a verificação em duas etapas.

@@ -64,7 +64,6 @@ COPY alembic.ini .
 RUN groupadd --gid 10001 nexus \
     && useradd --uid 10001 --gid 10001 --home-dir /tmp --no-create-home --shell /usr/sbin/nologin nexus \
     && install -d -o nexus -g nexus -m 0750 /app/media /app/backups \
-    && install -d -o nexus -g nexus -m 0755 /run/nexus \
     && install -d -o nexus -g nexus -m 0700 /app/segredos
 
 FROM base AS testes
@@ -80,4 +79,4 @@ USER 10001:10001
 EXPOSE 4545
 
 ENTRYPOINT ["python", "/usr/local/bin/nexus-init.py"]
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "4545", "--proxy-headers"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "4545"]

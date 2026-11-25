@@ -46,6 +46,19 @@ def pasta_backups() -> Path:
     return pasta
 
 
+def _pasta_gravavel() -> Path:
+    try:
+        pasta = pasta_backups()
+        with tempfile.TemporaryFile(dir=pasta):
+            pass
+    except OSError as exc:
+        raise RuntimeError(
+            "Pasta de backups indisponível para gravação. No Docker, confira o caminho "
+            "e as permissões de NEXUS_BACKUP_DIR no host."
+        ) from exc
+    return pasta
+
+
 def _eh_sqlite() -> bool:
     return caminho_sqlite() is not None
 
@@ -160,7 +173,7 @@ def _resumo_postgres() -> dict[str, int]:
 # ---------------------------------------------------------------------------
 def criar_backup(motivo: str = "manual") -> dict[str, Any]:
     """Cria um backup e devolve os metadados gravados."""
-    pasta = pasta_backups()
+    pasta = _pasta_gravavel()
     base = _nome_base(motivo)
 
     if _eh_sqlite():
@@ -259,11 +272,21 @@ def listar_backups() -> list[dict[str, Any]]:
     return itens
 
 
-def status_backup() -> dict[str, Any]:
-    """Status para a tela: último backup, há quanto tempo e se falhou."""
-    backups = listar_backups()
+def painel_backups() -> dict[str, Any]:
+    """Retorna o histórico acessível e o estado da pasta de backups."""
+    status = {"pasta": settings.backup_path, "retencao": settings.backup_reter, "gravavel": True}
+    backups = []
+    try:
+        backups = listar_backups()
+        _pasta_gravavel()
+    except OSError:
+        status.update(gravavel=False, mensagem="Pasta de backups inacessível. Confira NEXUS_BACKUP_DIR no host.")
+    except RuntimeError as exc:
+        status.update(gravavel=False, mensagem=str(exc))
+    status.update(total=len(backups), ultimo=None, ok=False)
     if not backups:
-        return {"total": 0, "ultimo": None, "ok": False, "mensagem": "Nenhum backup encontrado."}
+        status.setdefault("mensagem", "Nenhum backup encontrado.")
+        return {"status": status, "itens": backups}
     ultimo = backups[0]
     try:
         quando = datetime.fromisoformat(ultimo["criado_em"])
@@ -272,14 +295,8 @@ def status_backup() -> dict[str, Any]:
         alerta = horas > 72
     except (KeyError, ValueError):
         alerta = False
-    return {
-        "total": len(backups),
-        "ultimo": ultimo,
-        "ok": ultimo.get("existe", False),
-        "alerta_atrasado": alerta,
-        "pasta": str(pasta_backups()),
-        "retencao": settings.backup_reter,
-    }
+    status.update(ultimo=ultimo, ok=bool(ultimo.get("existe") and status["gravavel"]), alerta_atrasado=alerta)
+    return {"status": status, "itens": backups}
 
 
 def _resolver(nome: str) -> tuple[Path, dict[str, Any]]:

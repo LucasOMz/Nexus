@@ -198,34 +198,19 @@ pytest -q
 
 ---
 
-## 4. Produção com Docker Compose (PostgreSQL 15 + Nginx)
+## 4. Produção com Docker Compose (PostgreSQL 15)
 
-1. Aponte o DNS do Nexus para o servidor e defina esse nome em
-   `NEXUS_PUBLIC_HOST` no `.env`. Informe apenas o nome DNS.
-2. Coloque a cadeia do certificado (`fullchain.pem`) e sua chave
-   (`privkey.pem`) em `NEXUS_TLS_DIR` no host. O padrão é `./tls`. Use um
-   certificado confiável pelos navegadores e pelos agentes que chamam o Nexus.
-3. Execute `docker compose up -d --build` e abra a URL HTTPS com o DNS configurado.
+A API serve o frontend por HTTP. Defina `API_PORT=4545` no ambiente da stack
+para publicar a porta 4545 no host. Abra `http://IP-DO-SERVIDOR:4545` e use
+`http://IP-DO-SERVIDOR:4545/health` para verificar a API.
 
-A porta 80 redireciona para 443. O Nginx acessa a API por um socket Unix
-compartilhado apenas entre esses dois serviços. No Compose, a API não abre
-porta TCP. O Nginx substitui os cabeçalhos de protocolo e endereço do cliente
-antes de encaminhar a requisição.
+Ao atualizar a stack anterior, mantenha o mesmo projeto e os volumes
+persistentes. Remova da mesma stack o contêiner antigo `nginx` antes de
+publicar a 4545, caso ele esteja usando a porta.
 
-Se outra aplicação já publica as portas 80 ou 443, ajuste
-`NEXUS_HTTP_PORT` e `NEXUS_HTTPS_PORT`. Com HTTPS na porta 8443, por exemplo,
-acesse `https://nexus.suaempresa.com:8443`. O redirecionamento inclui a porta
-escolhida.
-
-Se o redeploy de uma versão anterior falhou por conflito no endereço da rede
-`ingresso`, atualize o Compose e reconstrua a imagem da API. O novo Compose
-usa o socket e dispensa `NEXUS_PROXY_IP` e `NEXUS_PROXY_SUBNET`. Os volumes
-existentes de banco, mídia, segredos e backups continuam no mesmo lugar.
-
-Ao atualizar uma instalação, troque os endereços HTTP antigos em agentes,
-monitores (inclusive `/health`) e integrações para o novo endereço HTTPS antes
-do corte. Remova publicações manuais da porta 4545. Após renovar os arquivos
-do certificado na pasta montada, execute `docker compose exec nginx nginx -s reload`.
+```bash
+docker compose up -d --build --remove-orphans
+```
 
 ### Preparar os volumes da API
 
@@ -251,6 +236,9 @@ pertencem ao usuário anterior, confirme que o caminho é exclusivo do Nexus
 e ajuste a propriedade para `10001:10001`. No caminho do exemplo, use
 `sudo chown -hR 10001:10001 /srv/nexus/backups`. Se o Kopia usa outra conta,
 mantenha o acesso de leitura à pasta e aos arquivos por grupo ou ACL.
+Se a pasta estiver sem acesso de escrita, a API sobe e **Administração →
+Backups** mostra o problema. A criação de backups fica indisponível, e
+operações que exigem um backup prévio permanecem bloqueadas.
 
 Se precisar executar o ajuste dos volumes separadamente, use
 `docker compose run --rm --no-deps --build ajustar-volumes` no mesmo projeto.
@@ -677,8 +665,7 @@ No Portainer: **Stacks → Add stack → Web editor**, cole o `docker-compose.ym
 - Para backup em pasta de rede: monte o compartilhamento **no host** e troque o
   volume `backups` por um bind mount (`- /mnt/backups/estoque:/app/backups`).
   Não monte SMB dentro do container (exigiria `SYS_ADMIN`).
-- Portas `80` e `443` livres para o Nginx e certificado correspondente a `NEXUS_PUBLIC_HOST`.
-- O arquivo `nginx/nginx.conf` precisa existir no repositório clonado.
+- Porta `4545` livre no host, ou outra porta definida em `API_PORT`.
 
 > O banco é o serviço `db` (PostgreSQL 16). Para **restaurar** um backup no
 > container, o `pg_restore` precisa estar disponível — a imagem `python:3.12-slim`

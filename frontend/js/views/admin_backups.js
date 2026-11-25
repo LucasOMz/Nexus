@@ -157,12 +157,13 @@ export async function renderBackups(root) {
   const dados = await api.get("/admin/backups").catch((e) => { mostrarErro(e); return { status: {}, itens: [] }; });
   const status = dados.status || {};
   const itens = dados.itens || [];
+  const backupBloqueado = status.gravavel === false;
 
   root.innerHTML = "";
 
   // Status
   const ultimo = status.ultimo;
-  const alerta = !ultimo ? "Nenhum backup encontrado" :
+  const alerta = backupBloqueado ? status.mensagem : !ultimo ? "Nenhum backup encontrado" :
     (status.alerta_atrasado ? `Último backup há ${ultimo.horas_atras} h — verifique o agendamento` : `Último backup há ${ultimo.horas_atras} h`);
   root.append(el("div", { class: "card" },
     el("div", { class: "row between" },
@@ -173,18 +174,18 @@ export async function renderBackups(root) {
       el("div", { class: "row" },
         el("button", { class: "btn outlined small", onclick: () => baixar("/api/v1/admin/exportar", "nexus-csv.zip"), html: icon("download", 18) + " Exportar CSV total" }),
         el("button", { class: "btn tonal small", onclick: () => importarCsv(), html: icon("add", 18) + " Importar CSV" }),
-        el("button", { class: "btn filled small", onclick: async () => {
+        el("button", { class: "btn filled small", disabled: backupBloqueado, onclick: async () => {
           try { await api.post("/admin/backups", { motivo: "manual" }); toast("Backup criado"); renderBackups(document.getElementById("view")); }
           catch (e) { mostrarErro(e); }
         }, html: icon("download", 18) + " Criar backup agora" }),
       ),
     ),
-    el("p", { style: `margin:14px 0 0;font-weight:600;color:${status.alerta_atrasado ? "var(--cor-aviso)" : "inherit"}` }, alerta),
+    el("p", { role: backupBloqueado ? "alert" : undefined, style: `margin:14px 0 0;font-weight:600;color:${backupBloqueado || status.alerta_atrasado ? "var(--cor-aviso)" : "inherit"}` }, alerta),
   ));
 
   // Lista
   const lista = el("div", { class: "card" });
-  if (!itens.length) {
+  if (!itens.length && !backupBloqueado) {
     lista.append(emptyState("download", "Nenhum backup", "Crie o primeiro backup — e o ideal é agendar a geração diária no servidor."));
   }
   itens.forEach((b) => {
@@ -209,9 +210,9 @@ export async function renderBackups(root) {
           });
         }, html: icon("check", 16) + " Validar" }),
         el("button", { class: "iconbtn", title: "Baixar", onclick: () => baixar(`/api/v1/admin/backups/${encodeURIComponent(b.arquivo)}/download`, b.arquivo), html: icon("download", 20) }),
-        el("button", { class: "btn danger small", onclick: () => restaurar(b), html: "Restaurar" }),
+        el("button", { class: "btn danger small", disabled: backupBloqueado, onclick: () => restaurar(b), html: "Restaurar" }),
       ),
     ));
   });
-  root.append(lista);
+  if (itens.length || !backupBloqueado) root.append(lista);
 }

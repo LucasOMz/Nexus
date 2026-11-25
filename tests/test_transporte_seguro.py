@@ -1,45 +1,21 @@
-"""Transporte HTTPS de produção e autenticação LDAPS."""
+"""Acesso HTTP no Compose e autenticação LDAPS."""
 import ssl
 from unittest.mock import Mock
 
 import pytest
-from fastapi.testclient import TestClient
-from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.config import settings
-from app.main import app
 from app.models import ConfiguracaoSistema
 from app.services import ldap_service
 
 
-def test_https_obrigatorio_em_producao(client, monkeypatch):
-    assert client.get("/health").status_code == 200
+def test_http_serve_frontend_e_api_em_producao(client, monkeypatch):
     monkeypatch.setattr(settings, "env", "production")
-    resposta = client.post(
-        "/api/v1/auth/login", headers={"X-Forwarded-Proto": "https"},
-        data={"username": "admin@teste.com", "password": "credencial-simulada"},
-    )
-    assert resposta.status_code == 426
-    assert resposta.headers["cache-control"] == "no-store"
-    assert "strict-transport-security" not in resposta.headers
-
-    https = client.get("https://testserver/health")
-    assert https.status_code == 200, https.text
-    assert https.headers["strict-transport-security"] == "max-age=31536000"
-
-
-def test_https_encaminhado_so_funciona_com_ip_do_proxy_confiavel(monkeypatch):
-    monkeypatch.setattr(settings, "env", "production")
-    nginx_ip = "172.30.254.2"
-    proxied_app = ProxyHeadersMiddleware(app, trusted_hosts=nginx_ip)
-    headers = {"X-Forwarded-Proto": "https", "X-Forwarded-For": "203.0.113.9"}
-    with TestClient(proxied_app, client=("172.30.254.3", 1234)) as externo:
-        assert externo.get("/health", headers=headers).status_code == 426
-    with TestClient(proxied_app, client=(nginx_ip, 1234)) as nginx:
-        assert nginx.get("/health").status_code == 426
-        resposta = nginx.get("/health", headers=headers)
+    for caminho in ("/", "/health"):
+        resposta = client.get(caminho, follow_redirects=False)
         assert resposta.status_code == 200
-        assert "strict-transport-security" in resposta.headers
+        assert "strict-transport-security" not in resposta.headers
+    assert client.get("/api/v1/ativos", follow_redirects=False).status_code == 401
 
 
 @pytest.mark.parametrize("inseguro", [
