@@ -106,7 +106,6 @@ export async function renderMapa(root) {
       viewer.init();
       painel.ligarViewer(viewer);
       if (matchMedia("(max-width: 740px)").matches) viewer.setMode("top");
-      viewer.fitAll({ animate: false });
       if (falhaImagem) painel.aviso.textContent = falhaImagem;
     } catch (e) {
       if (signal.aborted) return;

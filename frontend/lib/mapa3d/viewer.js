@@ -124,8 +124,10 @@ export class Viewer extends Emitter {
     this.orbit.maxDistance = 190;
     this.orbit.maxPolarAngle = Math.PI / 2 - 0.035;
     this.orbit.screenSpacePanning = false;
-    this.orbit.zoomSpeed = 0.95;
+    this.orbit.zoomSpeed = 1.6;
+    this.orbit.zoomToCursor = true;
     this.orbit.panSpeed = 0.9;
+    this.orbit.addEventListener('start', () => { this._tween = null; });
     this.orbit.update();
 
     this.orbitTop = new OrbitControls(this.topCamera, this.canvas);
@@ -133,7 +135,9 @@ export class Viewer extends Emitter {
     this.orbitTop.enableDamping = true;
     this.orbitTop.dampingFactor = 0.1;
     this.orbitTop.screenSpacePanning = true;
-    this.orbitTop.zoomSpeed = 0.9;
+    this.orbitTop.zoomSpeed = 1.6;
+    this.orbitTop.zoomToCursor = true;
+    this.orbitTop.minZoom = 1 / 3;
     this.orbitTop.touches.ONE = THREE.TOUCH.PAN;
     this.orbitTop.enabled = false;
     this.orbitTop.target.set(0, 0, 0);
@@ -202,8 +206,8 @@ export class Viewer extends Emitter {
     this.resize();
     this.compactEquipment = this.store.project.equipment.filter(item => !item.pendente).length > 200;
     this._applySettings(this.store.project.settings);
-    this.applyPlan(this.store.project.plan, { fit: true });
     this.syncAll();
+    this.applyPlan(this.store.project.plan);
 
     this._loop = this._loop.bind(this);
     this._raf = requestAnimationFrame(this._loop);
@@ -218,7 +222,7 @@ export class Viewer extends Emitter {
     on('equipment:update', ({ item }) => this.updateItem(item));
     on('equipment:remove', ({ id }) => this.removeItem(id));
     on('walls:change', () => this.rebuildWalls());
-    on('plan:change', (plan) => this.applyPlan(plan, { fit: true }));
+    on('plan:change', (plan) => this.applyPlan(plan));
     on('settings:change', (settings) => this._applySettings(settings));
     on('sync', () => this.syncAll());
     on('request:select', ({ kind, id }) => {
@@ -271,22 +275,19 @@ export class Viewer extends Emitter {
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.updateTopFrustum();
-    clearTimeout(this._resizeFitTimer);
-    this._resizeFitTimer = setTimeout(() => {
-      if (!this._hasFitted || this.mode === 'walk') return;
-      this.fitAll({ animate: false });
-    }, 220);
     this.emit('resize');
   }
 
   /* ======================= planta ======================= */
 
-  async applyPlan(plan, { fit = true } = {}) {
+  async applyPlan(plan) {
     const token = ++this.planToken;
     this._savedPersp = null;
     this.plan = plan || null;
     this.planW = plan ? plan.widthM : 40;
     this.planH = plan ? plan.heightM : 28;
+    this.topViewHeight = null;
+    this.fitAll({ animate: !!plan });
 
     if (!plan) {
       this.planTexture?.dispose();
@@ -294,8 +295,6 @@ export class Viewer extends Emitter {
       this.planTextureSource = null;
       this._buildPlaceholder();
       this.updateShadowBounds();
-      this.updateTopFrustum();
-      if (fit) this.fitAll({ animate: false });
       this.emit('plan:ready', null);
       return;
     }
@@ -324,16 +323,11 @@ export class Viewer extends Emitter {
       this._buildFloor(plan, texture);
       this.updateShadowBounds();
       this.emit('plan:ready', plan);
-      if (fit) this.fitAll({ animate: true });
     } catch (err) {
       if (this._disposed || token !== this.planToken) return;
       console.error('[Mapa3D] planta', err);
       this.emit('error', { message: 'Não foi possível carregar a imagem da planta.' });
       this._buildPlaceholder();
-    }
-    if (this.mode === 'top') {
-      this.topViewHeight = Math.max(this.planH, this.planW / this._aspect()) * 1.08;
-      this.updateTopFrustum();
     }
   }
 
@@ -1052,6 +1046,7 @@ export class Viewer extends Emitter {
     const aspect = this._aspect();
     if (this.mode === 'top') {
       this.topViewHeight = Math.max(h, w / aspect) * 1.08;
+      this.orbitTop.maxZoom = Math.max(1, this.topViewHeight / 1.5);
       this.topCamera.zoom = 1;
       this.orbitTop.target.copy(center);
       this.topCamera.position.set(center.x, 100, center.z + 0.001);
@@ -1088,15 +1083,6 @@ export class Viewer extends Emitter {
     this.topCamera.updateProjectionMatrix();
   }
 
-  enterTop() {
-    this.topViewHeight = Math.max(this.planH, this.planW / this._aspect()) * 1.08;
-    this.orbitTop.target.set(0, 0.4, 0);
-    this.topCamera.position.set(0, 120, 0.001);
-    this.topCamera.zoom = 1;
-    this.updateTopFrustum();
-    this.orbitTop.update();
-  }
-
   setMode(mode) {
     if (!['3d', 'top', 'walk'].includes(mode) || mode === this.mode) return;
     const prev = this.mode;
@@ -1130,7 +1116,7 @@ export class Viewer extends Emitter {
       this.orbit.enabled = false;
       this.orbitTop.enabled = true;
       this.scene.fog = null;
-      this.enterTop();
+      if (this.topViewHeight === null) this.fitAll({ animate: false });
     } else if (mode === 'walk') {
       this.orbit.enabled = false;
       this.orbitTop.enabled = false;

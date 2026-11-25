@@ -641,6 +641,7 @@ class OrbitControls extends EventDispatcher {
 			mouse.x = ( dx / w ) * 2 - 1;
 			mouse.y = - ( dy / h ) * 2 + 1;
 
+			scope.object.updateMatrixWorld();
 			dollyDirection.set( mouse.x, mouse.y, 1 ).unproject( scope.object ).sub( scope.object.position ).normalize();
 
 		}
@@ -663,7 +664,7 @@ class OrbitControls extends EventDispatcher {
 
 		function handleMouseDownDolly( event ) {
 
-			updateZoomParameters( event.clientX, event.clientX );
+			updateZoomParameters( event.clientX, event.clientY );
 			dollyStart.set( event.clientX, event.clientY );
 
 		}
@@ -728,17 +729,19 @@ class OrbitControls extends EventDispatcher {
 
 		}
 
-		function handleMouseWheel( event ) {
+		function handleMouseWheel( event, delta ) {
 
 			updateZoomParameters( event.clientX, event.clientY );
 
-			if ( event.deltaY < 0 ) {
+			const zoomScale = Math.pow( 0.95, scope.zoomSpeed * Math.abs( delta ) / 100 );
 
-				dollyIn( getZoomScale( event.deltaY ) );
+			if ( delta < 0 ) {
 
-			} else if ( event.deltaY > 0 ) {
+				dollyIn( zoomScale );
 
-				dollyOut( getZoomScale( event.deltaY ) );
+			} else {
+
+				dollyOut( zoomScale );
 
 			}
 
@@ -1188,11 +1191,16 @@ class OrbitControls extends EventDispatcher {
 
 			if ( scope.enabled === false || scope.enableZoom === false || state !== STATE.NONE ) return;
 
+			// Wheel deltas are in CSS pixels, lines, or pages, independently of devicePixelRatio.
+			const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? scope.domElement.clientHeight : 1;
+			const delta = Math.max( - 240, Math.min( event.deltaY * unit, 240 ) );
+			if ( ! delta ) return;
+
 			event.preventDefault();
 
 			scope.dispatchEvent( _startEvent );
 
-			handleMouseWheel( event );
+			handleMouseWheel( event, delta );
 
 			scope.dispatchEvent( _endEvent );
 
