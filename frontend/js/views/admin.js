@@ -207,7 +207,7 @@ function abrirUsuario(usuario, lookups) {
     inp.addEventListener("change", () => inp.closest(".perm-item").classList.toggle("checked", inp.checked));
   });
 
-  if (isEdit && u.id !== state.user?.id) form.append(secaoSegurancaUsuario(u));
+  if (isEdit) form.prepend(secaoSegurancaUsuario(u));
 
   dialog({
     title: isEdit ? `Editar usuário: ${u.nome}` : "Novo usuário",
@@ -265,7 +265,13 @@ function abrirUsuario(usuario, lookups) {
 }
 
 function secaoSegurancaUsuario(usuario) {
-  const titulo = el("summary", {}, "Segurança da conta");
+  const titulo = el("summary", {}, "Segurança da conta (MFA)");
+  const secao = el("details", { class: "usuario-seguranca" }, titulo);
+  if (usuario.id === state.user?.id) {
+    secao.append(el("div", { class: "muted" },
+      "Abra Segurança da conta no menu do Nexus para trocar seu autenticador. Se perdeu o acesso a ele, peça a outro administrador para redefinir seu MFA."));
+    return secao;
+  }
   const redefinir = el("button", { type: "button", class: "btn outlined", onclick: () => {
     redefinir.hidden = true;
     confirmacao.hidden = false;
@@ -291,9 +297,10 @@ function secaoSegurancaUsuario(usuario) {
   const confirmacao = el("div", { class: "recado erro", hidden: true },
     el("p", {}, `Redefinir o MFA de ${usuario.nome} (${usuario.email})? As sessões serão encerradas. No próximo login, essa pessoa precisará cadastrar um autenticador.`),
     el("div", { class: "row wrap" }, cancelar, confirmar));
-  const secao = el("details", { class: "form-section usuario-seguranca", ontoggle: () => {
+  secao.append(el("div", {}, redefinir, confirmacao));
+  secao.addEventListener("toggle", () => {
     if (!secao.open) recolherConfirmacao();
-  } }, titulo, el("div", {}, redefinir, confirmacao));
+  });
 
   function recolherConfirmacao() {
     confirmacao.hidden = true;
