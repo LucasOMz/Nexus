@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
+    # Vazio usa contadores locais em desenvolvimento.
+    rate_limit_redis_url: SecretStr = SecretStr("")
     qr_hmac_secret: str = "troque-este-segredo-qr-hmac"
     # Assinatura do QR: quando False, a leitura aceita a etiqueta pelo ID do
     # payload mesmo com assinatura ausente/divergente (útil para não reimprimir

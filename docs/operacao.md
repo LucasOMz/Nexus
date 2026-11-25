@@ -376,6 +376,19 @@ Restrinja o arquivo de ambiente ao administrador do Raspberry.
 
 ## 6. Segurança
 
+### Limite de requisições
+
+O Compose sobe um Redis interno para compartilhar os contadores entre as
+instâncias da API. Os limites atuais são de 10 tentativas de login por IP,
+120 leituras de QR por usuário e 600 requisições gerais por cliente a cada
+minuto. Ao atingir o limite, a API responde com HTTP 429 e indica quando tentar
+novamente no cabeçalho `Retry-After`.
+
+O volume `redis_rate_limit` guarda os contadores de curta duração. Se o Redis
+ficar indisponível, a API registra um aviso e aplica os limites por instância
+até a conexão voltar. Fora do Docker, `RATE_LIMIT_REDIS_URL` permite apontar
+para um Redis dedicado.
+
 ### Limites de fotos e anexos
 
 | Envio | Formatos | Limite por arquivo |

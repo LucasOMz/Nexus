@@ -81,7 +81,8 @@ def validate_qr(
     """
     key = str(user.id)
     if not scan_limiter.is_allowed(key):
-        raise HTTPException(429, "Muitas leituras. Aguarde um instante.")
+        raise HTTPException(429, "Muitas leituras. Aguarde um instante.",
+                            headers={"Retry-After": str(scan_limiter.window_seconds)})
     ativo_id = verify_payload(body.payload)
     if ativo_id is None:
         return QRValidateOut(valid=False, detail="Payload inválido ou assinatura não confere")

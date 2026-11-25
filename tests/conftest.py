@@ -15,6 +15,7 @@ os.environ["DATABASE_URL"] = "sqlite://"
 os.environ["JWT_SECRET"] = "teste-jwt-secret-super-seguro-32-bytes-ou-mais"
 os.environ["QR_HMAC_SECRET"] = "teste-qr-hmac-super-seguro-32-bytes-ou-mais"
 os.environ["AUTO_CREATE_TABLES"] = "false"
+os.environ["RATE_LIMIT_REDIS_URL"] = ""
 # Fotos/termos dos testes vão para uma pasta temporária, para não sujar o
 # projeto com artefatos (media/fotos, media/termos).
 os.environ["MEDIA_DIR"] = tempfile.mkdtemp(prefix="estoque-testes-")

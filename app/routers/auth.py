@@ -111,7 +111,8 @@ def login(
     """
     client_ip = request.client.host if request.client else "unknown"
     if not login_limiter.is_allowed(client_ip):
-        raise HTTPException(status_code=429, detail="Muitas tentativas. Aguarde um instante.")
+        raise HTTPException(status_code=429, detail="Muitas tentativas. Aguarde um instante.",
+                            headers={"Retry-After": str(login_limiter.window_seconds)})
     codigo = codigo_form or codigo
 
     identificador = (form.username or "").strip()

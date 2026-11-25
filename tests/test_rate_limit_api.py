@@ -10,7 +10,13 @@ primeiro chamado, voltando a não proteger nada.
 """
 from __future__ import annotations
 
+import os
+import time
+from concurrent.futures import ThreadPoolExecutor
+from uuid import uuid4
+
 import pytest
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.core import rate_limit
 from app.core.rate_limit import SlidingWindowLimiter
@@ -143,3 +149,61 @@ class TestConfiguracao:
         """O limite que realmente protege é o do login: é por identidade e
         contra força bruta."""
         assert rate_limit.login_limiter.max_requests <= 20
+
+
+def test_reserva_local_mantem_contagem_se_redis_ficar_indisponivel(monkeypatch, caplog):
+    redis = rate_limit.RedisContadores("redis://localhost:6379/0")
+    lim = SlidingWindowLimiter(2, 60, redis=redis, grupo="teste")
+    monkeypatch.setattr(redis, "_decidir", lambda **_: 1)
+    assert lim.is_allowed("cliente")
+
+    def indisponivel(**_):
+        raise RedisConnectionError("conexão de teste")
+
+    monkeypatch.setattr(redis, "_decidir", indisponivel)
+    assert lim.is_allowed("cliente")
+    assert not lim.is_allowed("cliente")
+    assert sum("Usando contadores locais" in r.message for r in caplog.records) == 1
+    redis.fechar()
+
+
+@pytest.fixture
+def contadores_redis():
+    url = os.getenv("NEXUS_TEST_REDIS_URL")
+    if not url:
+        pytest.skip("Configure NEXUS_TEST_REDIS_URL para testar com um Redis descartável.")
+    primeiro = rate_limit.RedisContadores(url)
+    segundo = rate_limit.RedisContadores(url)
+    try:
+        yield primeiro, segundo
+    finally:
+        primeiro.fechar()
+        segundo.fechar()
+
+
+def test_redis_compartilha_teto_atomico_e_expira_a_janela(contadores_redis):
+    grupo = uuid4().hex
+    a, b = [SlidingWindowLimiter(3, 2, redis=redis, grupo=grupo) for redis in contadores_redis]
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        resultados = list(executor.map(lambda n: (a if n % 2 else b).is_allowed("cliente"), range(20)))
+    assert sum(resultados) == 3
+    prazo = time.monotonic() + 5
+    while not b.is_allowed("cliente"):
+        assert time.monotonic() < prazo, "A janela do cliente ainda não expirou."
+        time.sleep(0.05)
+
+
+def test_redis_mantem_429_ao_recriar_limitador_da_api(client, auth_headers, contadores_redis, monkeypatch):
+    from app import main as app_main
+
+    grupo = uuid4().hex
+    primeiro, segundo = contadores_redis
+    monkeypatch.setattr(app_main, "api_limiter", SlidingWindowLimiter(1, 60, redis=primeiro, grupo=grupo))
+    assert client.get("/api/v1/ativos", headers=auth_headers).status_code == 200
+    primeiro.fechar()
+
+    monkeypatch.setattr(app_main, "api_limiter", SlidingWindowLimiter(1, 60, redis=segundo, grupo=grupo))
+    resposta = client.get("/api/v1/ativos", headers=auth_headers)
+    assert resposta.status_code == 429
+    assert resposta.headers["retry-after"] == "60"
+    assert SlidingWindowLimiter(1, 60, redis=segundo, grupo=uuid4().hex).is_allowed("ip:testclient")

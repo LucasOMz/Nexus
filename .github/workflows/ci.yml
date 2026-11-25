@@ -8,6 +8,12 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379/tcp
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -19,6 +25,8 @@ jobs:
       - name: Lint (ruff)
         run: ruff check app tests
       - name: Tests (pytest)
+        env:
+          NEXUS_TEST_REDIS_URL: redis://127.0.0.1:${{ job.services.redis.ports[6379] }}/0
         run: pytest --cov=app --cov-report=term-missing
 
   container:
@@ -32,7 +40,7 @@ jobs:
       - name: Verificar execução sem root e validar backup PostgreSQL
         run: |
           sudo install -d -o 10001 -g 10001 -m 0750 "$NEXUS_BACKUP_DIR"
-          docker compose up -d --wait db
+          docker compose up -d --wait db redis
           docker compose run --rm --no-deps --build -T api python - <<'PY'
           import os
           from pathlib import Path
@@ -46,9 +54,12 @@ jobs:
           with TemporaryFile(dir="/tmp") as tmp:
               tmp.write(b"temporario")
 
+          from app.core.rate_limit import redis_contadores
           from app.database import init_db
           from app.services.backup_service import criar_backup, validar_backup
 
+          assert redis_contadores is not None
+          assert redis_contadores.is_allowed("ci", "volume", 60, 2) is True
           init_db()
           meta = criar_backup("ci")
           assert meta["tipo"] == "postgres" and meta["tamanho_bytes"] > 0

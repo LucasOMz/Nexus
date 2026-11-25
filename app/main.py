@@ -18,11 +18,12 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
+from starlette.concurrency import run_in_threadpool
 
 from app import __version__
 from app.config import settings
 from app.core.deps import require_module
-from app.core.rate_limit import api_limiter, chave_do_cliente
+from app.core.rate_limit import api_limiter, chave_do_cliente, redis_contadores
 from app.core.uploads import LimiteDeUpload
 from app.database import SessionLocal, init_db
 from app.routers import (
@@ -108,6 +109,8 @@ async def lifespan(_app: FastAPI):
 
     yield
     notificacoes_agendador.parar()
+    if redis_contadores is not None:
+        redis_contadores.fechar()
 
 
 app = FastAPI(
@@ -179,7 +182,7 @@ async def limite_de_requisicoes(request: Request, call_next):
         return await call_next(request)
 
     chave = chave_do_cliente(request)
-    if not api_limiter.is_allowed(chave):
+    if not await run_in_threadpool(api_limiter.is_allowed, chave):
         from fastapi.responses import JSONResponse as _JSON
 
         return _JSON(
@@ -190,7 +193,7 @@ async def limite_de_requisicoes(request: Request, call_next):
                     "tente de novo."
                 )
             },
-            headers={"Retry-After": "60"},
+            headers={"Retry-After": str(api_limiter.window_seconds)},
         )
 
     return await call_next(request)

@@ -110,7 +110,8 @@ def buscar(
     `QR_EXIGIR_ASSINATURA=false`, não bloqueia a leitura — mas fica auditada.
     """
     if not scan_limiter.is_allowed(str(user.id)):
-        raise HTTPException(429, "Muitas leituras. Aguarde um instante.")
+        raise HTTPException(429, "Muitas leituras. Aguarde um instante.",
+                            headers={"Retry-After": str(scan_limiter.window_seconds)})
 
     codigo = body.codigo.strip()
     ip = request.client.host if request.client else None

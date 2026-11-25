@@ -9,6 +9,31 @@
 # A API serve o frontend e publica HTTP na porta 4545 por padrão.
 # =====================================================================
 services:
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --save
+      - ""
+      - --maxmemory
+      - 128mb
+      - --maxmemory-policy
+      - noeviction
+    volumes:
+      - redis_rate_limit:/data
+    networks:
+      - contadores
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   db:
     # PostgreSQL 15 — **não 16**, e o motivo é o `pg_dump`.
     #
@@ -46,11 +71,16 @@ services:
     security_opt: ["no-new-privileges:true"]
     tmpfs:
       - /tmp:rw,nosuid,nodev,noexec,mode=1777
+    networks:
+      - default
+      - contadores
     depends_on:
       db:
         condition: service_healthy
       ajustar-volumes:
         condition: service_completed_successfully
+      redis:
+        condition: service_started
     environment:
       # --- Banco de dados ------------------------------------------------
       #
@@ -96,6 +126,7 @@ services:
       # quem fosse procurar por que algo era bloqueado perderia tempo ali.
       CORS_ORIGINS: ${CORS_ORIGINS:-}
       ENV: production
+      RATE_LIMIT_REDIS_URL: ${RATE_LIMIT_REDIS_URL:-redis://redis:6379/0}
       LDAP_CA_FILE: ${LDAP_CA_FILE:-}
       AUTO_CREATE_TABLES: "true"
       PRINT_AGENT_URL: ${PRINT_AGENT_URL:-https://raspberry:9100}
@@ -201,7 +232,12 @@ services:
 #
 # Crie a pasta de backup antes do primeiro deploy com proprietário 10001:10001.
 #
+networks:
+  contadores:
+    internal: true
+
 volumes:
   pgdata:
   media:
   segredos:
+  redis_rate_limit:
