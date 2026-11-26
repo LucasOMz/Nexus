@@ -88,18 +88,32 @@ table.data td, table.data th { padding: 11px 14px; }
 .home-tile { padding: 14px; }
 
 .admin-layout { display: grid; grid-template-columns: minmax(170px, 216px) minmax(0, 1fr); gap: 16px; align-items: start; }
-#view > .busca-abas { width: 100%; max-width: none; border-radius: 8px; }
-.admin-conteudo { min-width: 0; }
+.admin-busca { margin-bottom: 14px; }
+.admin-busca .busca-abas { width: 100%; max-width: none; margin-bottom: 0; border-radius: 8px; }
+.admin-area, .admin-conteudo { min-width: 0; }
 .admin-destinos { padding: 9px; }
-.admin-destinos .categorias-admin, .admin-destinos .barra-trilho { flex-direction: column; flex-wrap: nowrap; gap: 4px; }
-.admin-destinos .categoria-admin, .admin-destinos .opcao-admin { width: 100%; min-height: 38px;
-  border: 0; border-radius: 7px; padding: 8px 10px; background: none; text-align: left; white-space: normal; }
+.admin-destinos .categorias-admin { display: grid; gap: 4px; margin: 0; }
+.admin-destinos .categoria-admin { min-height: 41px; display: flex; align-items: center; gap: 9px; border: 0; border-radius: 7px;
+  padding: 8px 10px; background: none; color: var(--md-sys-color-on-surface); text-decoration: none; white-space: normal; text-align: left; }
 .admin-destinos .categoria-admin span:first-child { display: grid; place-items: center; }
-.admin-destinos .categoria-admin.ativa, .admin-destinos .opcao-admin.ativa {
-  background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); }
-.admin-destinos .categoria-admin:hover, .admin-destinos .opcao-admin:hover { background: var(--md-sys-color-surface-container-high); }
-.admin-destinos .opcoes-admin { border: 0; margin: 7px 0 0; padding: 8px 3px 2px; background: none;
-  border-top: 1px solid var(--md-sys-color-outline-variant); border-radius: 0; }
+.admin-destinos .categoria-admin:hover { background: var(--md-sys-color-surface-container-high); }
+.admin-destinos .categoria-admin.ativa { background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); }
+.admin-secao-titulo { margin: 0 0 14px; font-size: 1.5rem; }
+.admin-grade-opcoes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.admin-opcao-card, .admin-resultado { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;
+  gap: 12px; color: var(--md-sys-color-on-surface); text-decoration: none; }
+.admin-grade-opcoes .admin-opcao-card { margin: 0; min-height: 92px; padding: 14px; }
+.admin-opcao-card:hover { border-color: var(--md-sys-color-primary); color: var(--md-sys-color-primary); }
+.admin-opcao-card small { display: block; margin-top: 4px; line-height: 1.35; }
+.admin-caminho { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-bottom: 12px; font-size: .9rem; }
+.admin-caminho a { color: var(--md-sys-color-primary); }
+.admin-caminho svg, .admin-resultado svg { display: block; }
+.admin-resultados { margin: 8px 0 0; padding: 10px; }
+.admin-resultados p { margin: 2px 4px 7px; font-size: .84rem; }
+.admin-resultados-lista { list-style: none; margin: 0; padding: 0; }
+.admin-resultado { padding: 9px; border-radius: 7px; }
+.admin-resultado:hover { background: var(--md-sys-color-surface-container-high); }
+.admin-resultado .muted { font-size: .8rem; text-align: right; }
 .admin-usuarios { padding: 16px; }
 .admin-usuarios-topo { gap: 12px; margin-bottom: 14px; }
 .admin-usuarios-topo .section-title { margin: 0; }
@@ -113,7 +127,6 @@ table.data td, table.data th { padding: 11px 14px; }
 .admin-acesso { display: inline-flex; padding: 2px 8px; border-radius: 8px; font-size: .79rem; font-weight: 680; }
 .admin-acesso.ok { background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); }
 .admin-acesso.bloqueado { background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); }
-.admin-atalhos { display: flex; gap: 8px; flex-wrap: wrap; padding: 8px 12px; }
 
 .ativos-topo { gap: 12px; margin-bottom: 14px; }
 .ativos-topo .page-title { margin-bottom: 5px; }
@@ -268,10 +281,10 @@ body:has(.ativos-novo) > .fab { display: none; }
   .inicio-paineis .section-title, .inicio-atalhos .section-title, .admin-usuarios .section-title { font-size: 1.32rem; }
   .inicio-atalho { min-height: 66px; }
   .admin-layout { grid-template-columns: minmax(215px, 245px) minmax(0, 1fr); }
-  .admin-destinos .categoria-admin, .admin-destinos .opcao-admin { min-height: 41px; }
 }
 @media (min-width: 1320px) {
   .mapa-workspace .mapa-grade-layout { grid-template-columns: minmax(0, 1fr) minmax(350px, 30%); }
+  .admin-grade-opcoes:has(> :nth-child(6)) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 1080px) {
   .ativos-filtros { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -289,8 +302,7 @@ body:has(.ativos-novo) > .fab { display: none; }
 }
 @media (max-width: 768px) {
   .admin-layout { grid-template-columns: minmax(0, 1fr); }
-  .admin-destinos .categorias-admin, .admin-destinos .barra-trilho { flex-direction: row; overflow-x: auto; }
-  .admin-destinos .categoria-admin, .admin-destinos .opcao-admin { width: auto; flex: 0 0 auto; }
+  .admin-destinos .categorias-admin { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .nexus-busca { padding-inline: 8px; }
   .nexus-busca-texto, .topbar .brand { display: none; }
   .topbar .inv-badge { max-width: 34vw; padding-inline: 6px; font-size: .76rem; gap: 3px; }
@@ -305,10 +317,13 @@ body:has(.ativos-novo) > .fab { display: none; }
   .monitor-indicadores > .monitor-indicador { flex-direction: column; align-items: flex-start; gap: 6px; padding: 9px; font-size: .76rem; }
   .monitor-indicador-icone { width: 34px; height: 34px; flex: 0 0 34px; }
 }
+@media (max-width: 640px) {
+  .admin-grade-opcoes { grid-template-columns: minmax(0, 1fr); }
+}
 @media print {
   #app:has(> .shell), #app > .shell { display: block; }
   #app #view { width: 100%; padding: 0; }
   .nexus-lateral { display: none; }
   .admin-layout { display: block; }
-  .admin-destinos { display: none; }
+  .admin-destinos, .admin-busca, .admin-caminho { display: none; }
 }

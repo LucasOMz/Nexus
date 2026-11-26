@@ -290,21 +290,17 @@ verificar("a barra usa a MESMA fonte da gaveta",
 //     inventário — o usuário entrava e não enxergava nada.
 const fonteAdmin = fs.readFileSync(new URL("../frontend/js/views/admin.js", import.meta.url), "utf8");
 
-// 25) A ordem das abas da Administração é definida pelo usuário.
-//     E o despacho precisa acompanhar — aba fora do despacho abriria em branco.
+// 25) Cada opção existente tem um destino próprio.
 const ORDEM_ABAS = ["usuarios", "plantas", "dispositivos", "etiquetas", "checklist", "fotos", "auditoria", "backups", "auth", "notificacoes", "lgpd", "manutencao", "agente", "ollama", "banco"];
-const blocoAbas = /const abas = \[([\s\S]*?)\n  \];/.exec(fonteAdmin);
-const abasNoArquivo = blocoAbas ? [...blocoAbas[1].matchAll(/\["(\w+)",/g)].map((m) => m[1]) : [];
-verificar("abas da administracao na ordem pedida",
-  JSON.stringify(abasNoArquivo) === JSON.stringify(ORDEM_ABAS));
+const blocoSecoes = /const SECOES_ADMIN = \[([\s\S]*?)\n\];/.exec(fonteAdmin);
+const destinosAdmin = [...(blocoSecoes?.[1] || "").matchAll(/^    \["(\w+)",/gm)].map(m => m[1]);
+verificar("todas as opcoes da administracao continuam acessiveis",
+  JSON.stringify([...destinosAdmin].sort()) === JSON.stringify([...ORDEM_ABAS].sort()));
+verificar("cada destino declara seu renderizador",
+  [...(blocoSecoes?.[1] || "").matchAll(/^    \["\w+",.*?, (?:aba|render)\w+, "/gm)].length === ORDEM_ABAS.length);
+verificar("o painel chama o destino selecionado", /await opcao\[4\]\(alvo\)/.test(fonteAdmin));
+verificar("o destino inicial e usuarios e permissoes", /const SECOES_ADMIN = \[\s*\{ chave: "usuarios"/.test(fonteAdmin));
 
-const despacho = [...fonteAdmin.matchAll(/abaAtiva === "(\w+)"\)/g)].map((m) => m[1]);
-verificar("toda aba tem seu despacho",
-  ORDEM_ABAS.every((k) => despacho.includes(k)));
-verificar("o despacho segue a mesma ordem das abas",
-  JSON.stringify(despacho.filter((k) => ORDEM_ABAS.includes(k))) === JSON.stringify(ORDEM_ABAS));
-verificar("nao sobrou o else generico escondendo a aba padrao",
-  !/else await abaFotos\(alvo\)/.test(fonteAdmin));
 verificar("cadastro de usuario tem o campo de inventarios",
   /<select name="inventarios" id="usuario-inventarios">/.test(fonteAdmin));
 verificar("oferece Ambos / Somente TI / Somente Impressoras",
@@ -522,8 +518,8 @@ const routerBanco = fs.readFileSync(new URL("../app/routers/banco.py", import.me
 // O OCS foi removido do sistema; a regra que existia so para ordenar as duas
 // abas perdeu a referencia. O motivo dela continua valendo: a tela de
 // diagnostico do banco vai no FIM, nao no meio dos cadastros.
-verificar("a aba do banco e a ultima do painel",
-  /\["banco", "Conexão com DBA"\],\s*\n\s*\];/.test(fonteAdmin));
+verificar("a conexao com o banco fica por ultimo em Sistema",
+  /\["banco", "Conexão com DBA",[^\n]+\],\s*\] \},\s*$/.test(blocoSecoes?.[1] || ""));
 verificar("a tela do banco so LE (nenhuma escrita no frontend)",
   /api\.get\("\/admin\/banco"\)/.test(fonteBanco)
   && !/api\.(put|post|patch|delete)\(\s*"\/admin\/banco/.test(fonteBanco));
@@ -622,64 +618,33 @@ verificar("tela inexistente cai no menu",
 }
 
 // 37) A busca da Administracao nao pode esconder aba nenhuma.
-//     As abas sao agrupadas para apresentacao; se uma ficar de fora dos grupos,
-//     ela sai da tela sem aviso. Aqui toda aba de `abas` precisa estar num
-//     grupo — o fallback "Outros" existe como rede, nao como desculpa.
-{
-  const chaves = [...blocoAbas[1].matchAll(/\["(\w+)",/g)].map((m) => m[1]);
-  const blocoGrupos = /const GRUPOS = \[([\s\S]*?)\n  \];/.exec(fonteAdmin);
-  const nosGrupos = blocoGrupos
-    ? [...blocoGrupos[1].matchAll(/"(\w+)"/g)].map((m) => m[1])
-    : [];
-  const faltando = chaves.filter((k) => !nosGrupos.includes(k));
+// 37) Administração separa navegação, busca e conteúdo.
+verificar("existem secoes declaradas", Boolean(blocoSecoes));
+verificar("o menu lateral contem somente as secoes",
+  /const menu = el\("nav", \{ class: "card admin-destinos"[\s\S]{0,430}SECOES_ADMIN\.map/.test(fonteAdmin)
+  && !/opcoes-admin|barraAberta/.test(fonteAdmin));
+verificar("patrimonio e sistema abrem uma pagina propria",
+  /rotaSecao = .*opcoes\.length === 1.*#\/admin\?secao=/.test(fonteAdmin)
+  && /class: "admin-grade-opcoes"[\s\S]{0,200}href: rotaOpcao\(chave\)/.test(fonteAdmin));
+verificar("as configuracoes continuam aceitando links diretos",
+  /params\.get\("aba"\)/.test(fonteAdmin) && /#\/admin\?aba=\$\{chave\}/.test(fonteAdmin));
+verificar("a configuracao indica o caminho de volta a secao",
+  /class: "admin-caminho"[\s\S]{0,220}href: rotaSecao\(secao\)/.test(fonteAdmin));
+verificar("ollama pertence a integracoes e backups pertence a sistema",
+  /chave: "integracoes"[\s\S]{0,150}\["ollama",/.test(blocoSecoes?.[1] || "")
+  && /chave: "sistema"[\s\S]{0,750}\["backups",/.test(blocoSecoes?.[1] || ""));
+verificar("usuarios fica sem atalhos de outros assuntos",
+  !/admin-atalhos/.test(fonteAdmin));
+verificar("a busca filtra por secao, rotulo, descricao e palavras-chave",
+  /normalizarBuscaAdmin\(busca\.value\)/.test(fonteAdmin) && /\$\{secao\} \$\{rotulo\} \$\{descricao\} \$\{palavras\}/.test(fonteAdmin));
+verificar("o campo de busca tem um painel de resultados proprio",
+  /class: "busca-abas"/.test(fonteAdmin) && /id: "admin-resultados".*hidden: true/.test(fonteAdmin));
+verificar("busca sem resultado avisa em vez de ficar vazio",
+  /Nenhuma opção encontrada/.test(fonteAdmin));
+verificar("a navegacao auxiliar some na impressao",
+  /\.admin-destinos, \.admin-busca, \.admin-caminho \{ display: none/.test(
+    fs.readFileSync(new URL("../frontend/nexus-ui.css", import.meta.url), "utf8")));
 
-  verificar("toda aba da administracao esta num grupo", faltando.length === 0);
-  if (faltando.length) console.log("       fora dos grupos: " + faltando.join(", "));
-
-  verificar("o fallback 'Outros' existe para aba nova",
-    /\["Outros", semGrupo\]/.test(fonteAdmin));
-  verificar("a busca filtra por rotulo E palavras-chave",
-    // A variavel pode se chamar k ou chave: o que importa e a busca consultar
-    // o rótulo E as palavras-chave da aba.
-    /AJUDA_ABA\[/.test(fonteAdmin) && /normalizarBuscaAdmin\(busca\.value\)/.test(fonteAdmin));
-  verificar("existe o campo de busca das abas",
-    /class: "busca-abas"/.test(fonteAdmin));
-  verificar("busca sem resultado avisa em vez de ficar vazio",
-    /Nenhuma opção encontrada/.test(fonteAdmin));
-}
-
-﻿// 38) A administracao navega por CATEGORIAS, com as opcoes logo ABAIXO delas.
-//     A barra comeca OCULTA: o painel abre limpo, so com as categorias, e as
-//     opcoes aparecem quando se clica numa delas.
-{
-  const blocoGrupos = /const GRUPOS = \[([\s\S]*?)\n  \];/.exec(fonteAdmin);
-  verificar("existem categorias declaradas", Boolean(blocoGrupos));
-  verificar("as categorias ficam no menu da administração",
-    /class: "categorias-admin"/.test(fonteAdmin));
-  verificar("as opcoes ficam logo abaixo das categorias",
-    /el\("nav", \{ class: "card admin-destinos", [^\n]+ \}, filaCategorias, barra\)/.test(fonteAdmin)
-    && !/document\.body\.append\(barra\)/.test(fonteAdmin));
-  verificar("a barra comeca OCULTA",
-    /let barraAberta = false;/.test(fonteAdmin)
-    && /if \(barraAberta && categoriaAberta === titulo\)/.test(fonteAdmin));
-  verificar("clicar na categoria abre as opcoes dela",
-    /categoriaAberta = titulo;[\s\S]{0,80}barraAberta = true;/.test(fonteAdmin));
-  verificar("clicar de novo na mesma categoria fecha a barra",
-    /if \(barraAberta && categoriaAberta === titulo\) \{[\s\S]{0,120}barraAberta = false;/.test(fonteAdmin));
-  verificar("a barra sobrevive ao redesenho",
-    /let barraAberta = false;/.test(fonteAdmin)
-    && /categoriaAberta = barraAberta \?/.test(fonteAdmin));
-  verificar("so as opcoes da categoria ativa aparecem sem busca",
-    /if \(!termo && titulo !== categoriaAberta\) continue;/.test(fonteAdmin));
-  verificar("o trilho de opcoes rola de lado",
-    /\.barra-trilho \{[\s\S]{0,220}overflow-x: auto/.test(fonteCss)
-    && /\.opcao-admin \{[\s\S]{0,160}flex: 0 0 auto/.test(fonteCss));
-  verificar("a barra some na impressao",
-    /@media print \{[^}]*\.opcoes-admin \{ display: none/.test(fonteCss));
-  verificar("durante a busca a categoria nao navega",
-    /if \(termo\) return;/.test(fonteAdmin));
-}
-﻿
 // 39) As caixas de marcacao dos templates de etiqueta seguem o padrao do site.
 //     Antes, .switch so tinha "display:inline-flex" e .perm-item nao tinha base
 //     nenhuma: o navegador desenhava a caixa nativa e a tela destoava do resto.

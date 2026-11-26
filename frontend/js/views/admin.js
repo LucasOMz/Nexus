@@ -26,12 +26,6 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 
 let meta = { modulos: [], inventarios: [] };
 
-// As opções da Administração começam OCULTAS e aparecem ao clicar numa
-// categoria. Fica no módulo (e não na função) para sobreviver ao redesenho:
-// navegar entre abas não deve fechar a barra que a pessoa acabou de abrir.
-let barraAberta = false;
-let abaAtiva = "usuarios";
-
 // ---------------------------------------------------------------------------
 // Usuários & permissões
 // ---------------------------------------------------------------------------
@@ -370,10 +364,7 @@ async function abaUsuarios(root) {
     el("div", { class: "row between wrap admin-usuarios-topo" },
       el("h2", { class: "section-title" }, "Usuários e permissões"),
       el("button", { class: "btn filled", onclick: () => abrirUsuario(null, lookups), html: icon("add", 18) + " Novo usuário" })),
-    el("div", { class: "admin-usuarios-filtros" }, busca, perfil), lista),
-  el("div", { class: "card admin-atalhos" },
-    el("a", { class: "btn text", href: "#/admin?aba=ollama", html: icon("chat", 18) + " Configuração do Ollama" }),
-    el("a", { class: "btn text", href: "#/admin?aba=backups", html: icon("arquivo", 18) + " Backups" })));
+    el("div", { class: "admin-usuarios-filtros" }, busca, perfil), lista));
 }
 
 const normalizarBuscaAdmin = (texto) => String(texto).normalize("NFD").replace(/\p{M}/gu, "").trim().toLowerCase();
@@ -629,241 +620,130 @@ async function abaFotos(root) {
 }
 
 // ---------------------------------------------------------------------------
-// View principal com abas
+// Navegação da Administração
 // ---------------------------------------------------------------------------
+const SECOES_ADMIN = [
+  { chave: "usuarios", rotulo: "Usuários e permissões", icone: "cadastros", opcoes: [
+    ["usuarios", "Usuários e permissões", "cadastros", "Contas, perfis, permissões e verificação em duas etapas.", abaUsuarios, "pessoas acesso login papel senha mfa"],
+  ] },
+  { chave: "plantas", rotulo: "Plantas", icone: "plantas", opcoes: [
+    ["plantas", "Plantas", "plantas", "Unidades e localidades dos equipamentos.", renderPlantas, "localidades unidade filial cnpj site"],
+  ] },
+  { chave: "integracoes", rotulo: "Integrações", icone: "integracoes", opcoes: [
+    ["ollama", "Configuração do Ollama", "chat", "Conexão, modelo e retenção do histórico do assistente.", renderOllama, "chat ia qwen conexão inteligência artificial"],
+  ] },
+  { chave: "patrimonio", rotulo: "Patrimônio", icone: "ativos", opcoes: [
+    ["dispositivos", "Impressão", "print", "Configure as impressoras usadas para emitir etiquetas.", abaDispositivos, "impressoras zpl tspl rede térmica"],
+    ["etiquetas", "Etiquetas", "qr", "Gerencie os modelos de etiquetas de patrimônio.", renderTemplates, "template layout design qr"],
+    ["checklist", "Checklist de empréstimo", "contagens", "Defina os itens de conferência na retirada e na devolução.", renderChecklist, "inventário vistoria"],
+    ["fotos", "Banco de Fotos", "image", "Gerencie as imagens usadas nas fichas dos equipamentos.", abaFotos, "imagem galeria mídia anexo"],
+  ] },
+  { chave: "auditoria", rotulo: "Auditoria", icone: "contagens", opcoes: [
+    ["auditoria", "Logs de auditoria", "contagens", "Consulte a trilha de alterações do sistema.", renderAuditoria, "histórico trilha quem fez rastro"],
+  ] },
+  { chave: "lgpd", rotulo: "Privacidade", icone: "shield", opcoes: [
+    ["lgpd", "Privacidade (LGPD)", "shield", "Consulte os prazos de retenção e execute o expurgo de dados vencidos.", renderLgpd, "dados retenção anonimização"],
+  ] },
+  { chave: "sistema", rotulo: "Sistema", icone: "settings", opcoes: [
+    ["auth", "Autenticação (AD)", "shield", "Configure o acesso com as contas de rede.", renderAuth, "active directory ldap senha domínio login de rede"],
+    ["notificacoes", "Notificações", "bell", "Gerencie os envios e alertas do sistema.", renderNotificacoes, "email smtp aviso alerta toner devolução"],
+    ["backups", "Backups", "arquivo", "Crie, baixe e restaure cópias do banco.", renderBackups, "cópia restaurar segurança dump salvar"],
+    ["manutencao", "Modo Manutenção", "manutencoes", "Gerencie o acesso durante manutenções.", renderManutencao, "sessão derrubar logado online bloqueio"],
+    ["agente", "Agente Nexus", "ativos", "Gerencie a integração com os agentes instalados nos equipamentos.", renderAgente, "instalação serial token pendente"],
+    ["banco", "Conexão com DBA", "server", "Consulte a configuração atual da conexão com o banco.", renderBanco, "postgresql servidor sqlite mysql"],
+  ] },
+];
+
+const rotaOpcao = (chave) => `#/admin?aba=${chave}`;
+const rotaSecao = ({ chave, opcoes }) => opcoes.length === 1 ? rotaOpcao(opcoes[0][0]) : `#/admin?secao=${chave}`;
+
+function buscaAdministracao() {
+  const busca = el("input", { type: "search", class: "busca-abas", placeholder: "Buscar opção de administração",
+    "aria-label": "Buscar opção de administração", "aria-controls": "admin-resultados" });
+  const mensagem = el("p", { class: "muted", role: "status" });
+  const lista = el("ul", { class: "admin-resultados-lista" });
+  const resultados = el("section", { id: "admin-resultados", class: "card admin-resultados", "aria-label": "Resultados da busca", hidden: true },
+    mensagem, lista);
+
+  busca.addEventListener("input", () => {
+    const termo = normalizarBuscaAdmin(busca.value);
+    resultados.hidden = !termo;
+    const itens = [];
+    if (termo) {
+      for (const { rotulo: secao, opcoes } of SECOES_ADMIN) {
+        for (const [chave, rotulo, icone, descricao, , palavras] of opcoes) {
+          if (!normalizarBuscaAdmin(`${secao} ${rotulo} ${descricao} ${palavras}`).includes(termo)) continue;
+          itens.push(el("li", {}, el("a", { class: "admin-resultado", href: rotaOpcao(chave) },
+            el("span", { html: icon(icone, 20) }), el("strong", {}, rotulo), el("span", { class: "muted" }, secao))));
+        }
+      }
+    }
+    mensagem.textContent = itens.length ? `${itens.length} opção(ões) encontrada(s)` : "Nenhuma opção encontrada.";
+    lista.replaceChildren(...itens);
+  });
+  busca.addEventListener("keydown", ev => {
+    if (ev.key === "Escape" && busca.value) {
+      ev.stopPropagation();
+      busca.value = "";
+      busca.dispatchEvent(new Event("input"));
+    }
+  });
+  return el("div", { class: "admin-busca" }, busca, resultados);
+}
+
 export async function renderAdmin(root) {
   ctx.setTitle("Administração");
   ctx.setFab(null);
 
   if (!state.isAdmin) {
-    root.innerHTML = "";
-    root.append(emptyState("shield", "Acesso restrito", "Somente administradores podem abrir esta área."));
+    root.replaceChildren(emptyState("shield", "Acesso restrito", "Somente administradores podem abrir esta área."));
     return;
   }
 
-  root.innerHTML = "";
-  root.append(el("h1", { class: "page-title" }, "Administração"));
-  const conteudo = el("div", {}, skeleton(5));
-  root.append(conteudo);
+  const params = new URLSearchParams(location.hash.split("?")[1] || "");
+  const abaPedida = params.get("aba");
+  const secao = SECOES_ADMIN.find(s => s.opcoes.some(([chave]) => chave === abaPedida))
+    || SECOES_ADMIN.find(s => s.chave === params.get("secao")) || SECOES_ADMIN[0];
+  const opcao = secao.opcoes.find(([chave]) => chave === abaPedida)
+    || (secao.opcoes.length === 1 ? secao.opcoes[0] : null);
 
-  try { meta = await api.get("/admin/metadados"); } catch { meta = { modulos: [], inventarios: [] }; }
-  if (conteudo.parentElement !== root) return;
-
-  // A ordem desta lista é a ordem das abas na tela — e a ordem do despacho
-  // logo abaixo. Mantenha as duas iguais.
-  const abas = [
-    ["usuarios", "Usuários & Permissões"],
-    ["plantas", "Plantas"],
-    ["dispositivos", "Impressão"],
-    ["etiquetas", "Etiquetas"],
-    ["checklist", "Checklist de empréstimo"],
-    ["fotos", "Banco de Fotos"],
-    ["auditoria", "Logs"],
-    ["backups", "Backups"],
-    ["auth", "Autenticação (AD)"],
-    ["notificacoes", "Notificações"],
-    ["lgpd", "Privacidade (LGPD)"],
-    ["manutencao", "Modo Manutenção"],
-    ["agente", "Agente Nexus"],
-    ["ollama", "Ollama"],
-    ["banco", "Conexão com DBA"],
-  ];
-
-  // Permite abrir o painel direto numa aba: `#/admin?aba=ocs`.
-  const pedida = new URLSearchParams((location.hash.split("?")[1] || "")).get("aba");
-  if (pedida && abas.some(([chave]) => chave === pedida)) abaAtiva = pedida;
-
-  // -------------------------------------------------------------------------
-  // Categorias no topo; as opções aparecem logo ABAIXO delas, ao clicar.
-  //
-  // A barra começa oculta: o painel abre limpo, só com as quatro categorias.
-  // Quem sabe onde quer ir clica e vê as opções; quem não sabe usa a busca.
-  // -------------------------------------------------------------------------
-  const AJUDA_ABA = {
-    usuarios: ["pessoas", "acesso", "permissao", "login", "papel", "senha"],
-    plantas: ["localidades", "unidade", "filial", "cnpj", "site"],
-    dispositivos: ["impressoras", "zpl", "tspl", "rede", "termica"],
-    etiquetas: ["template", "layout", "qr", "design", "modelo"],
-    fotos: ["imagem", "galeria", "midia", "anexo"],
-    auditoria: ["log", "historico", "trilha", "quem fez", "rastro"],
-    backups: ["copia", "restaurar", "seguranca", "dump", "salvar"],
-    auth: ["ad", "active directory", "ldap", "senha", "dominio", "login de rede"],
-    reconciliacao: ["divergencia", "fantasma", "perdido", "rede", "comparar"],
-    banco: ["dba", "conexao", "postgresql", "servidor", "sqlite", "mysql"],
-    agente: ["agente", "nexus", "instalacao", "instalação", "serial", "token", "pendente"],
-    manutencao: ["manutencao", "manutenção", "sessao", "sessão", "derrubar", "logado", "online", "bloqueio"],
-    notificacoes: ["email", "smtp", "aviso", "alerta", "notificar", "toner", "devolucao"],
-    ollama: ["chat", "ia", "modelo", "qwen", "conexao", "inteligencia artificial", "integracao"],
-  };
-
-  const GRUPOS = [
-    // "Autenticação (AD)" saiu daqui: ela configura COMO se entra no sistema,
-    // que é assunto de infraestrutura, não de cadastro de pessoas.
-    ["Usuários e permissões", ["usuarios"]],
-    ["Plantas", ["plantas"]],
-    ["Integrações", ["ollama"]],
-    ["Patrimônio", ["dispositivos", "etiquetas", "checklist", "fotos"]],
-    // "Auditoria" reúne o que serve para CONFERIR: a trilha do que foi feito
-    // (Logs) e a conferência do que existe na rede (Reconciliação).
-    ["Auditoria", ["auditoria", "reconciliacao"]],
-    // "Privacidade" separada da Auditoria: uma é a trilha do que foi feito; a
-    // outra é por quanto tempo isso pode ser guardado, e com que fundamento.
-    // Quem responde por LGPD procura por privacidade, não por auditoria.
-    ["Privacidade", ["lgpd"]],
-    // "Sistema" ficou com a configuração e a manutenção da própria ferramenta:
-    // como se entra (AD), de onde vêm os dados (OCS), a cópia de segurança e a
-    // conexão com o banco.
-    //
-    // "Notificações" entrou aqui: é a saída de informação do sistema — o
-    // oposto do OCS, que é a entrada. Quem procura "por que não chega e-mail"
-    // procura em Sistema, não em Patrimônio.
-    ["Sistema", ["auth", "notificacoes", "backups", "banco", "manutencao", "agente"]],
-  ];
-
-  // Aba fora de qualquer grupo não pode sumir: cai em "Outros".
-  const agrupadas = new Set(GRUPOS.flatMap(([, ks]) => ks));
-  const semGrupo = abas.map(([k]) => k).filter((k) => !agrupadas.has(k));
-  const grupos = semGrupo.length ? [...GRUPOS, ["Outros", semGrupo]] : GRUPOS;
-  const iconesGrupo = ["cadastros", "plantas", "integracoes", "ativos", "contagens", "shield", "settings"];
-
-  const rotuloDe = (chave) => (abas.find(([c]) => c === chave) || [, chave])[1];
-  const grupoDaAba = (chave) => grupos.find(([, ks]) => ks.includes(chave));
-
-  const busca = el("input", {
-    type: "search",
-    class: "busca-abas",
-    placeholder: "Buscar opção de administração",
-    "aria-label": "Buscar opção de administração",
-  });
-  const filaCategorias = el("div", { class: "categorias-admin" });
-  const barra = el("div", { class: "opcoes-admin" });
-
-  // Qual categoria está aberta. Fica no módulo para sobreviver ao redesenho:
-  // navegar entre abas não deve fechar a barra que a pessoa acabou de abrir.
-  let categoriaAberta = barraAberta ? (grupoDaAba(abaAtiva) || grupos[0])[0] : null;
-
-  function irPara(chave) {
-    abaAtiva = chave;
-    barraAberta = true;
-    const g = grupoDaAba(chave);
-    if (g) categoriaAberta = g[0];
-    const rota = `#/admin?aba=${chave}`;
-    if (location.hash === rota) renderAdmin(document.getElementById("view"));
-    else location.hash = rota;
-  }
-
-  function casa(chave, termo) {
-    const alvo = normalizarBuscaAdmin(`${rotuloDe(chave)} ${(AJUDA_ABA[chave] || []).join(" ")}`);
-    return alvo.includes(termo);
-  }
-
-  function pintarCategorias() {
-    const termo = normalizarBuscaAdmin(busca.value);
-    filaCategorias.innerHTML = "";
-
-    for (const [indice, [titulo, chaves]] of grupos.entries()) {
-      const temResultado = !termo || chaves.some((k) => casa(k, termo));
-      filaCategorias.append(el("button", {
-        class: [
-          "categoria-admin",
-          titulo === categoriaAberta || grupoDaAba(abaAtiva)?.[0] === titulo ? "ativa" : "",
-          temResultado ? "" : "sem-resultado",
-        ].filter(Boolean).join(" "),
-        "aria-current": chaves.length === 1 && chaves.includes(abaAtiva) ? "page" : null,
-        "aria-expanded": chaves.length > 1 ? String(titulo === categoriaAberta) : null,
-        onclick: () => {
-          if (termo) return;   // durante a busca, a categoria não navega
-          if (chaves.length === 1) {
-            if (chaves[0] !== abaAtiva) irPara(chaves[0]);
-            return;
-          }
-          // Clicar na categoria que já está aberta fecha a barra.
-          if (barraAberta && categoriaAberta === titulo) {
-            barraAberta = false;
-            categoriaAberta = null;
-            pintar();
-            return;
-          }
-          categoriaAberta = titulo;
-          barraAberta = true;
-          const primeira = chaves[0];
-          // Só navega se a aba aberta não for desta categoria — assim abrir a
-          // barra não troca de tela sem necessidade.
-          if (primeira && grupoDaAba(abaAtiva)?.[0] !== titulo) irPara(primeira);
-          else pintar();
-        },
-      },
-        el("span", { html: icon(iconesGrupo[indice] || "menu", 18) }),
-        el("span", {}, titulo),
-      ));
-    }
-  }
-
-  function pintarBarra() {
-    const termo = normalizarBuscaAdmin(busca.value);
-    // Visível ao clicar numa categoria, ou sempre que houver busca ativa.
-    const visivel = Boolean(termo) || (barraAberta && (grupoDaAba(abaAtiva)?.[1].length || 0) > 1);
-    barra.classList.toggle("oculto", !visivel);
-    barra.innerHTML = "";
-    if (!visivel) return;
-
-    const itens = [];
-    for (const [titulo, chaves] of grupos) {
-      for (const k of chaves) {
-        if (termo && !casa(k, termo)) continue;
-        if (!termo && titulo !== categoriaAberta) continue;
-        itens.push([k, titulo]);
-      }
-    }
-
-    if (!itens.length) {
-      barra.append(el("div", { class: "barra-vazia" }, "Nenhuma opção encontrada."));
-      return;
-    }
-
-    barra.append(
-      el("div", { class: "barra-rotulo" }, termo ? "Resultados" : categoriaAberta),
-      el("div", { class: "barra-trilho" },
-        ...itens.map(([chave, titulo]) => el("button", {
-          class: `opcao-admin${chave === abaAtiva ? " ativa" : ""}`,
-          "aria-current": chave === abaAtiva ? "page" : null,
-          title: termo ? titulo : undefined,
-          onclick: () => irPara(chave),
-        },
-          rotuloDe(chave),
-          // Na busca, mostra a categoria de origem: sem isso a pessoa não sabe
-          // onde aquela opção mora.
-          termo ? el("span", { class: "opcao-origem" }, titulo) : null,
-        ))),
-    );
-  }
-
-  function pintar() { pintarCategorias(); pintarBarra(); }
-
-  busca.addEventListener("input", pintar);
-  pintar();
-
+  const menu = el("nav", { class: "card admin-destinos", "aria-label": "Seções da administração" },
+    el("div", { class: "categorias-admin" }, ...SECOES_ADMIN.map(item => el("a", {
+      class: "categoria-admin" + (item === secao ? " ativa" : ""),
+      href: rotaSecao(item),
+      "aria-current": item === secao ? (opcao && secao.opcoes.length > 1 ? "location" : "page") : null,
+    }, el("span", { html: icon(item.icone, 19) }), item.rotulo))));
+  const area = el("section", { class: "admin-area", "aria-label": secao.rotulo });
   const alvo = el("div", { class: "admin-conteudo" });
-  root.insertBefore(busca, conteudo);
-  conteudo.replaceWith(el("div", { class: "admin-layout" },
-    el("nav", { class: "card admin-destinos", "aria-label": "Seções da administração" }, filaCategorias, barra),
-    alvo));
+  if (opcao && secao.opcoes.length > 1) {
+    area.append(el("nav", { class: "admin-caminho", "aria-label": "Caminho da configuração" },
+      el("a", { href: rotaSecao(secao) }, secao.rotulo),
+      el("span", { html: icon("chevR", 14) }),
+      el("span", { "aria-current": "page" }, opcao[1])));
+  }
+  area.append(alvo);
+  root.replaceChildren(el("h1", { class: "page-title" }, "Administração"), buscaAdministracao(),
+    el("div", { class: "admin-layout" }, menu, area));
 
-  // Despacho explícito, na mesma ordem das abas: usar um `else` genérico como
-  // último caso escondia qual aba era o padrão.
-  if (abaAtiva === "usuarios") await abaUsuarios(alvo);
-  else if (abaAtiva === "plantas") await renderPlantas(alvo);
-  else if (abaAtiva === "dispositivos") await abaDispositivos(alvo);
-  else if (abaAtiva === "etiquetas") await renderTemplates(alvo);
-  else if (abaAtiva === "checklist") await renderChecklist(alvo);
-  else if (abaAtiva === "fotos") await abaFotos(alvo);
-  else if (abaAtiva === "auditoria") await renderAuditoria(alvo);
-  else if (abaAtiva === "backups") await renderBackups(alvo);
-  else if (abaAtiva === "auth") await renderAuth(alvo);
-  else if (abaAtiva === "notificacoes") await renderNotificacoes(alvo);
-  else if (abaAtiva === "lgpd") await renderLgpd(alvo);
-  else if (abaAtiva === "manutencao") await renderManutencao(alvo);
-  else if (abaAtiva === "agente") await renderAgente(alvo);
-  else if (abaAtiva === "ollama") await renderOllama(alvo);
-  else if (abaAtiva === "banco") await renderBanco(alvo);
+  if (!opcao) {
+    alvo.append(el("h2", { class: "admin-secao-titulo" }, secao.rotulo),
+      el("div", { class: "admin-grade-opcoes" }, ...secao.opcoes.map(([chave, rotulo, icone, descricao]) =>
+        el("a", { class: "card admin-opcao-card", href: rotaOpcao(chave) },
+          el("span", { class: "nexus-pagina-icone", html: icon(icone, 22) }),
+          el("span", {}, el("strong", {}, rotulo), el("small", { class: "muted" }, descricao)),
+          el("span", { html: icon("chevR", 17) })))));
+    return;
+  }
+
+  const carregando = el("div", {}, skeleton(5));
+  alvo.append(carregando);
+  if (opcao[0] === "usuarios") {
+    meta = await api.get("/admin/metadados").catch(() => ({ modulos: [], inventarios: [] }));
+    if (!alvo.isConnected) return;
+  }
+  try {
+    await opcao[4](alvo);
+  } finally {
+    carregando.remove();
+  }
 }
