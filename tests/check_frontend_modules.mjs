@@ -36,7 +36,7 @@ globalThis.window = globalThis;
 
 const modulos = [
   "js/version.js", "js/context.js", "js/state.js", "js/offline.js", "js/api.js",
-  "js/ui.js", "js/charts.js", "js/label.js", "js/erros.js", "js/lookups.js", "js/router.js",
+  "js/ui.js", "js/chat_ia.js", "js/charts.js", "js/label.js", "js/erros.js", "js/lookups.js", "js/router.js",
   "js/easteregg.js", "js/versao_servidor.js", "js/seletor_ativo.js", "js/notificacoes.js",
   "js/views/calendario.js", "js/views/reporte.js", "js/views/admin_banco.js", "js/barra_lateral.js", "js/ordenar.js",
   "js/views/login.js", "js/views/inventario.js", "js/views/dashboard.js",

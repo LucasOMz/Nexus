@@ -8,6 +8,8 @@ import { dicaParaErro, rotuloCampo } from "./erros.js";
 
 /** Conjunto de ícones em traço (24x24), sem dependências externas. */
 const ICONS = {
+  chat: '<path d="M21 11.5a8.5 8.5 0 01-8.5 8.5H4l1.6-4.2a8.5 8.5 0 1115.4-4.3Z"/><path d="M8 9.5h9M8 13.5h6"/>',
+  enviar: '<path d="M12 19V5m-6 6 6-6 6 6"/>',
   dashboard: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
   ativos: '<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>',
   produtos: '<path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5"/><line x1="12" y1="13" x2="12" y2="21"/>',

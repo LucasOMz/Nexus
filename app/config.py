@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./estoque.db"
     auto_create_tables: bool = True
 
+    # Endereço da API do Ollama na rede interna. Vazio deixa o chat desativado.
+    nexus_ollama_url: str = ""
+    nexus_ollama_modelo: str = "qwen3:32b"
+    nexus_ollama_timeout: int = Field(default=180, ge=10, le=300)
+
     # --- Segurança ---
     jwt_secret: str = "troque-este-segredo-jwt"
     jwt_algorithm: str = "HS256"

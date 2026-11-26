@@ -80,7 +80,7 @@ export async function encerrarSessao() {
 export const api = {
   base: BASE,
 
-  async request(method, path, { body, query, planta, renovar = true, enfileirar = true } = {}) {
+  async request(method, path, { body, query, planta, renovar = true, enfileirar = true, prazoMs = 30000 } = {}) {
     let url = this.base + path;
     if (query) {
       const qs = new URLSearchParams();
@@ -111,9 +111,8 @@ export const api = {
     //
     // 30s é folgado de propósito: relatório grande e exportação de PDF
     // passam perto disso, e um prazo curto quebraria operação legítima.
-    const PRAZO_MS = 30000;
     const controle = new AbortController();
-    const relogio = setTimeout(() => controle.abort(), PRAZO_MS);
+    const relogio = setTimeout(() => controle.abort(), prazoMs);
 
     let res;
     try {
@@ -129,7 +128,7 @@ export const api = {
       if (e && e.name === "AbortError") {
         throw new ApiError(
           0,
-          `O servidor não respondeu em ${PRAZO_MS / 1000}s. `
+          `O servidor não respondeu em ${prazoMs / 1000}s. `
           + "Pode estar processando algo pesado, ou sem conexão livre no banco. "
           + "Tente de novo em instantes.",
         );
@@ -146,7 +145,7 @@ export const api = {
     // 401 → tenta refresh uma vez e repete a requisição.
     if (renovar && res.status === 401 && state.refresh && (!path.startsWith("/auth/") || path === "/auth/me")) {
       if (await refreshTokens(acesso)) {
-        return this.request(method, path, { body, query, planta, enfileirar, renovar: false });
+        return this.request(method, path, { body, query, planta, enfileirar, prazoMs, renovar: false });
       }
     }
 

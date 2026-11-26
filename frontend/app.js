@@ -7,6 +7,7 @@
  */
 import { state, ROTULO_INVENTARIO } from "./js/state.js";
 import { api, encerrarSessao, replayOfflineQueue } from "./js/api.js";
+import { criarChatIa } from "./js/chat_ia.js";
 import { Router } from "./js/router.js";
 import { ctx } from "./js/context.js";
 import { el, icon, toast, mostrarErro, dialog } from "./js/ui.js";
@@ -101,6 +102,7 @@ const BOTTOM_NAV = ["relatorios", "ativos", "scanner"];
 const router = new Router();
 let shellBuilt = false;
 let fabEl = null;
+let chatIa = null;
 let currentPath = "home";
 
 const currentRoute = () => (location.hash || "#/home").replace(/^#\/?/, "").split("?")[0] || "home";
@@ -194,6 +196,8 @@ function seletorDePlanta() {
 
 function destroyShell() {
   if (fabEl) { fabEl.remove(); fabEl = null; }
+  chatIa?.elemento.remove();
+  chatIa = null;
   shellBuilt = false;
 }
 
@@ -715,6 +719,16 @@ function renderRoute(path) {
   }
 
   if (!shellBuilt) buildShell();
+  if (state.podeModulo("ativos")) {
+    if (!chatIa) {
+      chatIa = criarChatIa();
+      document.body.append(chatIa.elemento);
+    }
+    chatIa.atualizarEscopo();
+  } else if (chatIa) {
+    chatIa.elemento.remove();
+    chatIa = null;
+  }
   ctx.setChrome(true);
   updateNav(path);
   updateBadge();

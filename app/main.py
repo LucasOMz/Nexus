@@ -47,6 +47,7 @@ from app.routers import (
     etiquetas,
     financeiro,
     graficos,
+    ia,
     importacao_ativos,
     kanban,
     lgpd,
@@ -269,6 +270,7 @@ app.include_router(produtos.router, prefix=API, dependencies=[Depends(require_mo
 # "importar" como número e devolve 422 em vez de chegar na rota certa.
 app.include_router(importacao_ativos.router, prefix=API)
 app.include_router(ativos.router, prefix=API)  # gate no próprio router
+app.include_router(ia.router, prefix=API)
 app.include_router(movimentacoes.router, prefix=API, dependencies=[Depends(require_module("movimentacoes"))])
 app.include_router(manutencoes.router, prefix=API, dependencies=[Depends(require_module("manutencoes"))])
 app.include_router(qrcode.router, prefix=API)

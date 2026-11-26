@@ -111,6 +111,9 @@ services:
       # segredo novo nasceria a cada recriação do container — e então todos os
       # logins caem e todas as etiquetas QR impressas param de validar.
       NEXUS_SEGREDOS_DIR: /app/segredos
+      NEXUS_OLLAMA_URL: ${NEXUS_OLLAMA_URL:-}
+      NEXUS_OLLAMA_MODELO: ${NEXUS_OLLAMA_MODELO:-qwen3:32b}
+      NEXUS_OLLAMA_TIMEOUT: ${NEXUS_OLLAMA_TIMEOUT:-180}
 
       # Aceita segredos antigos de QR, para não invalidar etiquetas já coladas.
       QR_HMAC_SECRETS_ANTERIORES: ${QR_HMAC_SECRETS_ANTERIORES:-}

@@ -92,6 +92,33 @@ Os **filtros valem para o relatório inteiro** — período, unidade, forma de
 aquisição e contrato. Não existe gráfico filtrado ao lado de gráfico sem
 filtro: os números pareceriam certos e não seriam.
 
+### Chat do inventário
+
+O botão redondo no canto inferior direito abre o chat para quem tem acesso a
+Ativos. É possível consultar contagens, listas e percentuais em linguagem
+natural e continuar com perguntas como “e só os notebooks?”. A API do Nexus
+executa as consultas de leitura dentro da planta selecionada e dos inventários
+permitidos para a conta. As perguntas recentes ficam na memória da página e os
+detalhes dos equipamentos são exibidos pelo próprio Nexus.
+
+Para conectar o Ollama, configure as variáveis da stack e recrie a API.
+
+```dotenv
+NEXUS_OLLAMA_URL=http://IP_DO_PC_COM_OLLAMA:11434
+NEXUS_OLLAMA_MODELO=qwen3:32b
+NEXUS_OLLAMA_TIMEOUT=180
+```
+
+Se o Ollama estiver em outro computador, configure `OLLAMA_HOST` para escutar na
+interface de rede e restrinja a porta 11434 no firewall ao servidor do Nexus.
+O endereço precisa ser alcançável a partir do contêiner da API. Consulte
+`/api/tags` nesse endereço para conferir a comunicação e o nome do modelo.
+A [documentação de configuração do Ollama](https://docs.ollama.com/faq)
+mostra como ajustar a interface de escuta.
+
+A primeira pergunta pode demorar enquanto o Ollama carrega o modelo. O
+prazo da API é configurável até 300 segundos.
+
 ### Contratos de locação
 
 O custo mensal é **do contrato**, e o valor por equipamento é calculado
