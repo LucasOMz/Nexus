@@ -1,18 +1,19 @@
 """Consultas de inventário aceitas pelo chat, executadas pelo Nexus."""
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, time, timezone
 from typing import Literal
 from unicodedata import combining, normalize
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from sqlalchemy import and_, case, cast, func, or_, String
+from sqlalchemy import String, and_, case, cast, func, or_, true
 from sqlalchemy.orm import Session
 
 from app.core.planta import aplicar_filtro
 from app.models.core import Ativo, Categoria, Departamento, Localizacao, Planta, PlantaLocalidade
-from app.models.enums import Dominio, TipoItem
+from app.models.enums import Dominio
 from app.models.impressora import AtivoImpressora
 from app.models.ti import AtivoTI
 
@@ -24,6 +25,7 @@ Grupo = Literal["planta", "departamento", "localizacao", "categoria", "tipo_equi
 DATAS = {"inventario_em", "data_aquisicao", "data_garantia"}
 OPERADORES_DATA = {"desde", "antes_de"}
 FUSO_INVENTARIO = "America/Sao_Paulo"
+_PREFIXO_CADASTRO = re.compile(r"^(?:(?:departamento|setor|planta|unidade)\s+)?(?:d(?:e|a|o|as|os)\s+)?")
 
 
 class Filtro(BaseModel):
@@ -74,28 +76,36 @@ def _normalizar_texto(valor: str | None) -> str:
     return " ".join("".join(c for c in decomposto if not combining(c)).split())
 
 
-def _ids_de_plantas(plantas, filtro: Filtro) -> set[int]:
+def _resolver_cadastro(cadastros, filtro: Filtro) -> dict[int, str]:
     termo = _normalizar_texto(filtro.valor)
     if not termo:
-        return set()
-    nomes = [(p.id, _normalizar_texto(p.nome), [_normalizar_texto(alias) for alias in (p.sigla, p.cidade, p.codigo)])
-             for p in plantas]
+        return {}
+    nomes = [(id_, nome, tuple(filter(None, map(_normalizar_texto, (nome, *aliases)))))
+             for id_, nome, *aliases in cadastros]
     if filtro.operador == "igual":
-        exatos = {id_ for id_, nome, aliases in nomes if termo == nome or termo in aliases}
-        if exatos:
-            return exatos
-        # O cadastro pode usar um nome composto, como “Unidade Tatuí”.
-        return {id_ for id_, nome, _ in nomes if f" {termo} " in f" {nome} "}
+        limpo = _PREFIXO_CADASTRO.sub("", termo)
+        for candidato in dict.fromkeys(filter(None, (termo, limpo))):
+            exatos = {id_: nome for id_, nome, aliases in nomes if candidato in aliases}
+            if exatos:
+                return exatos
+        # Um nome curto pode se referir ao cadastro “Unidade Tatuí” ou “Engenharia Industrial”.
+        if not limpo:
+            return {}
+        return {id_: nome for id_, nome, aliases in nomes
+                if aliases and re.search(rf"(?<!\w){re.escape(limpo)}(?!\w)", aliases[0])}
     if filtro.operador == "começa_com":
-        return {id_ for id_, nome, aliases in nomes if any(s.startswith(termo) for s in (nome, *aliases))}
-    return {id_ for id_, nome, aliases in nomes if any(termo in s for s in (nome, *aliases))}
+        return {id_: nome for id_, nome, aliases in nomes if any(s.startswith(termo) for s in aliases)}
+    return {id_: nome for id_, nome, aliases in nomes if any(termo in s for s in aliases)}
 
 
 def executar_consulta(db: Session, consulta: ConsultaInventario, planta_id: int | None, dominios: tuple[str, ...]) -> dict:
     resultado: dict = {"operacao": consulta.operacao, "agrupar_por": consulta.agrupar_por}
-    filtros_planta = [f for f in consulta.filtros + consulta.filtros_numerador
-                     if f.campo == "planta" and f.operador not in {"vazio", "preenchido"}]
-    plantas_por_filtro = {}
+    filtros_nomeados = [f for f in consulta.filtros + consulta.filtros_numerador
+                        if f.campo in {"planta", "departamento"} and f.operador not in {"vazio", "preenchido"}]
+    filtros_planta = [f for f in filtros_nomeados if f.campo == "planta"]
+    filtros_departamento = [f for f in filtros_nomeados if f.campo == "departamento"]
+    cadastros = {}
+    plantas_consultadas = None if planta_id is None else {planta_id}
     if filtros_planta:
         catalogo = db.query(Planta.id, Planta.nome, Planta.sigla, Planta.cidade, PlantaLocalidade.codigo).outerjoin(
             PlantaLocalidade, PlantaLocalidade.planta_id == Planta.id
@@ -104,13 +114,30 @@ def executar_consulta(db: Session, consulta: ConsultaInventario, planta_id: int 
             catalogo = catalogo.filter(Planta.id == planta_id)
         plantas = catalogo.all()
         for filtro in filtros_planta:
-            ids = _ids_de_plantas(plantas, filtro)
+            ids = _resolver_cadastro(plantas, filtro)
             if not ids:
                 aviso = (f'A planta “{filtro.valor}” não corresponde ao escopo atual. Confira a planta selecionada no topo.'
                          if planta_id is not None else
                          f'Não encontrei a planta “{filtro.valor}”. Confira o nome, a cidade ou a sigla.')
                 return {**resultado, "aviso": aviso}
-            plantas_por_filtro[(filtro.operador, filtro.valor)] = ids
+            cadastros[(filtro.campo, filtro.operador, filtro.valor)] = ids
+            if filtro in consulta.filtros:
+                plantas_consultadas = plantas_consultadas & ids.keys() if plantas_consultadas is not None else set(ids)
+    if filtros_departamento:
+        catalogo = db.query(Departamento.id, Departamento.nome, Departamento.sigla).filter(Departamento.deleted_at.is_(None))
+        if plantas_consultadas is not None:
+            catalogo = catalogo.filter(or_(Departamento.planta_id.is_(None), Departamento.planta_id.in_(plantas_consultadas)))
+        departamentos = catalogo.all()
+        for filtro in filtros_departamento:
+            ids = _resolver_cadastro(departamentos, filtro)
+            if not ids:
+                return {**resultado, "aviso": f'Não encontrei o departamento “{filtro.valor}” nas plantas consultadas. Confira o nome ou a sigla.'}
+            cadastros[(filtro.campo, filtro.operador, filtro.valor)] = ids
+
+    if cadastros:
+        resultado["cadastros_consultados"] = {campo: sorted({
+            nome for (tipo, _, _), ids in cadastros.items() if tipo == campo for nome in ids.values()
+        }) for campo in ("planta", "departamento")}
 
     hostname = func.coalesce(func.nullif(func.trim(AtivoTI.hostname), ""), AtivoImpressora.hostname)
     cat = func.lower(Categoria.nome)
@@ -146,10 +173,15 @@ def executar_consulta(db: Session, consulta: ConsultaInventario, planta_id: int 
             if filtro.campo == "inventario_em":
                 limite = datetime.combine(dia, time.min, ZoneInfo(FUSO_INVENTARIO)).astimezone(timezone.utc)
             return coluna >= limite if operador == "desde" else coluna < limite
-        if filtro.campo == "tipo_equipamento" and operador == "igual" and valor.lower() in {"computador", "computadores", "pc", "pcs"}:
-            return coluna.in_(("computador", "desktop", "notebook", "raspberry"))
-        if filtro.campo == "planta":
-            return Ativo.planta_id.in_(plantas_por_filtro[(operador, valor)])
+        if filtro.campo == "tipo_equipamento" and operador == "igual":
+            tipo = _normalizar_texto(valor)
+            if tipo in {"computador", "computadores", "pc", "pcs"}:
+                return coluna.in_(("computador", "desktop", "notebook", "raspberry"))
+            if tipo in {"ativo", "ativos", "equipamento", "equipamentos", "todos", "todos os ativos"}:
+                return true()
+        if filtro.campo in {"planta", "departamento"}:
+            chave = Planta.id if filtro.campo == "planta" else Departamento.id
+            return chave.in_(cadastros[(filtro.campo, operador, valor)].keys())
         if operador == "igual":
             return func.lower(coluna) == valor.lower()
         if operador == "começa_com":
@@ -164,7 +196,7 @@ def executar_consulta(db: Session, consulta: ConsultaInventario, planta_id: int 
         .outerjoin(Localizacao, _lookup_no_escopo(Localizacao, Ativo.localizacao_id))
         .outerjoin(AtivoTI, AtivoTI.ativo_id == Ativo.id)
         .outerjoin(AtivoImpressora, AtivoImpressora.ativo_id == Ativo.id)
-        .filter(Ativo.deleted_at.is_(None), Ativo.tipo_item == TipoItem.ATIVO, Ativo.dominio.in_(dominios))
+        .filter(Ativo.deleted_at.is_(None), Ativo.dominio.in_(dominios))
         .filter(*(expressao(filtro) for filtro in consulta.filtros))
     )
     base = aplicar_filtro(base, Ativo, planta_id)

@@ -140,6 +140,52 @@ def test_chat_explicita_planta_fora_do_escopo_em_vez_de_zero(client, auth_header
     assert "escopo atual" in resposta.json()["resposta"]
 
 
+def test_chat_conta_os_mesmos_99_ativos_do_rateio_por_planta_e_departamento(
+    client, auth_headers, inventario_ia, monkeypatch,
+):
+    with TestingSession() as db:
+        planta = db.get(Planta, 2)
+        planta.nome = "Unidade Tatuí"
+        planta.cidade = "Tatuí"
+        db.add_all([
+            Departamento(id=2, nome="Engenharia de Produção", sigla="Engenharia", planta_id=2),
+            Departamento(id=3, nome="Engenharia", planta_id=1),
+        ])
+        db.flush()
+        db.add_all(Ativo(planta_id=2, departamento_id=2, numero_serie=f"ENG-{i}", dominio="ti") for i in range(98))
+        db.add(Ativo(planta_id=2, departamento_id=2, numero_serie="ENG-legado", dominio="ti", tipo_item="consumivel"))
+        db.add(Ativo(planta_id=1, departamento_id=3, numero_serie="ENG-outra-planta", dominio="ti"))
+        db.commit()
+
+    rateio = client.get("/api/v1/financeiro/rateio", headers={**auth_headers, "X-Planta-Id": "2"})
+    esperado = next(item["ativos"] for item in rateio.json()["itens"] if item["departamento"] == "Engenharia")
+    _modelo(monkeypatch, [
+        {"operacao": "contar", "filtros": [_filtro("planta", "igual", "Tatui"), _filtro("departamento", "igual", "Engenharia")]},
+        {"operacao": "contar", "filtros": [
+            _filtro("planta", "igual", "planta de Tatui"), _filtro("departamento", "igual", "departamento da Engenharia"),
+            _filtro("tipo_equipamento", "igual", "ativos"),
+        ]},
+    ])
+    resposta = client.post("/api/v1/ia/chat", headers=auth_headers, json={
+        "pergunta": "Quantos ativos tem na planta de tatui no departamento da engenharia?",
+    })
+    assert resposta.status_code == 200, resposta.text
+    resultados = resposta.json()["resultados"]
+    assert [resultado["total"] for resultado in resultados] == [esperado, esperado] == [99, 99]
+    assert resultados[0]["cadastros_consultados"] == {"planta": ["Unidade Tatuí"], "departamento": ["Engenharia de Produção"]}
+    equipamentos = client.post("/api/v1/ia/equipamentos", headers=auth_headers, json=resultados[0]["consulta"]).json()
+    assert equipamentos["total"] == 99
+    assert {equipamento["departamento"] for equipamento in equipamentos["equipamentos"]} == {"Engenharia de Produção"}
+
+
+def test_chat_aponta_departamento_nao_encontrado(client, auth_headers, inventario_ia, monkeypatch):
+    _modelo(monkeypatch, [{"operacao": "contar", "filtros": [_filtro("departamento", "igual", "Engenharia")]}])
+    resposta = client.post("/api/v1/ia/chat", headers=auth_headers, json={"pergunta": "Quantos ativos em Engenharia?"})
+    assert resposta.status_code == 200, resposta.text
+    assert resposta.json()["resultados"] == []
+    assert "Não encontrei o departamento" in resposta.json()["resposta"]
+
+
 def test_chat_salva_e_retoma_conversa_no_mesmo_escopo(client, auth_headers, inventario_ia, monkeypatch):
     recebidas = _modelo(monkeypatch, [{"operacao": "contar"}])
     headers = {**auth_headers, "X-Planta-Id": "1"}

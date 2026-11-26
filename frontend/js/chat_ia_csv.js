@@ -22,7 +22,9 @@ export function montarCsv({ pergunta, resposta, resultados }, historica = false)
     const n = indice + 1;
     const equipamentos = item.equipamentos_exibidos || item.equipamentos || [];
     const totalDetalhes = item.total_exibidos ?? item.total;
-    const avisos = [item.aviso];
+    const cadastros = item.cadastros_consultados;
+    const escopo = [...(cadastros?.planta || []), ...(cadastros?.departamento || [])];
+    const avisos = [item.aviso, escopo.length ? escopo.join(" · ") : ""];
     if (item.truncado) avisos.push("Agrupamento limitado aos grupos exibidos.");
     if (item.operacao === "listar" || item.equipamentos_exibidos) {
       const rotulo = historica && item.equipamentos_exibidos ? "Lista atual do inventário" : "Lista exibida";

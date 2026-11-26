@@ -105,6 +105,9 @@ export function criarChatIa() {
       bloco.append(el("p", {}, dados.aviso));
       return bloco;
     }
+    const cadastros = dados.cadastros_consultados;
+    const escopoConsulta = [...(cadastros?.planta || []), ...(cadastros?.departamento || [])];
+    if (escopoConsulta.length) bloco.append(el("small", {}, escopoConsulta.join(" · ")));
     if (dados.operacao === "listar") {
       bloco.append(listaEquipamentos(dados));
       return bloco;
