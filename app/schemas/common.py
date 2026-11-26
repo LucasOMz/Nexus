@@ -156,6 +156,7 @@ class UsuarioBase(SemVazios):
     # None = acesso a TODAS as plantas (uso típico do administrador).
     planta_id: int | None = None
     ativo: bool = True
+    chat_ia_ativo: bool = True
     permissoes: Permissoes | None = None
     # Usuário de logon no AD (`sAMAccountName`), quando a conta é de rede.
     # É por ele que a pessoa entra — o e-mail costuma ser diferente.
@@ -185,6 +186,7 @@ class UsuarioUpdate(SemVazios):
     departamento_id: int | None = None
     planta_id: int | None = None
     ativo: bool | None = None
+    chat_ia_ativo: bool = True
     senha: str | None = Field(default=None, min_length=6, max_length=128)
     permissoes: Permissoes | None = None
     login_ad: str | None = Field(default=None, max_length=120)
@@ -201,6 +203,7 @@ class UsuarioOut(DatasComFuso):
     planta_id: int | None = None
     planta_sigla: str | None = None
     ativo: bool
+    chat_ia_ativo: bool = True
     # 'local' (senha no sistema, inclui o root) ou 'ad' (autentica no AD).
     origem: str = "local"
     # Usuario de logon no AD (sAMAccountName). Separado do e-mail porque

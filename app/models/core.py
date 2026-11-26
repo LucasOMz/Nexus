@@ -155,6 +155,7 @@ class Usuario(BaseModel, Base):
     planta_id: Mapped[int | None] = mapped_column(ForeignKey("plantas.id"), index=True)
     planta: Mapped[Planta | None] = relationship(lazy="joined")
     ativo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    chat_ia_ativo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     # Origem do login: 'local' (senha no sistema) ou 'ad' (autentica no AD).
     # O root/admin é sempre 'local' e não depende do grupo do AD.
     origem: Mapped[str] = mapped_column(String(10), default="local", nullable=False)
@@ -809,6 +810,8 @@ class ConfiguracaoSistema(BaseModel, Base):
 
     ollama_url: Mapped[str | None] = mapped_column(String(500))
     ollama_modelo: Mapped[str | None] = mapped_column(String(250))
+    ollama_chat_ativo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    ollama_historico_dias: Mapped[int | None] = mapped_column(Integer)
 
     # --- Autenticação LDAP/AD ---
     ldap_ativo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

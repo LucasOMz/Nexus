@@ -11,6 +11,7 @@ class ChatInventarioMensagem(CreatedAtMixin, Base):
     __tablename__ = "chat_inventario_mensagens"
     __table_args__ = (
         Index("ix_chat_inventario_escopo", "usuario_id", "planta_id", "inventarios", "conversa_id", "id"),
+        Index("ix_chat_inventario_retencao", "created_at"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

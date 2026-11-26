@@ -78,6 +78,7 @@ CREATE TABLE usuarios (
     papel           papel_usuario NOT NULL DEFAULT 'leitor',
     departamento_id INTEGER REFERENCES departamentos(id),
     ativo           BOOLEAN NOT NULL DEFAULT TRUE,
+    chat_ia_ativo   BOOLEAN NOT NULL DEFAULT TRUE,
     deleted_at      TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -106,6 +107,7 @@ CREATE TABLE chat_inventario_mensagens (
 );
 CREATE INDEX ix_chat_inventario_escopo
     ON chat_inventario_mensagens(usuario_id, planta_id, inventarios, conversa_id, id);
+CREATE INDEX ix_chat_inventario_retencao ON chat_inventario_mensagens(created_at);
 
 CREATE TABLE produtos (
     id              SERIAL PRIMARY KEY,
@@ -430,6 +432,8 @@ CREATE TABLE configuracoes (
     id                       INTEGER PRIMARY KEY DEFAULT 1,
     ollama_url               VARCHAR(500),
     ollama_modelo            VARCHAR(250),
+    ollama_chat_ativo        BOOLEAN NOT NULL DEFAULT TRUE,
+    ollama_historico_dias    INTEGER,
     ldap_ativo               BOOLEAN NOT NULL DEFAULT FALSE,
     ldap_servidor            VARCHAR(300),
     ldap_porta               INTEGER NOT NULL DEFAULT 636,

@@ -27,6 +27,7 @@ import threading
 
 from app.config import settings
 from app.services import notificacoes_email
+from app.services.retencao_chat import executar_retencao
 
 log = logging.getLogger("app.notificacoes")
 
@@ -90,6 +91,11 @@ def _laco() -> None:
 
     while not _parar.wait(_intervalo()):
         db = sessao()
+        try:
+            executar_retencao(db)
+        except Exception:
+            db.rollback()
+            log.exception("Assistente: falha na limpeza do histórico")
         try:
             resultado = notificacoes_email.despachar(db)
             if resultado.enviados or resultado.falhas:

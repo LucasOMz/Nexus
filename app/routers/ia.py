@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
-from sqlalchemy import func
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -28,7 +28,8 @@ from app.services.dados_ia import (
     consultar_ficha, consultar_indicador, informacoes,
 )
 from app.services.inventario_ia import ConsultaInventario, FUSO_INVENTARIO, executar_consulta, resposta_ficha
-from app.services.ollama import DestinoOllama, config_efetiva, destino_ollama
+from app.services.ollama import ConfigOllama, DestinoOllama, config_efetiva, destino_ollama
+from app.services.retencao_chat import limite_historico
 
 router = APIRouter(prefix="/ia", tags=["ia"])
 _usuario_inventario = require_module("ativos")
@@ -148,9 +149,30 @@ def _resumo_para_modelo(dados: dict) -> dict:
 CursorHistorico = Annotated[int | None, Query(ge=1, le=2147483647)]
 
 
-def _historico(db: Session, usuario_id: int, planta_id: int | None, dominios: tuple[str, ...]):
-    return db.query(MensagemChat).filter(MensagemChat.usuario_id == usuario_id, MensagemChat.planta_id == planta_id,
-                                         MensagemChat.inventarios == ",".join(dominios))
+def _exigir_chat(permitido: bool | None, config: ConfigOllama) -> None:
+    if not config.chat_ativo or not permitido:
+        raise HTTPException(403, "O assistente do Nexus está indisponível para esta conta.")
+
+
+def _config_chat(
+    user: Usuario = Depends(get_current_user), db: Session = Depends(get_db),
+) -> ConfigOllama:
+    config = config_efetiva(db)
+    _exigir_chat(user.chat_ia_ativo, config)
+    return config
+
+
+@router.get("/disponibilidade")
+def disponibilidade(resposta: Response, user: Usuario = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    resposta.headers["Cache-Control"] = "no-store"
+    return {"disponivel": bool(user.chat_ia_ativo and config_efetiva(db).chat_ativo)}
+
+
+def _historico(db: Session, usuario_id: int, planta_id: int | None, dominios: tuple[str, ...], dias: int | None):
+    base = db.query(MensagemChat).filter(MensagemChat.usuario_id == usuario_id, MensagemChat.planta_id == planta_id,
+                                        MensagemChat.inventarios == ",".join(dominios))
+    limite = limite_historico(dias)
+    return base.filter(MensagemChat.created_at >= limite) if limite is not None else base
 
 
 def _data_utc(data: datetime) -> datetime:
@@ -162,11 +184,12 @@ def listar_conversas(
     response: Response,
     antes_de: CursorHistorico = None,
     user: Usuario = Depends(get_current_user),
+    config: ConfigOllama = Depends(_config_chat),
     planta_id: int | None = Depends(planta_ativa_obrigatoria),
     db: Session = Depends(get_db),
 ) -> dict:
     limite = 20
-    base = _historico(db, user.id, planta_id, _dominios(user))
+    base = _historico(db, user.id, planta_id, _dominios(user), config.historico_dias)
     grupos = base.with_entities(
         func.min(MensagemChat.id).label("primeira"), func.max(MensagemChat.id).label("ultima"),
         func.max(MensagemChat.created_at).label("data"),
@@ -194,11 +217,13 @@ def ler_conversa(
     response: Response,
     antes_de: CursorHistorico = None,
     user: Usuario = Depends(get_current_user),
+    config: ConfigOllama = Depends(_config_chat),
     planta_id: int | None = Depends(planta_ativa_obrigatoria),
     db: Session = Depends(get_db),
 ) -> dict:
     limite = 20
-    base = _historico(db, user.id, planta_id, _dominios(user)).filter(MensagemChat.conversa_id == conversa_id)
+    base = _historico(db, user.id, planta_id, _dominios(user), config.historico_dias).filter(
+        MensagemChat.conversa_id == conversa_id)
     if antes_de is not None:
         base = base.filter(MensagemChat.id < antes_de)
     linhas = base.order_by(MensagemChat.id.desc()).limit(limite + 1).all()
@@ -216,10 +241,10 @@ def ler_conversa(
 def chat(
     entrada: EntradaChat,
     user: Usuario = Depends(get_current_user),
+    config: ConfigOllama = Depends(_config_chat),
     planta_id: int | None = Depends(planta_ativa_obrigatoria),
     db: Session = Depends(get_db),
 ) -> dict:
-    config = config_efetiva(db)
     if not config.url:
         raise HTTPException(503, "O chat ainda não está configurado. Peça à TI para conectar o Ollama em Administração.")
     usuario_id = user.id
@@ -231,7 +256,7 @@ def chat(
     conversa_id = entrada.conversa_id or uuid4()
     historico = entrada.historico
     if entrada.conversa_id is not None:
-        anteriores = _historico(db, usuario_id, planta_id, dominios).with_entities(MensagemChat.pergunta).filter(
+        anteriores = _historico(db, usuario_id, planta_id, dominios, config.historico_dias).with_entities(MensagemChat.pergunta).filter(
             MensagemChat.conversa_id == conversa_id,
         ).order_by(MensagemChat.id.desc()).limit(6).all()
         if not anteriores:
@@ -241,6 +266,10 @@ def chat(
 
     destino = destino_ollama(config.url, rede_local=config.origem == "administracao")
     dados = _responder(db, destino, config.modelo, entrada.pergunta, historico, planta_id, dominios, user, modulos)
+    permitido = db.scalar(select(Usuario.chat_ia_ativo).where(
+        Usuario.id == usuario_id, Usuario.ativo.is_(True), Usuario.deleted_at.is_(None),
+    ))
+    _exigir_chat(permitido, config_efetiva(db))
     db.add(MensagemChat(conversa_id=conversa_id, usuario_id=usuario_id, planta_id=planta_id, inventarios=",".join(dominios),
                         pergunta=entrada.pergunta, resposta=dados["resposta"], resultados=dados["resultados"]))
     db.commit()
@@ -316,10 +345,11 @@ def _responder(db: Session, destino: DestinoOllama, modelo: str, pergunta: str, 
 def equipamentos(
     consulta: ConsultaInventario,
     user: Usuario = Depends(_usuario_inventario),
+    config: ConfigOllama = Depends(_config_chat),
     planta_id: int | None = Depends(planta_ativa_obrigatoria),
     db: Session = Depends(get_db),
 ) -> dict:
-    if not config_efetiva(db).url:
+    if not config.url:
         raise HTTPException(503, "O chat ainda não está configurado.")
     lista = consulta.model_copy(update={"operacao": "listar", "agrupar_por": [], "limite": 30,
                                        "filtros": consulta.filtros + consulta.filtros_numerador, "filtros_numerador": []})

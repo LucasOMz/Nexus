@@ -16,6 +16,7 @@ from app.services.audit_service import audit
 from app.services.config_service import obter_config
 from app.services.ldap_service import autenticar, testar_conexao
 from app.services.ollama import config_efetiva, listar_modelos, normalizar_url
+from app.services.retencao_chat import limpar_expirados
 
 router = APIRouter(prefix="/admin/config", tags=["configuracao"])
 
@@ -82,6 +83,35 @@ class EnderecoOllama(BaseModel):
 
 class SalvarOllama(EnderecoOllama):
     modelo: str = Field(min_length=1, max_length=250)
+
+
+class PoliticaChat(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    chat_ativo: bool
+    historico_dias: int | None = Field(ge=1, le=3650)
+
+
+@router.get("/ollama/politica", response_model=PoliticaChat)
+def ler_politica_chat(db: Session = Depends(get_db), _: Usuario = Depends(require_admin)) -> PoliticaChat:
+    config = config_efetiva(db)
+    return PoliticaChat(chat_ativo=config.chat_ativo, historico_dias=config.historico_dias)
+
+
+@router.put("/ollama/politica", response_model=PoliticaChat)
+def salvar_politica_chat(
+    body: PoliticaChat, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_admin),
+) -> PoliticaChat:
+    cfg = obter_config(db)
+    cfg.ollama_chat_ativo = body.chat_ativo
+    cfg.ollama_historico_dias = body.historico_dias
+    db.flush()
+    removidos = limpar_expirados(db, body.historico_dias)
+    audit(db, user, "update", "configuracao", cfg.id,
+          ip=request.client.host if request.client else None,
+          diff={"ollama_chat_ativo": body.chat_ativo, "ollama_historico_dias": body.historico_dias,
+                "mensagens_expiradas_removidas": removidos})
+    db.commit()
+    return body
 
 
 @router.get("/ollama")

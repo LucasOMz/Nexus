@@ -1,18 +1,54 @@
 import { api } from "../api.js";
+import { ctx } from "../context.js";
 import { el, mostrarErro, skeleton, toast } from "../ui.js";
 
 const caminho = "/admin/config/ollama";
+const caminhoPolitica = caminho + "/politica";
 const origens = {
   administracao: "Configuração salva no Nexus",
   ambiente: "Configuração da stack",
   sem_configuracao: "Sem configuração",
 };
 
+function formularioPolitica(politica) {
+  const ativo = el("input", { name: "chat_ativo", type: "checkbox", checked: politica.chat_ativo });
+  const dias = el("input", { name: "historico_dias", id: "ollama-retencao", type: "number", min: 1, max: 3650, step: 1,
+    value: politica.historico_dias ?? "", placeholder: "Sem expiração", "aria-describedby": "ollama-retencao-dica" });
+  const aviso = el("p", { class: "muted", role: "status" });
+  const salvar = el("button", { type: "submit", class: "btn filled" }, "Salvar acesso e retenção");
+  return el("form", { class: "card", onsubmit: async ev => {
+    ev.preventDefault();
+    if (salvar.disabled) return;
+    const body = { chat_ativo: ativo.checked, historico_dias: dias.value === "" ? null : dias.valueAsNumber };
+    ativo.disabled = dias.disabled = salvar.disabled = true;
+    aviso.textContent = "Salvando…";
+    try {
+      await api.request("PUT", caminhoPolitica, { body, enfileirar: false });
+      aviso.textContent = body.chat_ativo ? "Assistente habilitado para as contas autorizadas." : "Assistente desabilitado para todas as contas.";
+      ctx.atualizarChat();
+      if (salvar.isConnected) toast("Acesso e retenção salvos");
+    } catch (erro) {
+      aviso.textContent = erro.message;
+    } finally {
+      ativo.disabled = dias.disabled = salvar.disabled = false;
+    }
+  } },
+    el("h2", { class: "section-title" }, "Acesso e retenção do histórico"),
+    el("label", { class: "perm-item" }, ativo, el("span", {}, "Habilitar o assistente do Nexus")),
+    el("p", { class: "muted" }, "Com o assistente ligado, libere ou bloqueie cada conta em Administração → Usuários & Permissões."),
+    el("div", { class: "field" },
+      el("label", { for: "ollama-retencao" }, "Manter mensagens do histórico por quantos dias?"), dias,
+      el("span", { class: "hint", id: "ollama-retencao-dica" },
+        "Deixe vazio para manter sem expiração. Ao salvar um prazo, mensagens mais antigas que ele são excluídas e o Nexus continua fazendo a limpeza automaticamente.")),
+    aviso, salvar);
+}
+
 export async function renderOllama(root) {
   root.replaceChildren(skeleton(3));
   let cfg;
+  let politica;
   try {
-    cfg = await api.get(caminho);
+    [cfg, politica] = await Promise.all([api.get(caminho), api.get(caminhoPolitica)]);
   } catch (erro) {
     root.replaceChildren(el("div", { class: "card" },
       el("p", {}, erro.message),
@@ -112,5 +148,5 @@ export async function renderOllama(root) {
   });
 
   exibirModeloAtual();
-  root.replaceChildren(form);
+  root.replaceChildren(formularioPolitica(politica), form);
 }

@@ -114,6 +114,14 @@ em **Testar conexão**, selecione um modelo com suporte a ferramentas (como
 Em instalações que gerenciam a conexão pelo Docker, estas variáveis continuam
 disponíveis como configuração inicial. A configuração salva na tela tem prioridade.
 
+Em **Administração → Integrações → Ollama**, a seção **Acesso e retenção do
+histórico** permite desligar o assistente para todas as contas e definir o
+prazo em dias. Com 30 dias, o Nexus exclui mensagens com mais de 30 dias e
+uma conversa desaparece quando a última mensagem expira. Deixe o campo vazio
+para manter o histórico sem expiração. Para controlar o acesso individual,
+edite a conta em **Administração → Usuários & Permissões** e ajuste a opção
+**Assistente do Nexus**.
+
 ```dotenv
 NEXUS_OLLAMA_URL=http://IP_DO_PC_COM_OLLAMA:11434
 NEXUS_OLLAMA_MODELO=qwen3:32b

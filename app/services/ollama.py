@@ -19,16 +19,23 @@ class ConfigOllama:
     url: str
     modelo: str
     origem: str
+    chat_ativo: bool = True
+    historico_dias: int | None = None
 
 
 def config_efetiva(db: Session) -> ConfigOllama:
     salvo = db.execute(
-        select(ConfiguracaoSistema.ollama_url, ConfiguracaoSistema.ollama_modelo).where(ConfiguracaoSistema.id == 1)
+        select(ConfiguracaoSistema.ollama_url, ConfiguracaoSistema.ollama_modelo,
+               ConfiguracaoSistema.ollama_chat_ativo, ConfiguracaoSistema.ollama_historico_dias)
+        .where(ConfiguracaoSistema.id == 1)
     ).one_or_none()
+    chat_ativo = salvo.ollama_chat_ativo if salvo is not None else True
+    historico_dias = salvo.ollama_historico_dias if salvo is not None else None
     if salvo and salvo.ollama_url and salvo.ollama_modelo:
-        return ConfigOllama(salvo.ollama_url, salvo.ollama_modelo, "administracao")
+        return ConfigOllama(salvo.ollama_url, salvo.ollama_modelo, "administracao", chat_ativo, historico_dias)
     url = settings.nexus_ollama_url.strip()
-    return ConfigOllama(url, settings.nexus_ollama_modelo, "ambiente" if url else "sem_configuracao")
+    return ConfigOllama(url, settings.nexus_ollama_modelo, "ambiente" if url else "sem_configuracao",
+                        chat_ativo, historico_dias)
 
 
 def normalizar_url(valor: str) -> httpx.URL:

@@ -103,6 +103,8 @@ const router = new Router();
 let shellBuilt = false;
 let fabEl = null;
 let chatIa = null;
+let consultaChat = 0;
+let timerChat;
 let currentPath = "home";
 
 const currentRoute = () => (location.hash || "#/home").replace(/^#\/?/, "").split("?")[0] || "home";
@@ -191,11 +193,35 @@ function seletorDePlanta() {
   document.body.append(fabEl);
 
   shellBuilt = true;
+  timerChat = setInterval(() => {
+    if (!document.hidden) atualizarChat();
+  }, 30000);
+  window.addEventListener("focus", atualizarChat);
   updateBadge();
+}
+
+async function atualizarChat() {
+  if (!shellBuilt) return;
+  const consulta = ++consultaChat;
+  const dados = await api.get("/ia/disponibilidade").catch(() => null);
+  if (!shellBuilt || consulta !== consultaChat) return;
+  if (!dados?.disponivel) {
+    chatIa?.elemento.remove();
+    chatIa = null;
+    return;
+  }
+  if (!chatIa) {
+    chatIa = criarChatIa();
+    document.body.append(chatIa.elemento);
+  }
+  chatIa.atualizarEscopo();
 }
 
 function destroyShell() {
   if (fabEl) { fabEl.remove(); fabEl = null; }
+  clearInterval(timerChat);
+  window.removeEventListener("focus", atualizarChat);
+  consultaChat++;
   chatIa?.elemento.remove();
   chatIa = null;
   shellBuilt = false;
@@ -719,11 +745,8 @@ function renderRoute(path) {
   }
 
   if (!shellBuilt) buildShell();
-  if (!chatIa) {
-    chatIa = criarChatIa();
-    document.body.append(chatIa.elemento);
-  }
-  chatIa.atualizarEscopo();
+  chatIa?.atualizarEscopo();
+  atualizarChat();
   ctx.setChrome(true);
   updateNav(path);
   updateBadge();
@@ -802,6 +825,7 @@ function boot() {
   ctx.navigate = (p) => router.go(p);
   ctx.goHome = () => router.go("home");
   ctx.rerender = () => renderRoute(currentRoute());
+  ctx.atualizarChat = atualizarChat;
   ctx.setChrome = () => {};
   ctx.setFab = (fab) => {
     if (!fabEl) return;

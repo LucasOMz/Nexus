@@ -69,6 +69,13 @@ function blocoPermissoes(usuario, lookups) {
       <div class="perm-grid">${modHtml}</div>
     </div>
     <div class="form-section">
+      <h4>Assistente do Nexus</h4>
+      <label class="perm-item">
+        <input type="checkbox" name="chat_ia_ativo" ${usuario?.chat_ia_ativo !== false ? "checked" : ""}>
+        <span>Permitir acesso ao assistente e ao histórico pessoal</span>
+      </label>
+    </div>
+    <div class="form-section">
       <h4>Ações permitidas</h4>
       <div class="perm-grid">
         <label class="perm-item ${perms.pode_escrever ? "checked" : ""}">
@@ -230,6 +237,7 @@ function abrirUsuario(usuario, lookups) {
           departamento_id: fd.get("departamento_id") ? Number(fd.get("departamento_id")) : null,
           planta_id: fd.get("planta_id") ? Number(fd.get("planta_id")) : null,
           ativo: true,
+          chat_ia_ativo: Boolean(fd.get("chat_ia_ativo")),
           // Usuário de logon no AD. Preenchido = conta de rede (sem senha local).
           login_ad: (fd.get("login_ad") || "").trim() || null,
           permissoes: {
@@ -256,6 +264,7 @@ function abrirUsuario(usuario, lookups) {
           const corpo = senha ? { ...payload, senha } : payload;
           if (isEdit) await api.put(`/usuarios/${u.id}`, corpo);
           else await api.post("/usuarios", corpo);
+          if (u.id === state.user?.id) ctx.atualizarChat();
           close();
           toast("Usuário salvo");
           renderAdmin(document.getElementById("view"));

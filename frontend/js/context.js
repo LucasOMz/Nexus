@@ -16,6 +16,8 @@ export const ctx = {
   goHome: () => {},
   /** Re-renderiza a rota atual. */
   rerender: () => {},
+  /** Atualiza a disponibilidade do assistente após salvar uma permissão. */
+  atualizarChat: () => {},
   /** Libera recursos da tela antes de navegar ou atualizar o escopo. */
   limpar: () => {},
 };
