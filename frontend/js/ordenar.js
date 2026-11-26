@@ -78,7 +78,7 @@ export function permitirReordenar(container, seletorItem, aoSoltar, chaveDe) {
       zIndex: "3000",
       margin: "0",
     });
-    document.body.append(clone);
+    (container.closest("dialog") || document.body).append(clone);
 
     item.classList.add("arrastando");
     container.classList.add("reordenando");
@@ -147,8 +147,7 @@ export function permitirReordenar(container, seletorItem, aoSoltar, chaveDe) {
     if (ev.button !== undefined && ev.button !== 0) return;   // só botão principal
     const item = ev.target.closest?.(seletorItem);
     if (!item || !container.contains(item)) return;
-    // A estrela segue o caminho normal: quem clica nela quer favoritar.
-    if (ev.target.closest("button.favorito")) return;
+    if (ev.target.closest("button.favorito, button.nexus-mover")) return;
 
     origem = item;
     inicio = { x: ev.clientX, y: ev.clientY };

@@ -198,16 +198,17 @@ verificar("existe tela de erro legivel", fonteApp.includes("function mostrarTela
 //     O refresh redesenha só a lista; sem sincronizar a barra, o filtro
 //     funcionava mas o botão continuava marcado na opção anterior.
 verificar("existe atualizarToolbar", /function atualizarToolbar\(\)/.test(fonteAtivos));
-verificar("atualizarToolbar sincroniza os chips de status",
-  /chipsStatus\.forEach\(\(\[valor, botao\]\)[\s\S]{0,120}classList\.toggle\("selected"/.test(fonteAtivos));
+verificar("o seletor de status reflete o filtro atual",
+  /status\.value = filtroStatus/.test(fonteAtivos));
 verificar("atualizarToolbar sincroniza os botoes de tamanho",
   /botoesTamanho\.forEach\(\(\[valor, botao\]\)[\s\S]{0,120}classList\.toggle\("selected"/.test(fonteAtivos));
-verificar("trocarStatus chama atualizarToolbar",
-  /function trocarStatus[\s\S]{0,220}?atualizarToolbar\(\)/.test(fonteAtivos));
+verificar("trocar filtros atualiza a lista e limpa selecao em lote",
+  /const trocarFiltro[\s\S]{0,180}limparSelecao\(\);\s*page = 1;\s*refresh\(\)/.test(fonteAtivos));
 verificar("trocar tamanho chama atualizarToolbar",
   /pageSize = n;[\s\S]{0,120}?atualizarToolbar\(\)/.test(fonteAtivos));
-verificar("os chips usam trocarStatus (nao atribuem direto)",
-  !/onclick: \(\) => \{ filtroStatus =/.test(fonteAtivos));
+verificar("listagem e exclusao em lote usam a mesma selecao de filtros",
+  /todos_do_filtro:[^\n]*\.\.\.filtrosAtivos\(\)/.test(fonteAtivos)
+  && /Object\.entries\(filtrosAtivos\(\)\)/.test(fonteAtivos));
 
 // 17) O mesmo bug de filtro existia na tela de Manutenções.
 const fonteManut = fs.readFileSync(new URL("../frontend/js/views/manutencoes.js", import.meta.url), "utf8");
@@ -279,10 +280,10 @@ verificar("o destaque e aplicado antes de montar a tela",
 verificar("nao existe lista de modulos excluidos da barra",
   !/FORA_DA_BARRA/.test(fonteApp));
 verificar("a gaveta lista TODOS os modulos permitidos",
-  /const permitidos = Object\.keys\(MODULOS\)\.filter\(\(m\) => state\.podeModulo\(m\)\);[\s\S]{0,600}drawer-item/.test(fonteApp));
+  /function modulosPermitidos\(\) \{\s*return Object\.keys\(MODULOS\)\.filter\(chave => state\.podeModulo\(chave\)\)/.test(fonteApp));
 verificar("a barra usa a MESMA fonte da gaveta",
-  /barraLateral\.favoritosOrdenados\(permitidos\)/.test(fonteApp)
-  && /const permitidos = Object\.keys\(MODULOS\)\.filter\(\(m\) => state\.podeModulo\(m\)\)/.test(fonteApp));
+  /barraLateral\.atalhos\(modulosPermitidos\(\), NAVEGACAO_PRINCIPAL\)/.test(fonteApp)
+  && /const permitidos = modulosPermitidos\(\);/.test(fonteApp));
 
 // 24) O acesso aos inventários é UM campo no cadastro do usuário.
 //     Antes eram dois checkboxes soltos, que permitiam salvar sem nenhum
@@ -434,24 +435,23 @@ verificar("favoritar grava no servidor, nao no navegador",
   /api\.put\("\/auth\/preferencias"/.test(fonteBarra) && !/localStorage/.test(fonteBarra));
 verificar("o favorito acompanha o usuario (vem do state)",
   /state\.user\?\.barra_favoritos/.test(fonteBarra));
-verificar("a ESTRELA fica na gaveta (tres barras)",
-  /function estrelaFavorito\(key, aoMudar\)/.test(fonteApp)
-  && /panel\.append\(el\("div", \{ class: "drawer-linha", "data-chave": key \}/.test(fonteApp));
-verificar("a barra lateral rapida mostra so os favoritos",
+verificar("a estrela fica no editor da barra",
+  /class: "drawer-linha", "data-chave": key[\s\S]{0,500}class: "favorito"/.test(fonteApp));
+verificar("a barra personalizada mostra os favoritos na ordem salva",
   /favoritosOrdenados\(disponiveis\) \{[\s\S]{0,140}filter\(\(c\) => ehFavorito\(c\)\)/.test(fonteBarra)
-  && /barraLateral\.favoritosOrdenados\(permitidos\)/.test(fonteApp));
-verificar("clicar na estrela nao navega",
-  /ev\.stopPropagation\(\)/.test(fonteApp));
-verificar("a gaveta continua aberta ao favoritar",
-  /estrelaFavorito\(key, \(\) => updateNav\(currentPath\)\)/.test(fonteApp));
+  && /barra_personalizada[\s\S]{0,240}return favoritosOrdenados\(base\)/.test(fonteBarra));
+verificar("favoritar salva preferencias sem navegar",
+  /onclick: \(\) => salvar\(\(\) => barraLateral\.alternar\(key, ativos\)/.test(fonteApp));
+verificar("a gaveta continua aberta e repinta ao favoritar",
+  /if \(painel\.open\) \{\s*pintarLista\(\)/.test(fonteApp));
 verificar("o Menu inicial nao e favoritavel",
-  /if \(key === "home"\) \{[\s\S]{0,60}continue;/.test(fonteApp));
-verificar("barra vazia tem atalho para escolher",
-  /nav-vazio/.test(fonteApp) && /icon\("star", 22\) \+ "<span>Adicionar<\/span>"/.test(fonteApp));
+  /\["home", \.\.\.atalhos\.filter/.test(fonteApp) && !/^  home: \{ rotulo:/m.test(fonteApp));
+verificar("o atalho para personalizar fica disponivel mesmo sem favoritos",
+  /class: "nav-item nexus-personalizar"[^\n]+openDrawer\(true\)/.test(fonteApp));
 verificar("a estrela marcada fica amarela",
   /\.favorito\.marcado \{[\s\S]{0,120}#f5b301/.test(fonteCss));
-verificar("o easter egg continua no rodape da barra",
-  /cont\.append\(botaoEasterEgg\(\)\);/.test(fonteApp));
+verificar("o easter egg continua na barra",
+  /getElementById\("rail"\)\?\.replaceChildren\([\s\S]{0,200}botaoEasterEgg\(\)/.test(fonteApp));
 
 // 29) PADRONIZAÇÃO das abas.
 //     Toda aba nova precisa: (a) estar em MODULOS, (b) ter card no menu
@@ -471,7 +471,7 @@ verificar("nenhum modulo esta fora do menu inicial",
 verificar("nenhum modulo e excluido de favoritar",
   !/FORA_DA_BARRA|naoFavoritavel|semFavorito/.test(fonteApp));
 verificar("a gaveta itera MODULOS (aba nova entra sozinha)",
-  /Object\.keys\(MODULOS\)\.filter\(\(m\) => state\.podeModulo\(m\)\)/.test(fonteApp));
+  /Object\.keys\(MODULOS\)\.filter\(chave => state\.podeModulo\(chave\)\)/.test(fonteApp));
 
 // 30) Reordenar por "clique e segure".
 //     Segurar o item o levanta numa janelinha flutuante; arrastar muda a ordem
@@ -480,7 +480,7 @@ const fonteOrdenar = fs.readFileSync(new URL("../frontend/js/ordenar.js", import
 verificar("existe o modulo de reordenacao",
   /export function permitirReordenar/.test(fonteOrdenar));
 verificar("a gaveta permite reordenar",
-  /ordenar\.permitirReordenar\(\s*panel,\s*"\.drawer-linha"/.test(fonteApp));
+  /ordenar\.permitirReordenar\(lista, "\.drawer-linha"/.test(fonteApp));
 verificar("o item carrega a chave para a ordenacao",
   /class: "drawer-linha", "data-chave": key/.test(fonteApp));
 verificar("so levanta DEPOIS de segurar (nao no clique)",
@@ -490,15 +490,15 @@ verificar("mover o dedo antes da hora cancela o arraste",
   /Math\.abs\(ev\.clientX - inicio\.x\) > TOLERANCIA_PX/.test(fonteOrdenar));
 verificar("o item levantado vira uma janelinha flutuante",
   /clone\.classList\.add\("item-flutuante"\)/.test(fonteOrdenar)
-  && /document\.body\.append\(clone\)/.test(fonteOrdenar));
-verificar("clicar na estrela nao inicia arraste",
-  /closest\("button\.favorito"\)/.test(fonteOrdenar));
+  && /container\.closest\("dialog"\)[^\n]*\.append\(clone\)/.test(fonteOrdenar));
+verificar("clicar na estrela ou nas setas nao inicia arraste",
+  /closest\("button\.favorito, button\.nexus-mover"\)/.test(fonteOrdenar));
 verificar("a ordem e gravada no servidor",
   /barraLateral\.definirOrdem\(ordem\)/.test(fonteApp)
   && /export async function definirOrdem/.test(fonteBarra));
 verificar("a ordem gravada e a da LISTA INTEIRA",
-  /Grava a ordem da LISTA INTEIRA/.test(fonteApp)
-  && !/const favs = ordem\.filter/.test(fonteApp));
+  /const nova = \[\.\.\.ordem\]/.test(fonteApp)
+  && /salvar\(\(\) => barraLateral\.definirOrdem\(nova\)/.test(fonteApp));
 verificar("o estilo da janelinha flutuante existe",
   /\.item-flutuante \{/.test(fonteCss) && /\.drawer-linha\.arrastando/.test(fonteCss));
 
@@ -506,8 +506,8 @@ verificar("o estilo da janelinha flutuante existe",
 //     Sem isso o usuário reordena, sai, volta e encontra tudo embaralhado —
 //     a ordem valia só para a barra, não para a tela onde ele a define.
 verificar("a gaveta abre na ordem salva",
-  /const ordenados = barraLateral\.ordenarModulos\(permitidos\)/.test(fonteApp)
-  && /\.\.\.ordenados\.map\(\(m\) => \[m, MODULOS\[m\]\.rotulo/.test(fonteApp));
+  /const ordem = barraLateral\.ordenarModulos\(padrao\)/.test(fonteApp)
+  && /lista\.replaceChildren\(\.\.\.ordem\.map/.test(fonteApp));
 verificar("a ordem fica em campo SEPARADO dos favoritos",
   /barra_ordem/.test(fonteBarra) && /export function ordem\(\)/.test(fonteBarra)
   && !/ordenarComFavoritosPrimeiro/.test(fonteApp));

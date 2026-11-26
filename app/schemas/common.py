@@ -212,6 +212,7 @@ class UsuarioOut(DatasComFuso):
     # Módulos favoritos na barra lateral — vêm como LISTA, não como o JSON
     # cru que fica guardado no banco.
     barra_favoritos: list[str] = []
+    barra_personalizada: bool = False
     # Ordem da lista INTEIRA da gaveta (também como lista). Separada dos
     # favoritos porque quem reordena mexe em todas as linhas, não só nas
     # marcadas.

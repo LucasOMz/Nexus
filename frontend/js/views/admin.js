@@ -699,7 +699,9 @@ export async function renderAdmin(root) {
   const GRUPOS = [
     // "Autenticação (AD)" saiu daqui: ela configura COMO se entra no sistema,
     // que é assunto de infraestrutura, não de cadastro de pessoas.
-    ["Pessoas e acessos", ["usuarios", "plantas"]],
+    ["Usuários e permissões", ["usuarios"]],
+    ["Plantas", ["plantas"]],
+    ["Integrações", ["ollama"]],
     ["Patrimônio", ["dispositivos", "etiquetas", "checklist", "fotos"]],
     // "Auditoria" reúne o que serve para CONFERIR: a trilha do que foi feito
     // (Logs) e a conferência do que existe na rede (Reconciliação).
@@ -716,14 +718,13 @@ export async function renderAdmin(root) {
     // oposto do OCS, que é a entrada. Quem procura "por que não chega e-mail"
     // procura em Sistema, não em Patrimônio.
     ["Sistema", ["auth", "notificacoes", "backups", "banco", "manutencao", "agente"]],
-    ["Integrações", ["ollama"]],
   ];
 
   // Aba fora de qualquer grupo não pode sumir: cai em "Outros".
   const agrupadas = new Set(GRUPOS.flatMap(([, ks]) => ks));
   const semGrupo = abas.map(([k]) => k).filter((k) => !agrupadas.has(k));
   const grupos = semGrupo.length ? [...GRUPOS, ["Outros", semGrupo]] : GRUPOS;
-  const iconesGrupo = ["user", "ativos", "doc", "shield", "settings", "server"];
+  const iconesGrupo = ["cadastros", "plantas", "integracoes", "ativos", "contagens", "shield", "settings"];
 
   const rotuloDe = (chave) => (abas.find(([c]) => c === chave) || [, chave])[1];
   const grupoDaAba = (chave) => grupos.find(([, ks]) => ks.includes(chave));
@@ -768,9 +769,14 @@ export async function renderAdmin(root) {
           titulo === categoriaAberta || grupoDaAba(abaAtiva)?.[0] === titulo ? "ativa" : "",
           temResultado ? "" : "sem-resultado",
         ].filter(Boolean).join(" "),
-        "aria-expanded": String(titulo === categoriaAberta),
+        "aria-current": chaves.length === 1 && chaves.includes(abaAtiva) ? "page" : null,
+        "aria-expanded": chaves.length > 1 ? String(titulo === categoriaAberta) : null,
         onclick: () => {
           if (termo) return;   // durante a busca, a categoria não navega
+          if (chaves.length === 1) {
+            if (chaves[0] !== abaAtiva) irPara(chaves[0]);
+            return;
+          }
           // Clicar na categoria que já está aberta fecha a barra.
           if (barraAberta && categoriaAberta === titulo) {
             barraAberta = false;
@@ -796,7 +802,7 @@ export async function renderAdmin(root) {
   function pintarBarra() {
     const termo = normalizarBuscaAdmin(busca.value);
     // Visível ao clicar numa categoria, ou sempre que houver busca ativa.
-    const visivel = barraAberta || Boolean(termo);
+    const visivel = Boolean(termo) || (barraAberta && (grupoDaAba(abaAtiva)?.[1].length || 0) > 1);
     barra.classList.toggle("oculto", !visivel);
     barra.innerHTML = "";
     if (!visivel) return;

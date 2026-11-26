@@ -71,7 +71,20 @@ class TestFavoritosNoBanco:
         client.put("/api/v1/auth/preferencias",
                    json={"barra_favoritos": ["ativos"]}, headers=auth_headers)
         client.put("/api/v1/auth/preferencias", json={"barra_favoritos": []}, headers=auth_headers)
-        assert client.get("/api/v1/auth/me", headers=auth_headers).json()["barra_favoritos"] == []
+        preferencias = client.get("/api/v1/auth/me", headers=auth_headers).json()
+        assert preferencias["barra_favoritos"] == []
+        assert preferencias["barra_personalizada"] is True
+
+    def test_restaurar_remove_atalhos_e_ordem_personalizados(self, client, auth_headers):
+        client.put("/api/v1/auth/preferencias",
+                   json={"barra_favoritos": ["ativos"], "barra_ordem": ["admin", "ativos"]},
+                   headers=auth_headers)
+        resposta = client.put("/api/v1/auth/preferencias", json={"barra_padrao": True}, headers=auth_headers)
+        assert resposta.status_code == 200, resposta.text
+        preferencias = client.get("/api/v1/auth/me", headers=auth_headers).json()
+        assert preferencias["barra_favoritos"] == []
+        assert preferencias["barra_ordem"] == []
+        assert preferencias["barra_personalizada"] is False
 
     def test_sobrevive_ao_novo_login(self, client, auth_headers):
         """O caso central: entrar de OUTRO computador traz a mesma barra."""

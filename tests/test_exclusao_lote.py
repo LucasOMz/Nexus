@@ -170,6 +170,27 @@ class TestBackupAutomatico:
 
 
 class TestExcluirTudoDoFiltro:
+    def test_filtra_hostname_e_forma_de_aquisicao_como_na_listagem(self, client, auth_headers):
+        ids = []
+        for forma, sufixo in [("comprado", "01"), ("locado", "02")]:
+            r = client.post("/api/v1/ativos", headers=auth_headers, json={
+                "dominio": "ti", "patrimonio": f"AT-{sufixo}", "numero_serie": f"NS-{sufixo}",
+                "forma_aquisicao": forma, "ti": {"hostname": f"host-lote-{sufixo}"},
+            })
+            assert r.status_code == 201, r.text
+            ids.append(r.json()["id"])
+
+        filtros = {"dominio": "ti", "search": "host-lote-", "forma_aquisicao": "comprado"}
+        lista = client.get("/api/v1/ativos", headers=auth_headers, params=filtros)
+        assert [a["id"] for a in lista.json()["items"]] == ids[:1]
+
+        r = client.post("/api/v1/ativos/excluir-lote", headers=auth_headers,
+                        json={"todos_do_filtro": True, **filtros})
+        assert r.status_code == 200, r.text
+        assert r.json()["excluidos"] == 1
+        assert client.get(f"/api/v1/ativos/{ids[0]}", headers=auth_headers).status_code == 404
+        assert client.get(f"/api/v1/ativos/{ids[1]}", headers=auth_headers).status_code == 200
+
     def test_exclui_tudo_que_o_filtro_retorna(self, client, auth_headers):
         _criar_ativos(client, auth_headers, 4, "FILTRO")
         total_filtro = client.get(

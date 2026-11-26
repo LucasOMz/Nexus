@@ -5,7 +5,7 @@ import { criarPlantaConsulta } from "../mapa_planta.js";
 import { state } from "../state.js";
 import { dialog, el, icon, mostrarErro, skeleton, STATUS_LABEL as statusAtivo, toast } from "../ui.js";
 import { abrirDetalhes } from "./ativo_detalhes.js";
-import { abrirMonitoramentoImpressora } from "./monitor_impressoras.js";
+import { abrirMonitoramentoImpressora, barraSuprimento, comunicacaoImpressora, consultarSituacaoImpressora } from "./monitor_impressoras.js";
 
 const tipoAtivo = { ti: "TI", impressora: "Impressora" };
 const passoLista = 60;
@@ -55,7 +55,7 @@ export async function renderMapa(root) {
     pagina.replaceChildren(
       tituloMapa("Visualização por unidade"),
       el("div", { class: "mapa-bemvindo" },
-        el("span", { class: "mapa-vazio-icone", html: icon("grade", 30) }),
+        el("span", { class: "mapa-vazio-icone", html: icon("cube3d", 30) }),
         el("h2", {}, state.isAdmin ? "Escolha uma planta" : "Conta sem planta vinculada"),
         el("p", {}, state.isAdmin
           ? "Abra uma unidade para visualizar seus espaços e equipamentos."
@@ -136,7 +136,9 @@ export async function renderMapa(root) {
 
 function tituloMapa(unidade, acoes = null) {
   return el("header", { class: "mapa-cabecalho" },
-    el("div", {}, el("h1", {}, "Mapa de equipamentos"), el("p", {}, unidade)),
+    el("div", { class: "nexus-pagina-titulo" },
+      el("span", { class: "nexus-pagina-icone", html: icon("cube3d", 26) }),
+      el("div", {}, el("h1", {}, "Mapa 3D"), el("p", {}, unidade))),
     acoes);
 }
 
@@ -150,6 +152,7 @@ function montarPainel(pagina, unidade, store, projeto, signal, { acesso, falhaIm
   let ativoSelecionado = null;
   let paredeSelecionada = null;
   let cenaPronta = false;
+  let leituraSelecao = null;
   const desinscrever = [];
 
   const canvas = el("canvas", { class: "mapa-canvas", hidden: "", tabindex: "0", "aria-label": "Cena do mapa da unidade" });
@@ -159,13 +162,13 @@ function montarPainel(pagina, unidade, store, projeto, signal, { acesso, falhaIm
     if (!eq) return;
     selecionar(eq, false);
     if (podeMonitorar && !editando && eq.ativo.dominio === "impressora") {
-      abrirMonitoramentoImpressora(eq.id, eq.name, signal);
+      abrirMonitoramentoImpressora(eq.id, eq.name, signal, leituraSelecao?.pedido);
     }
   }, signal);
   const aviso = el("span", { role: "status" });
   const coordenada = el("span", { class: "mapa-coordenada" }, "X —  Z —");
   const vazioCena = el("div", { class: "mapa-vazio-cena", hidden: "" },
-    el("span", { class: "mapa-vazio-icone", html: icon("grade", 27) }),
+    el("span", { class: "mapa-vazio-icone", html: icon("cube3d", 27) }),
     el("strong", {}, "Mapa em preparação"),
     el("p", {}, canWrite ? "Use Editar mapa para adicionar a planta baixa ou posicionar equipamentos."
       : "A planta baixa e os equipamentos aparecerão aqui conforme a TI preparar o mapa."));
@@ -177,7 +180,7 @@ function montarPainel(pagina, unidade, store, projeto, signal, { acesso, falhaIm
   const modos = el("div", { class: "mapa-modos", role: "group", "aria-label": "Visualização do mapa" });
   const modoBotoes = [
     ["3d", botao("3D", () => obterViewer()?.setMode("3d"))],
-    ["top", botao("Planta 2D", () => obterViewer()?.setMode("top"))],
+    ["top", botao("Planta baixa", () => obterViewer()?.setMode("top"))],
     ["walk", botao("Caminhar", () => obterViewer()?.setMode("walk"))],
   ];
   modoBotoes[2][1].hidden = !canvas.requestPointerLock || matchMedia("(hover: none) and (pointer: coarse)").matches;
@@ -227,7 +230,7 @@ function montarPainel(pagina, unidade, store, projeto, signal, { acesso, falhaIm
       el("h2", {}, departamento || "Equipamentos da unidade"), cobertura,
       el("label", { class: "mapa-busca" }, el("span", { html: icon("search", 18) }), busca),
       el("div", { class: "mapa-filtros" }, departamento ? null : dominios, departamento ? null : setoresFiltro, situacoes), tabs),
-    lista, ficha);
+    ficha, lista);
 
   const camadas = el("details", { class: "mapa-camadas" }, el("summary", {}, "Camadas"),
     el("div", { class: "mapa-camadas-menu" }, ...[
@@ -254,7 +257,9 @@ function montarPainel(pagina, unidade, store, projeto, signal, { acesso, falhaIm
   acoesEdicao.hidden = true;
   const barra = el("div", { class: "mapa-barra" },
     el("div", { class: "mapa-barra-grupo" }, camadas, medir, limparMedidas), acoesEdicao);
-  const vista = botao("Vista 3D", alternarVista);
+  const vistaPlanta = botao("Planta baixa", () => { if (vista3d) alternarVista(); }, { icone: "grade" });
+  const vista = botao("Vista 3D", () => { if (!vista3d) alternarVista(); }, { icone: "cube3d" });
+  const seletorVista = el("div", { class: "mapa-modos mapa-modos-consulta", role: "group", "aria-label": "Visualização da unidade" }, vistaPlanta, vista);
   const menos = botao("−", () => consulta.ampliar(1 / 1.3), { titulo: "Diminuir zoom" });
   const mais = botao("+", () => consulta.ampliar(1.3), { titulo: "Aumentar zoom" });
   menos.setAttribute("aria-label", "Diminuir zoom");
@@ -266,7 +271,7 @@ function montarPainel(pagina, unidade, store, projeto, signal, { acesso, falhaIm
   const verDetalhes = botao("Ver detalhes", () => ficha.focus(), { classe: "mapa-detalhes-mobile mapa-button-quiet" });
   ficha.tabIndex = -1;
   const palco = el("section", { class: "mapa-palco", "aria-label": "Visualização da planta" },
-    el("div", { class: "mapa-palco-topo" }, tituloPalco, departamento ? null : vista, zoomConsulta), barra, viewport,
+    el("div", { class: "mapa-palco-topo" }, tituloPalco, departamento ? null : seletorVista, zoomConsulta), barra, viewport,
     el("div", { class: "mapa-palco-rodape" }, legenda, dimensoes, verDetalhes), mensagemMapa);
   pagina.replaceChildren(tituloMapa(unidade, cabAcoes),
     el("div", { class: "mapa-grade-layout" }, palco, lateral));
@@ -441,8 +446,10 @@ function montarPainel(pagina, unidade, store, projeto, signal, { acesso, falhaIm
     consulta.elemento.hidden = cena;
     viewport.classList.toggle("mapa-vista-consulta", !cena);
     tituloPalco.textContent = editando ? "Edição da planta" : cena ? "Vista 3D" : "Planta baixa";
-    vista.hidden = editando;
-    vista.textContent = cena ? "Planta baixa" : "Vista 3D";
+    tituloPalco.hidden = !departamento && !editando;
+    seletorVista.hidden = editando;
+    vistaPlanta.setAttribute("aria-pressed", String(!vista3d));
+    vista.setAttribute("aria-pressed", String(vista3d));
     zoomConsulta.hidden = cena;
     barra.hidden = !editando;
     acoesEdicao.hidden = !editando;
@@ -475,6 +482,8 @@ function montarPainel(pagina, unidade, store, projeto, signal, { acesso, falhaIm
   function renderFicha() {
     const eq = store.findEquipment(ativoSelecionado);
     const wall = store.findWall(paredeSelecionada);
+    const mostrarImpressora = podeMonitorar && !editando && eq?.ativo.dominio === "impressora";
+    if (!mostrarImpressora) leituraSelecao = null;
     verDetalhes.hidden = !eq || editando;
     if (!eq && !wall) {
       ficha.replaceChildren(el("h3", {}, "Detalhes do equipamento"),
@@ -495,6 +504,7 @@ function montarPainel(pagina, unidade, store, projeto, signal, { acesso, falhaIm
       return;
     }
     const a = eq.ativo;
+    const resumo = mostrarImpressora ? resumoDaImpressora(eq) : null;
     ficha.replaceChildren(el("div", { class: "mapa-ficha-titulo" }, el("h3", {}, eq.name), fechar),
       el("div", { class: "mapa-ficha-tags" }, papelTipo(a.dominio), el("span", { class: "mapa-tag" }, statusAtivo[a.status] || a.status)),
       pares([["Modelo", [a.marca, a.modelo].filter(Boolean).join(" ")], ["Hostname", a.hostname],
@@ -502,6 +512,7 @@ function montarPainel(pagina, unidade, store, projeto, signal, { acesso, falhaIm
         ["IP", editando ? eq.ip : null], ["Série", editando ? a.numero_serie : null],
         ["Posição", eq.pendente ? "Sem posição" : editando
           ? `X ${formatar(eq.x, 2)} · Z ${formatar(eq.z, 2)} m · ${formatar(eq.rotation, 0)}°` : "No mapa"]]),
+      resumo,
       el("div", { class: "mapa-ficha-acoes" },
         editando && cenaPronta ? botao(eq.pendente ? "Posicionar" : "Mover no mapa", () => {
           ativarFerramenta(v => {
@@ -511,8 +522,8 @@ function montarPainel(pagina, unidade, store, projeto, signal, { acesso, falhaIm
           aviso.textContent = `Clique no piso para posicionar ${eq.name}.`;
         }, { classe: "mapa-button-primary" }) : null,
         editando ? botao("Coordenadas", () => configurarPosicao(eq)) : null,
-        podeMonitorar && !editando && a.dominio === "impressora"
-          ? botao("Monitoramento", () => abrirMonitoramentoImpressora(eq.id, eq.name, signal), { icone: "print" }) : null,
+        mostrarImpressora
+          ? botao("Abrir monitoramento", () => abrirMonitoramentoImpressora(eq.id, eq.name, signal), { classe: "mapa-button-primary", icone: "printerMonitor" }) : null,
         editando && !eq.pendente ? botao("Retirar do mapa", () => {
           store.updateEquipment(eq.id, { pendente: true });
           aba = "pendentes";
@@ -520,6 +531,25 @@ function montarPainel(pagina, unidade, store, projeto, signal, { acesso, falhaIm
           atualizar();
         }, { classe: "mapa-button-quiet" }) : null,
         !departamento && a.dominio === "ti" && state.podeModulo("ativos") ? botao("Ficha técnica", () => abrirDetalhes(a), { icone: "doc" }) : null));
+  }
+
+  function resumoDaImpressora(eq) {
+    if (leituraSelecao?.id !== eq.id) {
+      leituraSelecao = { id: eq.id, pedido: consultarSituacaoImpressora(eq.id) };
+    }
+    const estado = el("p", { role: "status", class: "muted" }, "Consultando por SNMP…");
+    const dados = el("div");
+    leituraSelecao.pedido.then(leitura => {
+      if (!estado.isConnected || signal.aborted) return;
+      const [tom, rotulo] = comunicacaoImpressora[leitura.comunicacao] || comunicacaoImpressora.falha_na_consulta;
+      estado.replaceChildren(el("span", { class: "chip " + tom }, rotulo));
+      dados.replaceChildren(...(leitura.suprimentos.length
+        ? leitura.suprimentos.map(barraSuprimento)
+        : [el("p", { class: "muted" }, "Níveis de suprimentos indisponíveis nesta leitura.")]));
+    }).catch(e => {
+      if (estado.isConnected && !signal.aborted) estado.textContent = e.message;
+    });
+    return el("section", { class: "mapa-impressora-resumo" }, el("h4", {}, "Suprimentos"), estado, dados);
   }
 
   function configurarPosicao(eq) {

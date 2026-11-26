@@ -3,11 +3,13 @@
  * @module lookups
  */
 import { api } from "./api.js";
+import { state } from "./state.js";
 
 let cache = null;
 
 export async function loadLookups(force = false) {
-  if (cache && !force) return cache;
+  const escopo = [state.user?.id, state.plantaAtiva, state.dominio].join(":");
+  if (cache?.escopo === escopo && !force) return cache.dados;
   const [departamentos, localizacoes, fornecedores, categorias, usuarios, plantas] = await Promise.all([
     api.get("/departamentos"),
     api.get("/localizacoes"),
@@ -18,8 +20,9 @@ export async function loadLookups(force = false) {
     // vem vazia e o campo simplesmente não aparece com opções.
     api.get("/admin/plantas").catch(() => []),
   ]);
-  cache = { departamentos, localizacoes, fornecedores, categorias, usuarios, plantas };
-  return cache;
+  const dados = { departamentos, localizacoes, fornecedores, categorias, usuarios, plantas };
+  cache = { escopo, dados };
+  return dados;
 }
 
 export function optionsOf(list, { placeholder = "Selecione…", value = "id", label = "nome" } = {}) {

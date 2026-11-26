@@ -58,14 +58,25 @@ export function favoritosOrdenados(disponiveis) {
   return ordenarModulos(disponiveis).filter((c) => ehFavorito(c));
 }
 
+export function atalhos(disponiveis, padrao) {
+  if (state.user?.barra_personalizada || favoritos().length) {
+    const base = [...new Set([...padrao.filter(chave => disponiveis.includes(chave)), ...disponiveis])];
+    return favoritosOrdenados(base);
+  }
+  return ordenarModulos(padrao.filter(chave => disponiveis.includes(chave)));
+}
+
 /** Marca/desmarca um módulo. */
-export async function alternar(chave) {
-  const atuais = favoritos();
+export async function alternar(chave, atuais = favoritos()) {
   const novo = atuais.includes(chave)
     ? atuais.filter((c) => c !== chave)
     : [...atuais, chave];
   await gravar({ barra_favoritos: novo });
   return novo.includes(chave);
+}
+
+export async function restaurarPadrao() {
+  await gravar({ barra_padrao: true });
 }
 
 /** Grava a ordem da lista inteira da gaveta. */
@@ -86,10 +97,15 @@ async function gravar(mudancas) {
   const antes = {
     barra_favoritos: state.user?.barra_favoritos,
     barra_ordem: state.user?.barra_ordem,
+    barra_personalizada: state.user?.barra_personalizada,
   };
 
   if (state.user) {
-    for (const [campo, valor] of Object.entries(mudancas)) state.user[campo] = valor;
+    if (mudancas.barra_favoritos) {
+      state.user.barra_favoritos = mudancas.barra_favoritos;
+      state.user.barra_personalizada = true;
+    }
+    if (mudancas.barra_ordem) state.user.barra_ordem = mudancas.barra_ordem;
   }
 
   try {
@@ -97,6 +113,7 @@ async function gravar(mudancas) {
     if (state.user && r) {
       if (Array.isArray(r.barra_favoritos)) state.user.barra_favoritos = r.barra_favoritos;
       if (Array.isArray(r.barra_ordem)) state.user.barra_ordem = r.barra_ordem;
+      if (typeof r.barra_personalizada === "boolean") state.user.barra_personalizada = r.barra_personalizada;
     }
   } catch (e) {
     if (state.user) Object.assign(state.user, antes);

@@ -13,10 +13,10 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.deps import get_current_user, require_module, require_write
-from app.core.permissoes import pode_inventario
+from app.core.permissoes import pode_inventario, pode_modulo
 from app.core.planta import aplicar_filtro, planta_ativa_obrigatoria
 from app.database import get_db
 from app.models.core import Ativo, Usuario
@@ -34,6 +34,7 @@ def _impressoras(db: Session, planta_id: int | None) -> list[tuple[Ativo, AtivoI
     q = (
         db.query(Ativo, AtivoImpressora)
         .outerjoin(AtivoImpressora, AtivoImpressora.ativo_id == Ativo.id)
+        .options(joinedload(Ativo.departamento))
         .filter(Ativo.deleted_at.is_(None), Ativo.dominio == Dominio.IMPRESSORA)
     )
     q = aplicar_filtro(q, Ativo, planta_id)
@@ -103,11 +104,17 @@ def _linha(db: Session, ativo: Ativo, ficha: AtivoImpressora | None) -> dict:
 @router.get("", response_model=dict)
 def painel(
     db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
+    usuario: Usuario = Depends(get_current_user),
     planta_id: int | None = Depends(planta_ativa_obrigatoria),
 ):
     """Situação de todas as impressoras, com o que já se sabe do contador."""
-    itens = [_linha(db, a, f) for a, f in _impressoras(db, planta_id)]
+    pode_ver_departamento = pode_modulo(usuario, "monitor")
+    itens = []
+    for ativo, ficha in _impressoras(db, planta_id):
+        item = _linha(db, ativo, ficha)
+        if pode_ver_departamento:
+            item["departamento"] = ativo.departamento.nome if ativo.departamento else None
+        itens.append(item)
     itens.sort(key=lambda x: x["patrimonio"] or "")
     return {
         "itens": itens,

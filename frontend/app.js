@@ -50,22 +50,22 @@ const MODULOS = {
   manutencoes: { rotulo: "Manutenções", icone: "manutencoes" },
   scanner: { rotulo: "Leitura", icone: "scanner" },
   contagens: { rotulo: "Contagens", icone: "contagens" },
-  financeiro: { rotulo: "Financeiro", icone: "relatorios" },
-  contratos: { rotulo: "Contratos", icone: "relatorios" },
-  descarte: { rotulo: "Certificado de descarte", icone: "trash" },
-  software: { rotulo: "Software e licenças", icone: "produtos" },
-  emprestimos: { rotulo: "Empréstimos", icone: "calendario" },
-  monitor: { rotulo: "Monitor de impressoras", icone: "print" },
-  seguranca: { rotulo: "Segurança da conta", icone: "settings" },
+  financeiro: { rotulo: "Financeiro", icone: "wallet" },
+  contratos: { rotulo: "Contratos", icone: "contract" },
+  descarte: { rotulo: "Certificado de descarte", icone: "certificado" },
+  software: { rotulo: "Software e licenças", icone: "software" },
+  emprestimos: { rotulo: "Empréstimos", icone: "loan" },
+  monitor: { rotulo: "Monitor de impressoras", icone: "printerMonitor" },
+  seguranca: { rotulo: "Segurança da conta", icone: "shield" },
   relatorios: { rotulo: "Relatórios", icone: "relatorios" },
   calendario: { rotulo: "Calendário", icone: "calendario" },
   kanban: { rotulo: "Kanban", icone: "kanban" },
-  mapa: { rotulo: "Mapa 3D", icone: "grade" },
+  mapa: { rotulo: "Mapa 3D", icone: "cube3d" },
   impressao: { rotulo: "Impressão", icone: "print" },
   cadastros: { rotulo: "Cadastros", icone: "cadastros" },
   reporte: { rotulo: "Reporte de Erro", icone: "reporte" },
   avisos: { rotulo: "Avisos", icone: "bell" },
-  admin: { rotulo: "Administração", icone: "cadastros" },
+  admin: { rotulo: "Administração", icone: "settings" },
 };
 
 const VIEWS = {
@@ -94,7 +94,7 @@ const VIEWS = {
   admin: renderAdmin,
 };
 
-const NAVEGACAO_PRINCIPAL = ["home", "ativos", "produtos", "manutencoes", "emprestimos", "monitor", "mapa", "relatorios"];
+const NAVEGACAO_PRINCIPAL = ["ativos", "produtos", "manutencoes", "emprestimos", "monitor", "mapa", "relatorios", "admin"];
 const BOTTOM_NAV = ["relatorios", "ativos", "scanner"];
 
 const router = new Router();
@@ -115,7 +115,7 @@ function buildShell() {
   const root = document.getElementById("app");
   root.innerHTML = "";
 
-  const menuBtn = el("button", { class: "iconbtn", title: "Menu", onclick: openDrawer, html: icon("menu") });
+  const menuBtn = el("button", { class: "iconbtn", title: "Todos os módulos", "aria-label": "Todos os módulos", onclick: () => openDrawer(), html: icon("menu") });
   const homeBtn = el("button", { class: "iconbtn nexus-home-mobile", title: "Menu inicial do inventário", onclick: () => router.go("home"), html: icon("home") });
 
 /**
@@ -170,6 +170,24 @@ function seletorDePlanta() {
 }
 
   const badge = seletorInventario();
+  const nome = state.user?.nome?.trim() || "Nexus";
+  const iniciais = nome.split(/\s+/).slice(0, 2).map(parte => parte[0]).join("").toUpperCase();
+  const conta = el("details", { class: "nexus-conta" },
+    el("summary", { class: "nexus-avatar", "aria-label": `Menu da conta de ${nome}`, title: nome }, iniciais),
+    el("div", { class: "nexus-conta-menu" },
+      el("strong", {}, nome),
+      el("button", { class: "btn outline", title: TITULO_TEMA, onclick: () => { conta.open = false; abrirSeletorDeTema(); } },
+        el("span", { class: "nexus-conta-tema", html: iconeDoModo() }), "Aparência"),
+      el("button", { class: "btn outline", onclick: logout }, el("span", { html: icon("logout", 18) }), "Sair")));
+  conta.addEventListener("focusout", ev => {
+    if (ev.relatedTarget && !conta.contains(ev.relatedTarget)) conta.open = false;
+  });
+  conta.addEventListener("keydown", ev => {
+    if (ev.key === "Escape" && conta.open) {
+      conta.open = false;
+      conta.querySelector("summary").focus();
+    }
+  });
 
   const topbar = el("header", { class: "topbar" },
     menuBtn,
@@ -185,17 +203,14 @@ function seletorDePlanta() {
     seletorDePlanta(),
     badge,
     sinoNotificacoes(),
-    el("button", { class: "iconbtn", title: TITULO_TEMA, onclick: abrirSeletorDeTema, html: iconeDoModo() }),
-    el("button", { class: "iconbtn", title: "Sair", onclick: logout, html: icon("logout") }),
+    conta,
   );
 
-  const rail = el("nav", { class: "rail", "data-nav": "rail", id: "rail", "aria-label": "Favoritos" });
   const lateral = el("aside", { class: "nexus-lateral" },
     el("button", { class: "nexus-marca", type: "button", onclick: () => router.go("home"), "aria-label": "Nexus, início" },
       el("span", { class: "nexus-marca-icone", "aria-hidden": "true" }), "Nexus"),
-    el("nav", { class: "nexus-nav", id: "nexus-nav", "aria-label": "Navegação principal" }),
-    rail,
-    el("nav", { class: "nexus-nav nexus-nav-admin", id: "nexus-nav-admin", "aria-label": "Administração" }));
+    el("nav", { class: "nexus-nav", id: "rail", "aria-label": "Navegação principal" }),
+    el("div", { class: "nexus-nav nexus-nav-admin", id: "nexus-nav-admin" }));
   const content = el("main", { class: "content", id: "view" });
   const bottomnav = el("nav", { class: "bottomnav", "data-nav": "bottom", id: "bottomnav" });
 
@@ -301,9 +316,8 @@ function iconeDoModo() {
 }
 
 function atualizarIconeDoTema() {
-  document.querySelectorAll(".topbar .iconbtn").forEach((b) => {
-    if (b.getAttribute("title") === TITULO_TEMA) b.innerHTML = iconeDoModo();
-  });
+  const glyph = document.querySelector(".nexus-conta-tema");
+  if (glyph) glyph.innerHTML = iconeDoModo();
 }
 
 /**
@@ -420,11 +434,7 @@ function opcaoDeTema(o, ativo, aoEscolher) {
 
 function toggleTheme() {
   state.setTheme(state.theme === "dark" ? "light" : "dark");
-  if (shellBuilt) {
-    // Atualiza só o ícone do botão de tema.
-    const btns = document.querySelectorAll(".topbar .iconbtn");
-    btns.forEach((b) => { if (b.getAttribute("title") === TITULO_TEMA) b.innerHTML = icon(state.theme === "dark" ? "sun" : "moon"); });
-  }
+  atualizarIconeDoTema();
   ctx.rerender();
 }
 
@@ -538,207 +548,160 @@ function trocarInventario(chave) {
   location.reload();
 }
 
-// Qualquer módulo que o usuário possa acessar pode virar favorito na barra
-// lateral — inclusive Administração e Reporte de Erro.
-//
-// Não existe lista de exceções aqui de propósito: **ao criar uma aba nova,
-// basta registrá-la em MODULOS** e ela já aparece na gaveta com estrela e pode// ser favoritada. Uma lista de exclusão daria manutenção e explicaria o
-// sintoma de "favoritei e não apareceu".
-//
-// A barra lateral fica vazia por padrão (só o Menu) — os atalhos são escolha
-// do usuário, feita na gaveta.
-
-function navItemsFor(container) {  const permitidos = Object.keys(MODULOS).filter((m) => state.podeModulo(m));
-  if (container === "rail") {
-    // A barra rápida mostra APENAS os favoritos. As demais telas continuam na
-    // gaveta (as três barras) e no menu inicial.
-    return ["home", ...barraLateral.favoritosOrdenados(permitidos)];
-  }
-  return BOTTOM_NAV.filter((m) => state.podeModulo(m));
+function modulosPermitidos() {
+  return Object.keys(MODULOS).filter(chave => state.podeModulo(chave));
 }
 
-
-function navButton(key, active, compact = false) {
+function navButton(key, active) {
   const meta = key === "home" ? { rotulo: "Início", icone: "home" } : MODULOS[key];
-  if (!meta) return null;
   return el("button", {
     class: "nav-item" + (key === active ? " active" : ""),
     title: meta.rotulo,
     "aria-current": key === active ? "page" : null,
     onclick: () => router.go(key),
-    html: icon(meta.icone, 24) + `<span>${meta.rotulo}</span>`,
-  });
-}
-
-/**
- * Estrela que marca/desmarca um módulo.
- *
- * Usada na **gaveta** (as três barras), que lista todas as opções: é ali que o
- * usuário escolhe o que sobe para a barra lateral rápida.
- */
-function estrelaFavorito(key, aoMudar) {
-  const marcado = barraLateral.ehFavorito(key);
-  const textoDe = (m) => (m ? "Remover da barra lateral" : "Adicionar à barra lateral");
-
-  const b = el("button", {
-    class: `favorito${marcado ? " marcado" : ""}`,
-    type: "button",
-    title: textoDe(marcado),
-    "aria-pressed": marcado ? "true" : "false",
-    html: icon("star", 18),
-  });
-
-  b.addEventListener("click", async (ev) => {
-    // Sem isto o clique marcaria a estrela E navegaria para o módulo.
-    ev.stopPropagation();
-    ev.preventDefault();
-    try {
-      const novo = await barraLateral.alternar(key);
-      b.classList.toggle("marcado", novo);
-      b.title = textoDe(novo);
-      b.setAttribute("aria-pressed", novo ? "true" : "false");
-      if (aoMudar) aoMudar();
-    } catch (e) {
-      mostrarErro(e, "salvar os favoritos");
-    }
-  });
-  return b;
+  }, el("span", { class: "nexus-nav-icone", html: icon(meta.icone, 21) }), el("span", {}, meta.rotulo));
 }
 
 function updateNav(active) {
-  const principal = document.getElementById("nexus-nav");
-  const admin = document.getElementById("nexus-nav-admin");
-  principal?.replaceChildren(...NAVEGACAO_PRINCIPAL.filter(k => k === "home" || state.podeModulo(k)).map(k => navButton(k, active)));
-  admin?.replaceChildren(...(state.podeModulo("admin") ? [navButton("admin", active)] : []));
-  for (const [id, tipo] of [["rail", "rail"], ["bottomnav", "bottom"]]) {
-    const cont = document.getElementById(id);
-    if (!cont) continue;
-    cont.innerHTML = "";
-
-    if (tipo === "rail") {
-      // A barra rápida mostra os FAVORITOS. O resto vive na gaveta.
-      navItemsFor("rail").filter(k => k !== "home").forEach((k) => {
-        const b = navButton(k, active);
-        if (b) cont.append(b);
-      });
-      // Sem nenhum favorito a barra ficaria vazia e sem saída: o botão abaixo
-      // abre a gaveta, que é onde se escolhe.
-      if (!barraLateral.favoritos().length) {
-        cont.append(el("button", {
-          class: "nav-item nav-vazio",
-          title: "Escolher os atalhos da barra lateral",
-          html: icon("star", 22) + "<span>Adicionar</span>",
-          onclick: openDrawer,
-        }));
-      }
-      cont.append(botaoEasterEgg());
-    } else {
-      navItemsFor(tipo).forEach((k) => {
-        const b = navButton(k, active);
-        if (b) cont.append(b);
-      });
-    }
-  }
+  const atalhos = barraLateral.atalhos(modulosPermitidos(), NAVEGACAO_PRINCIPAL);
+  const adminNoRodape = atalhos.includes("admin") && !barraLateral.favoritos().length && !barraLateral.ordem().length;
+  document.getElementById("rail")?.replaceChildren(
+    ...["home", ...atalhos.filter(chave => !adminNoRodape || chave !== "admin")].map(chave => navButton(chave, active)),
+    botaoEasterEgg(),
+  );
+  document.getElementById("nexus-nav-admin")?.replaceChildren(
+    ...(adminNoRodape ? [navButton("admin", active)] : []),
+    el("button", { class: "nav-item nexus-personalizar", type: "button", onclick: () => openDrawer(true) },
+      el("span", { class: "nexus-nav-icone", html: icon("sliders", 21) }), "Personalizar barra lateral"),
+  );
+  document.getElementById("bottomnav")?.replaceChildren(
+    ...BOTTOM_NAV.filter(chave => state.podeModulo(chave)).map(chave => navButton(chave, active)),
+  );
 }
 
+function openDrawer(personalizar = false) {
+  const focoAnterior = document.activeElement;
+  const painel = el("dialog", {
+    class: "nexus-drawer" + (personalizar ? " nexus-drawer-editar" : ""),
+    "aria-labelledby": "nexus-drawer-titulo",
+  });
+  const lista = el("div", { class: "nexus-drawer-lista" });
+  const retorno = el("p", { class: "nexus-drawer-retorno", role: "alert", hidden: true });
+  const permitidos = modulosPermitidos();
+  let salvando = false;
 
+  function fechar() { painel.close(); }
+  painel.addEventListener("close", () => {
+    painel.remove();
+    (focoAnterior?.isConnected ? focoAnterior : document.querySelector(".nexus-personalizar"))?.focus();
+  });
+  painel.addEventListener("click", ev => { if (ev.target === painel) fechar(); });
 
-// ---------------------------------------------------------------------------
-// Drawer (menu de 3 barras) — com fechamento por clique fora e ESC
-// ---------------------------------------------------------------------------
-function openDrawer() {
-  const overlay = el("div", { class: "drawer-overlay" });
-  const panel = el("div", { class: "drawer" });
-  overlay.append(panel);
+  async function salvar(acao, foco) {
+    if (salvando) return;
+    salvando = true;
+    retorno.hidden = true;
+    lista.setAttribute("inert", "");
+    try {
+      await acao();
+      updateNav(currentPath);
+    } catch (e) {
+      if (painel.open) {
+        retorno.textContent = "Não foi possível salvar. " + (e.message || "");
+        retorno.hidden = false;
+      } else mostrarErro(e, "salvar a barra lateral");
+    } finally {
+      salvando = false;
+      lista.removeAttribute("inert");
+      if (painel.open) {
+        pintarLista();
+        if (foco) {
+          const controle = lista.querySelector(foco);
+          (controle?.disabled ? controle.closest(".drawer-linha").querySelector(".favorito") : controle)?.focus();
+        }
+      }
+    }
+  }
 
-  const close = () => {
-    overlay.remove();
-    document.removeEventListener("keydown", onKey);
-  };
-  const onKey = (e) => { if (e.key === "Escape") close(); };
-  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
-  document.addEventListener("keydown", onKey);
+  function pintarLista() {
+    const ativos = barraLateral.atalhos(permitidos, NAVEGACAO_PRINCIPAL);
+    const padrao = [...new Set([...NAVEGACAO_PRINCIPAL, ...permitidos])].filter(chave => permitidos.includes(chave));
+    const ordem = barraLateral.ordenarModulos(padrao);
+    if (!personalizar) {
+      lista.replaceChildren(...["home", ...ordem].map(chave => {
+        const item = navButton(chave, currentPath);
+        item.classList.add("drawer-item");
+        item.addEventListener("click", fechar, { capture: true });
+        return item;
+      }));
+      return;
+    }
+    lista.replaceChildren(...ordem.map((key, indice) => {
+      const { rotulo, icone } = MODULOS[key];
+      const marcado = ativos.includes(key);
+      const seletor = '[data-chave="' + key + '"] ';
+      const mover = (deslocamento, iconeSeta, texto) => el("button", {
+        class: "nexus-mover", type: "button", disabled: !ordem[indice + deslocamento],
+        "data-direcao": iconeSeta, title: texto + " " + rotulo, "aria-label": texto + " " + rotulo,
+        html: icon(iconeSeta, 16),
+        onclick: () => {
+          const nova = [...ordem];
+          nova.splice(indice + deslocamento, 0, ...nova.splice(indice, 1));
+          salvar(() => barraLateral.definirOrdem(nova), seletor + '[data-direcao="' + iconeSeta + '"]');
+        },
+      });
 
-  panel.append(
-    el("div", { class: "row between", style: "padding:4px 8px 16px" },
-      el("div", {},
-        el("div", { style: "font-weight:600" }, state.user?.nome || ""),
-        el("div", { class: "muted", style: "font-size:12px" }, state.user?.papel || ""),
-      ),
-      el("button", { class: "iconbtn", title: "Fechar", onclick: close, html: icon("close") }),
+      return el("div", { class: "drawer-linha", "data-chave": key },
+        el("span", { class: "empunhadura", title: "Segure e arraste para reordenar", html: icon("grip", 16) }),
+        el("button", { class: "favorito" + (marcado ? " marcado" : ""), type: "button",
+          "aria-pressed": String(marcado),
+          "aria-label": (marcado ? "Remover " : "Adicionar ") + rotulo + (marcado ? " da barra lateral" : " à barra lateral"),
+          title: marcado ? "Remover da barra lateral" : "Adicionar à barra lateral",
+          html: icon("star", 18),
+          onclick: () => salvar(() => barraLateral.alternar(key, ativos), seletor + ".favorito"),
+        }),
+        el("span", { class: "nexus-drawer-modulo" }, el("span", { html: icon(icone, 20) }), rotulo),
+        mover(-1, "up", "Subir"),
+        mover(1, "down", "Descer"),
+      );
+    }));
+  }
+
+  if (personalizar) {
+    ordenar.permitirReordenar(lista, ".drawer-linha", ordem => salvar(() => barraLateral.definirOrdem(ordem)), linha => linha.dataset.chave);
+  }
+
+  const titulo = personalizar ? "Personalizar barra lateral" : "Todos os módulos";
+  const cabecalho = el("header", { class: "nexus-drawer-topo" },
+    el("h2", { id: "nexus-drawer-titulo" }, titulo),
+    el("button", { class: "iconbtn", type: "button", title: "Fechar", "aria-label": "Fechar", onclick: fechar, html: icon("close") }),
+  );
+  const atualizar = () => { fechar(); toast("Atualizando…"); limparCacheFrontend(false); };
+  const acaoRodape = (icone, texto, acao) => el("button", { class: "btn outline", type: "button", onclick: acao },
+    el("span", { html: icon(icone, 18) }), texto);
+
+  painel.append(el("div", { class: "nexus-drawer-conteudo" },
+    cabecalho,
+    personalizar ? el("p", { class: "nexus-drawer-dica" }, "Marque os atalhos que deseja ver. Arraste os módulos ou use as setas para mudar a ordem.") : null,
+    !personalizar ? acaoRodape("sliders", "Personalizar barra lateral", () => { fechar(); openDrawer(true); }) : null,
+    retorno,
+    lista,
+    el("footer", { class: "nexus-drawer-rodape" },
+      ...(personalizar
+        ? [acaoRodape("refresh", "Restaurar padrão", () => salvar(barraLateral.restaurarPadrao))]
+        : [
+          acaoRodape("swap", "Trocar inventário", () => { fechar(); router.go("selecao"); }),
+          acaoRodape("download", "Atualizar aplicativo", atualizar),
+          acaoRodape("logout", "Sair", () => { fechar(); logout(); }),
+          el("small", {}, "Versão " + APP_VERSION),
+        ]),
     ),
-  );
-
-  const permitidos = Object.keys(MODULOS).filter((m) => state.podeModulo(m));
-  // A gaveta precisa abrir NA ORDEM GRAVADA — senão o usuário reordena, sai,
-  // volta e encontra tudo embaralhado de novo.
-  const ordenados = barraLateral.ordenarModulos(permitidos);
-  const entradas = [["home", "Menu inicial", "home"], ...ordenados.map((m) => [m, MODULOS[m].rotulo, MODULOS[m].icone])];
-  for (const [key, rotulo, icone] of entradas) {
-    const btn = el("button", {
-      class: "drawer-item" + (key === currentPath ? " active" : ""),
-      onclick: () => { close(); router.go(key); },
-      html: icon(icone, 22) + `<span>${rotulo}</span>`,
-    });
-
-    // "Menu inicial" não é favoritável — é a porta para todas as telas.
-    if (key === "home") {
-      panel.append(btn);
-      continue;
-    }
-    // A estrela fica AQUI, na lista completa: é onde se escolhe o que sobe
-    // para a barra lateral rápida. A gaveta continua aberta ao marcar.
-    panel.append(el("div", { class: "drawer-linha", "data-chave": key },
-      el("span", { class: "empunhadura", title: "Segure e arraste para reordenar",
-        html: icon("grip", 16) }),
-      estrelaFavorito(key, () => updateNav(currentPath)),
-      btn,
-    ));
-  }
-
-  // Segurar um item o levanta; arrastar muda a ordem na barra lateral.
-  ordenar.permitirReordenar(
-    panel,
-    ".drawer-linha",
-    async (ordem) => {
-      // Grava a ordem da LISTA INTEIRA. Gravar só a dos favoritos fazia a
-      // posição dos demais se perder ao reabrir a gaveta.
-      try {
-        await barraLateral.definirOrdem(ordem);
-        updateNav(currentPath);
-        toast("Ordem atualizada");
-      } catch (e) {
-        mostrarErro(e, "salvar a ordem");
-      }
-    },
-    (el) => el.dataset.chave,
-  );
-
-  panel.append(el("div", { style: "flex:1" }));
-  panel.append(el("div", { style: "border-top:1px solid var(--md-sys-color-outline-variant);margin:12px 0 8px" }));
-  panel.append(el("div", { class: "muted", style: "font-size:11.5px;padding:0 16px 8px" }, `Versão ${APP_VERSION}`));
-  panel.append(el("button", {
-    class: "drawer-item",
-    onclick: () => { close(); router.go("selecao"); },
-    html: icon("swap", 22) + "<span>Trocar inventário</span>",
-  }));
-  panel.append(el("button", {
-    class: "drawer-item",
-    title: "Limpa o cache do navegador e recarrega a versão mais recente",
-    onclick: () => { close(); toast("Atualizando…"); limparCacheFrontend(false); },
-    html: icon("download", 22) + "<span>Atualizar aplicativo</span>",
-  }));
-  panel.append(el("button", {
-    class: "drawer-item", onclick: () => { close(); logout(); },
-    html: icon("logout", 22) + "<span>Sair</span>",
-  }));
-
-  document.body.append(overlay);
+  ));
+  pintarLista();
+  document.body.append(painel);
+  painel.showModal();
 }
 
-// ---------------------------------------------------------------------------
-// Roteamento
-// ---------------------------------------------------------------------------
 function renderRoute(path) {
   const revisao = ++revisaoTela;
   ctx.limpar();

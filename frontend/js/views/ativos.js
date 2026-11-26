@@ -42,6 +42,8 @@ let filtroStatus = "";
 // locados?" — o chip mostra, mas sem o filtro não dá para isolar.
 let filtroForma = "";
 let filtroSearch = "";
+let filtroDepartamento = "";
+let filtroCategoria = "";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
@@ -647,12 +649,12 @@ function confirmarDigitando(quantidade) {
 
 /** Executa a exclusão em lote, com as duas confirmações. */
 async function excluirSelecionados(quantidade, refresh) {
+  const corpo = selecionarTudoDoFiltro
+    ? { todos_do_filtro: true, dominio: state.dominio, ...filtrosAtivos() }
+    : { ids: [...selecionados] };
+
   if (!await confirmarExclusao(quantidade)) return;
   if (!await confirmarDigitando(quantidade)) return;
-
-  const corpo = selecionarTudoDoFiltro
-    ? { todos_do_filtro: true, dominio: state.dominio, status: filtroStatus || null, search: filtroSearch || null }
-    : { ids: [...selecionados] };
 
   try {
     const res = await api.post("/ativos/excluir-lote", corpo);
@@ -668,19 +670,36 @@ async function excluirSelecionados(quantidade, refresh) {
   }
 }
 
+function filtrosAtivos() {
+  return {
+    status: filtroStatus || null,
+    forma_aquisicao: filtroForma || null,
+    search: filtroSearch || null,
+    departamento_id: Number(filtroDepartamento) || null,
+    categoria_id: Number(filtroCategoria) || null,
+  };
+}
+
+let revisaoLista = 0;
 async function renderList(root, lookups) {
+  const revisao = ++revisaoLista;
   root.innerHTML = "";
-  const q = { dominio: state.dominio, page, size: pageSize };
-  if (filtroStatus) q.status = filtroStatus;
-  if (filtroForma) q.forma_aquisicao = filtroForma;
-  if (filtroSearch) q.search = filtroSearch;
 
   let data;
   try {
-    data = await api.get("/ativos", q);
-  } catch (e) { root.append(emptyState("ativos", "Erro", e.message)); return; }
+    const filtros = Object.fromEntries(Object.entries(filtrosAtivos()).filter(([, valor]) => valor !== null));
+    data = await api.get("/ativos", { dominio: state.dominio, page, size: pageSize, ...filtros });
+  } catch (e) {
+    if (revisao === revisaoLista) root.append(emptyState("ativos", "Erro", e.message));
+    return;
+  }
+  if (revisao !== revisaoLista) return;
 
-  if (!data.items.length) { root.append(emptyState("ativos", "Nenhum ativo", "Cadastre o primeiro ativo deste inventário.")); return; }
+  if (!data.items.length) {
+    const filtrado = Object.values(filtrosAtivos()).some(Boolean);
+    root.append(emptyState("ativos", "Nenhum ativo", filtrado ? "Ajuste os filtros para ver mais equipamentos." : "Cadastre o primeiro ativo deste inventário."));
+    return;
+  }
 
   // Exclusão em lote é privilégio do administrador.
   const podeLote = state.isAdmin;
@@ -762,7 +781,7 @@ async function renderList(root, lookups) {
   //
   // "Usuário" entrou no lugar: é a pergunta que a lista não respondia —
   // com quem está este equipamento.
-  const colunas = ["", "Patrimônio", "Equipamento", "Hostname", "Departamento", "Status", "Planta", "Usuário", "Localização", "Ações"];
+  const colunas = ["Patrimônio", "Equipamento", "Hostname", "Departamento", "Status", "Planta", "Usuário", "Localização", "Ações"];
   const cabecalhos = podeLote ? ["", ...colunas] : colunas;
 
   const table = el("table", { class: "data" },
@@ -773,6 +792,7 @@ async function renderList(root, lookups) {
     el("tbody", {}, ...data.items.map((a) => {
       const loc = lookups.localizacoes.find((l) => l.id === a.localizacao_id)?.nome;
       const departamento = lookups.departamentos?.find(d => d.id === a.departamento_id)?.nome;
+      const categoria = lookups.categorias?.find(c => c.id === a.categoria_id)?.nome;
 
       // A caixa é criada ANTES da linha e ligada a ela só depois. Referenciar
       // `tr` dentro da montagem lançaria "Cannot access 'tr' before
@@ -786,9 +806,7 @@ async function renderList(root, lookups) {
       const destacado = destaqueId !== null && a.id === destaqueId;
 
       const tr = el("tr", { class: destacado ? "row-destaque" : "" },
-        ...(caixaLinha ? [el("td", { style: "padding-right:0" }, caixaLinha)] : []),        el("td", { style: "padding-right:0" }, a.foto_id
-          ? fotoProtegida(a.foto_id, { alt: "", loading: "lazy", style: "width:38px;height:38px;object-fit:cover;border-radius:8px;display:block" })
-          : el("span", { class: "ativos-miniatura", html: icon(a.dominio === "impressora" ? "print" : "ativos", 21) })),
+        ...(caixaLinha ? [el("td", { style: "padding-right:0" }, caixaLinha)] : []),
         el("td", { style: "font-weight:600" },
           a.patrimonio,
           // O chip responde a pergunta que o patrimônio sozinho não responde:
@@ -800,10 +818,14 @@ async function renderList(root, lookups) {
                 title: "Locado — não é patrimônio da empresa e não deprecia",
               }, "Locado")
             : null),
-        el("td", {}, el("button", { type: "button", class: "ativos-modelo", title: "Abrir ficha do ativo", onclick: (ev) => {
-          ev.stopPropagation();
-          openDetail(a, lookups);
-        } }, a.modelo || a.numero_serie || "Abrir ficha")),
+        el("td", {}, el("div", { class: "ativos-equipamento" },
+          a.foto_id ? fotoProtegida(a.foto_id, { class: "ativos-miniatura", alt: "", loading: "lazy" })
+            : el("span", { class: "ativos-miniatura", html: icon(a.dominio === "impressora" ? "printerMonitor" : "ativos", 23) }),
+          el("div", {}, el("button", { type: "button", class: "ativos-modelo", title: "Abrir ficha do ativo", onclick: (ev) => {
+            ev.stopPropagation();
+            openDetail(a, lookups);
+          } }, a.modelo || a.numero_serie || "Abrir ficha"),
+          categoria ? el("small", { class: "muted ativos-categoria" }, categoria) : null))),
         el("td", {}, a.hostname || a.ti?.hostname || a.impressora?.hostname || "—"),
         el("td", {}, departamento || "—"),
         el("td", { html: statusBadge(a.status) }),
@@ -876,6 +898,7 @@ async function renderList(root, lookups) {
 export async function renderAtivos(root) {
   ctx.setTitle("Ativos");
   ctx.setFab(null);
+  limparSelecao();
 
   // Vindo de um link (ex.: clique num item do relatório), aplica o filtro e o
   // destaque ANTES de montar a tela.
@@ -888,26 +911,13 @@ export async function renderAtivos(root) {
   const statusFiltro = sessionStorage.getItem("filtro_status");
   if (statusFiltro) { filtroStatus = statusFiltro; sessionStorage.removeItem("filtro_status"); }
 
-  const statuses = ["estoque", "em_uso", "manutencao", "reservado", "emprestado", "descartado"];
-
-  // O `refresh()` redesenha apenas a LISTA — a barra de ferramentas é criada
-  // uma vez só. Por isso os botões precisam ter o estado atualizado na mão,
-  // senão o filtro funciona mas a marcação continua na opção anterior.
-  const chipsStatus = [];
+  const statuses = { estoque: "Em estoque", em_uso: "Em uso", manutencao: "Em manutenção",
+    reservado: "Reservado", emprestado: "Emprestado", descartado: "Descartado" };
   const botoesTamanho = [];
 
   function atualizarToolbar() {
-    chipsStatus.forEach(([valor, botao]) => botao.classList.toggle("selected", filtroStatus === valor));
     chipsForma.forEach(([valor, botao]) => botao.classList.toggle("selected", filtroForma === valor));
     botoesTamanho.forEach(([valor, botao]) => botao.classList.toggle("selected", pageSize === valor));
-  }
-
-  /** Troca o filtro de status e sincroniza a marcação visual. */
-  function trocarStatus(valor) {
-    filtroStatus = valor;
-    page = 1;
-    atualizarToolbar();
-    refresh();
   }
 
   // Seletor de itens por página. Ao trocar, volta para a primeira página para
@@ -932,57 +942,44 @@ export async function renderAtivos(root) {
 
   const campoBusca = el("input", {
     class: "search-input",
-    placeholder: "Buscar patrimônio, modelo, série…",
+    type: "search",
+    placeholder: "Patrimônio, hostname, modelo ou série",
     value: filtroSearch,
-    oninput: (e) => { filtroSearch = e.target.value; page = 1; refresh(); },
+    oninput: (e) => { filtroSearch = e.target.value; limparSelecao(); page = 1; refresh(); },
   });
 
-  const chipTodos = el("button", {
-    class: "chip" + (filtroStatus === "" ? " selected" : ""),
-    onclick: () => trocarStatus(""),
-  }, "Todos");
-  chipsStatus.push(["", chipTodos]);
-  const chipsForma = [];
+  const trocarFiltro = atualizar => ev => {
+    atualizar(ev.target.value);
+    limparSelecao();
+    page = 1;
+    refresh();
+  };
+  const criarSeletor = (rotulo, inicial, atualizar) => el("select", {
+    class: "search-input", "aria-label": rotulo, onchange: trocarFiltro(atualizar),
+  }, el("option", { value: "" }, inicial));
+  const departamentos = criarSeletor("Departamento", "Todos os departamentos", valor => { filtroDepartamento = valor; });
+  const categorias = criarSeletor("Categoria", "Todas as categorias", valor => { filtroCategoria = valor; });
+  const status = criarSeletor("Status", "Todos os status", valor => { filtroStatus = valor; });
+  status.append(...Object.entries(statuses).map(([valor, rotulo]) => el("option", { value: valor }, rotulo)));
+  status.value = filtroStatus;
+  const filtros = el("div", { class: "ativos-filtros" },
+    el("label", {}, "Buscar", campoBusca),
+    el("label", {}, "Departamento", departamentos),
+    el("label", {}, "Categoria", categorias),
+    el("label", {}, "Status", status),
+  );
 
+  const chipsForma = [];
   const toolbar = el("div", { class: "toolbar" },
-    el("div", { class: "grow" }, campoBusca),
-    el("div", { class: "row", style: "gap:6px" },
-      chipTodos,
-      ...statuses.map((s) => {
-        const botao = el("button", {
-          class: "chip" + (filtroStatus === s ? " selected" : ""),
-          onclick: () => trocarStatus(s),
-        }, s.replace(/_/g, " "));
-        chipsStatus.push([s, botao]);
-        return botao;
-      }),
-    ),
     seletorTamanho,
-    // --- Importação por CSV: só administrador ---------------------------
-    //
-    // Fica junto dos filtros, e não no FAB: o FAB é "criar um", e importar
-    // cria em lote — são coisas diferentes, e misturá-las no mesmo botão
-    // esconderia o risco de cada uma.
-    //
-    // A checagem aqui é de conveniência: quem manda no assunto é o backend
-    // (`require_admin`). Esconder o botão não protege nada — só evita que
-    // quem não pode clique e receba 403.
-    state.isAdmin
-      ? el("button", {
-          class: "btn tonal small", id: "ativos-importar",
-          onclick: () => importarAtivos(refresh),
-          html: icon("download", 15) + " Importar CSV",
-        })
-      : null,
-    // Filtro de natureza, numa linha própria: junto dos status ele
-    // confundiria — são eixos diferentes (o que o ativo é vs. como chegou).
-    el("div", { class: "row", style: "gap:6px;margin-top:8px" },
+    el("div", { class: "row wrap", style: "gap:6px" },
       el("span", { class: "dica", style: "margin:auto 6px auto 0" }, "Aquisição:"),
       ...[["", "Todas"], ["comprado", "Comprados"], ["locado", "Locados"]].map(([v, r]) => {
         const b = el("button", {
           class: "chip" + (filtroForma === v ? " selected" : ""),
           onclick: () => {
             filtroForma = v;
+            limparSelecao();
             page = 1;
             atualizarToolbar();
             refresh();
@@ -999,16 +996,32 @@ export async function renderAtivos(root) {
   root.innerHTML = "";
   root.append(
     el("div", { class: "ativos-topo row between wrap" },
-      el("div", {}, el("h1", { class: "page-title" }, "Ativos"),
-        el("p", { class: "page-sub" }, state.dominioLabel)),
-      state.canWrite ? el("button", { class: "btn filled ativos-novo", type: "button", disabled: true,
-        onclick: () => openForm(null, lookups), html: icon("add", 18) + " Novo ativo" }) : null),
+      el("div", { class: "nexus-pagina-titulo" },
+        el("span", { class: "nexus-pagina-icone", html: icon("ativos", 26) }),
+        el("div", {}, el("h1", { class: "page-title" }, "Ativos"),
+          el("p", { class: "page-sub" }, state.dominioLabel))),
+      el("div", { class: "row wrap ativos-topo-acoes" },
+        state.canWrite ? el("button", { class: "btn filled ativos-novo", type: "button", disabled: true,
+          onclick: () => openForm(null, lookups), html: icon("add", 18) + " Novo ativo" }) : null,
+        state.isAdmin ? el("button", { class: "btn outline", id: "ativos-importar",
+          onclick: () => importarAtivos(refresh), html: icon("download", 18) + " Importar CSV" }) : null)),
+    filtros,
     toolbar,
     el("div", { id: "ativos-list" }, skeleton(6)),
   );
 
   listRoot = root.querySelector("#ativos-list");
   lookups = await loadLookups();
+  if (!listRoot.isConnected) return;
+  for (const [seletor, itens, valor] of [
+    [departamentos, lookups.departamentos, filtroDepartamento],
+    [categorias, lookups.categorias, filtroCategoria],
+  ]) {
+    seletor.append(...(itens || []).map(item => el("option", { value: item.id }, item.nome)));
+    seletor.value = [...seletor.options].some(opcao => opcao.value === valor) ? valor : "";
+  }
+  filtroDepartamento = departamentos.value;
+  filtroCategoria = categorias.value;
   const novo = root.querySelector(".ativos-novo");
   if (novo) novo.disabled = false;
   ctx.setFab(state.canWrite ? { label: "Novo Ativo", icon: "add", onClick: () => openForm(null, lookups) } : null);

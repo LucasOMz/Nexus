@@ -168,6 +168,10 @@ class Usuario(BaseModel, Base):
     # Fica no banco, e não no navegador, para seguir a pessoa em qualquer
     # computador em que ela entrar.
     barra_favoritos: Mapped[str | None] = mapped_column(Text)
+
+    @property
+    def barra_personalizada(self) -> bool:
+        return self.barra_favoritos is not None
     # A ordem da lista INTEIRA da gaveta (JSON). É separada dos favoritos de
     # propósito: quem reordena mexe em todas as linhas, não só nas marcadas.
     barra_ordem: Mapped[str | None] = mapped_column(Text)

@@ -94,6 +94,27 @@ def _apply_extension(
 # ---------------------------------------------------------------------------
 # Listagem + Dashboard
 # ---------------------------------------------------------------------------
+def _filtrar_busca_ativos(consulta, busca: str):
+    termo = f"%{busca}%"
+    return (
+        consulta.outerjoin(AtivoTI, AtivoTI.ativo_id == Ativo.id)
+        .outerjoin(AtivoImpressora, AtivoImpressora.ativo_id == Ativo.id)
+        .filter(
+            or_(
+                Ativo.patrimonio.ilike(termo),
+                Ativo.numero_serie.ilike(termo),
+                Ativo.modelo.ilike(termo),
+                Ativo.marca.ilike(termo),
+                AtivoTI.hostname.ilike(termo),
+                AtivoTI.ip.ilike(termo),
+                AtivoTI.mac_address.ilike(termo),
+                AtivoImpressora.hostname.ilike(termo),
+                AtivoImpressora.ip.ilike(termo),
+            )
+        )
+    )
+
+
 @router.get("", response_model=Page[AtivoOut])
 def list_ativos(
     dominio: Dominio | None = Query(default=None),
@@ -138,28 +159,7 @@ def list_ativos(
     if contrato_id is not None:
         q = q.filter(Ativo.contrato_id == contrato_id)
     if search:
-        like = f"%{search}%"
-        # O hostname vive na FICHA TÉCNICA, não no ativo: em TI (`AtivoTI`) ou
-        # em impressora (`AtivoImpressora`). Sem as duas junções, procurar por
-        # "NTAT" (notebook) ou "RTAT0001" (impressora) não achava nada — e é
-        # por esses nomes que as máquinas são conhecidas na rede.
-        q = (
-            q.outerjoin(AtivoTI, AtivoTI.ativo_id == Ativo.id)
-            .outerjoin(AtivoImpressora, AtivoImpressora.ativo_id == Ativo.id)
-            .filter(
-                or_(
-                    Ativo.patrimonio.ilike(like),
-                    Ativo.numero_serie.ilike(like),
-                    Ativo.modelo.ilike(like),
-                    Ativo.marca.ilike(like),
-                    AtivoTI.hostname.ilike(like),
-                    AtivoTI.ip.ilike(like),
-                    AtivoTI.mac_address.ilike(like),
-                    AtivoImpressora.hostname.ilike(like),
-                    AtivoImpressora.ip.ilike(like),
-                )
-            )
-        )
+        q = _filtrar_busca_ativos(q, search)
     if sort and sort.lstrip("-") in _SORT_FIELDS:
         col = getattr(Ativo, sort.lstrip("-"))
         q = q.order_by(col.desc() if sort.startswith("-") else col.asc())
@@ -661,6 +661,7 @@ class ExclusaoLoteIn(BaseModel):
     categoria_id: int | None = None
     departamento_id: int | None = None
     localizacao_id: int | None = None
+    forma_aquisicao: FormaAquisicao | None = None
     search: str | None = None
 
 
@@ -696,16 +697,10 @@ def excluir_lote(
             consulta = consulta.filter(Ativo.departamento_id == body.departamento_id)
         if body.localizacao_id is not None:
             consulta = consulta.filter(Ativo.localizacao_id == body.localizacao_id)
+        if body.forma_aquisicao is not None:
+            consulta = consulta.filter(Ativo.forma_aquisicao == body.forma_aquisicao)
         if body.search:
-            like = f"%{body.search}%"
-            consulta = consulta.filter(
-                or_(
-                    Ativo.patrimonio.ilike(like),
-                    Ativo.numero_serie.ilike(like),
-                    Ativo.modelo.ilike(like),
-                    Ativo.marca.ilike(like),
-                )
-            )
+            consulta = _filtrar_busca_ativos(consulta, body.search)
     else:
         if not body.ids:
             raise HTTPException(400, "Nenhum ativo selecionado.")

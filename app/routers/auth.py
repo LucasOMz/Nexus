@@ -256,6 +256,7 @@ class PreferenciasUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     barra_favoritos: list[str] | None = None
+    barra_padrao: bool = False
     # Ordem da lista inteira da gaveta. Separada dos favoritos: quem reordena
     # mexe em todas as linhas, não só nas marcadas.
     barra_ordem: list[str] | None = None
@@ -361,11 +362,14 @@ def salvar_preferencias(
     Só os campos enviados são alterados — marcar um favorito não apaga a ordem,
     e reordenar não desmarca nada.
     """
-    if body.barra_favoritos is not None:
+    if body.barra_padrao:
+        user.barra_favoritos = None
+        user.barra_ordem = None
+    elif body.barra_favoritos is not None:
         limpos = _limpar_lista(body.barra_favoritos)
-        user.barra_favoritos = json.dumps(limpos, ensure_ascii=False) if limpos else None
+        user.barra_favoritos = json.dumps(limpos, ensure_ascii=False)
 
-    if body.barra_ordem is not None:
+    if not body.barra_padrao and body.barra_ordem is not None:
         ordem = _limpar_lista(body.barra_ordem)
         user.barra_ordem = json.dumps(ordem, ensure_ascii=False) if ordem else None
 
@@ -398,6 +402,7 @@ def salvar_preferencias(
     db.commit()
     return {
         "barra_favoritos": json.loads(user.barra_favoritos) if user.barra_favoritos else [],
+        "barra_personalizada": user.barra_personalizada,
         "barra_ordem": json.loads(user.barra_ordem) if user.barra_ordem else [],
         "tema": user.tema,
         "paleta": user.paleta,

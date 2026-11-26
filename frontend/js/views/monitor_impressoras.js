@@ -63,13 +63,14 @@ export async function renderMonitor(root) {
 
   root.append(
     el("div", { class: "row between wrap monitor-topo", style: "gap:10px" },
-      el("div", {},
-        el("h1", { class: "page-title" }, "Monitor de impressoras"),
-        el("p", { class: "muted", style: "margin:4px 0 0" },
-          "Contador de páginas e suprimentos lidos direto da impressora, por SNMP. "
-          + "Os níveis são relidos a cada 15 segundos.")),
+      el("div", { class: "nexus-pagina-titulo" },
+        el("span", { class: "nexus-pagina-icone", html: icon("printerMonitor", 26) }),
+        el("div", {}, el("h1", { class: "page-title" }, "Monitor de impressoras"),
+          el("p", { class: "page-sub" }, "Acompanhe os contadores e níveis de suprimentos por SNMP."))),
       el("div", { class: "row wrap", style: "gap:8px" },
         el("span", { class: "chip ok", id: "mon-vivo" }, "atualizando"),
+        el("button", { class: "btn outline", type: "button", onclick: () => relerSuprimentos(caixa),
+          html: icon("refresh", 18) + " Atualizar leituras" }),
         state.canWrite
           ? el("button", { class: "btn filled", id: "mon-coletar",
               onclick: () => coletarTodas(caixa),
@@ -133,13 +134,12 @@ async function carregar(caixa) {
         + "informado à mão e os níveis de tonner não são lidos.")));
   }
 
+  const numeroAlertas = numero("—", "Com alertas", "reporte", "aviso");
+  const numeroOnline = numero("—", "Online por SNMP", "check", "ok");
   caixa.append(
-    el("div", { class: "resumo-numeros", style: "margin-bottom:18px" },
-      numero(d.total ?? 0, "Impressoras"),
-      numero(d.com_snmp ?? 0, "Com endereço", (d.com_snmp ?? 0) > 0 ? "ok" : ""),
-      numero((d.total ?? 0) - (d.com_snmp ?? 0), "Sem IP/hostname",
-        (d.total ?? 0) - (d.com_snmp ?? 0) > 0 ? "aviso" : ""),
-    ),
+    el("div", { class: "monitor-indicadores" }, numero(d.total ?? 0, "Impressoras", "printerMonitor"), numeroOnline, numeroAlertas),
+    el("p", { class: "muted monitor-cobertura" },
+      `${d.com_snmp ?? 0} com endereço · ${(d.total ?? 0) - (d.com_snmp ?? 0)} sem IP ou hostname`),
   );
 
   if (!d.itens?.length) {
@@ -152,23 +152,34 @@ async function carregar(caixa) {
   const lista = el("div", { class: "card monitor-lista" },
     el("h2", { class: "section-title" }, "Impressoras"));
   const painel = el("div", { class: "monitor-ficha" });
+  const busca = el("input", { class: "search-input", type: "search", placeholder: "Patrimônio, modelo, endereço ou departamento" });
+  const filtro = el("select", { class: "search-input" },
+    ...[["", "Todos os estados"], ["alerta", "Com alertas"], ["lida", "Com leitura"], ["sem-leitura", "Sem leitura"], ["sem-endereco", "Sem IP ou hostname"]]
+      .map(([value, rotulo]) => el("option", { value }, rotulo)));
+  const vazio = el("p", { class: "muted", hidden: true, role: "status" }, "Nenhuma impressora corresponde aos filtros.");
+  lista.append(el("div", { class: "monitor-filtros" }, el("label", {}, "Buscar", busca), el("label", {}, "Estado da leitura", filtro)));
+  lista.append(el("div", { class: "monitor-lista-colunas", "aria-hidden": "true" },
+    el("span", {}, ""), el("span", {}, "Patrimônio"), el("span", {}, "Modelo"), el("span", {}, "Departamento"), el("span", {}, "Estado")));
   const registros = d.itens.map(p => {
     const id = String(p.ativo_id);
-    const estado = el("small", { class: "monitor-estado", "data-monitor-estado": id },
+    const estado = el("small", { class: "monitor-estado", "data-monitor-estado": id, "data-estado": p.com_snmp ? "pendente" : "sem-endereco" },
       p.com_snmp ? "Aguardando leitura" : "Sem IP/hostname");
     const botao = el("button", { type: "button", class: "monitor-item", onclick: () => selecionar(id) },
-      el("span", { html: icon("print", 21) }),
-      el("span", {}, el("strong", {}, p.patrimonio || `Ativo #${id}`),
-        el("small", {}, [p.marca, p.modelo].filter(Boolean).join(" ") || "Sem modelo")),
+      el("span", { class: "monitor-item-icone", html: icon("printerMonitor", 21) }),
+      el("strong", {}, p.patrimonio || `Ativo #${id}`),
+      el("span", { class: "monitor-item-modelo" }, [p.marca, p.modelo].filter(Boolean).join(" ") || "Sem modelo"),
+      el("span", { class: "monitor-item-departamento" }, p.departamento || "—"),
       estado);
     const ficha = cartao(p, caixa);
     lista.append(botao);
     painel.append(ficha);
-    return { id, botao, ficha };
+    const termos = normalizarBusca([p.patrimonio, p.marca, p.modelo, p.endereco, p.departamento].filter(Boolean).join(" "));
+    return { id, botao, ficha, estado, termos };
   });
+  lista.append(vazio);
 
   function selecionar(id) {
-    caixa.dataset.impressora = id;
+    if (id) caixa.dataset.impressora = id;
     for (const registro of registros) {
       const atual = registro.id === id;
       registro.botao.setAttribute("aria-pressed", String(atual));
@@ -176,19 +187,44 @@ async function carregar(caixa) {
     }
   }
 
-  const atual = registros.find(r => r.id === caixa.dataset.impressora) || registros[0];
-  selecionar(atual.id);
-  caixa.append(el("div", { class: "monitor-layout" }, lista, painel));
+  function filtrar() {
+    const consulta = normalizarBusca(busca.value);
+    for (const r of registros) {
+      r.botao.hidden = !r.termos.includes(consulta) || (Boolean(filtro.value) && r.estado.dataset.estado !== filtro.value);
+    }
+    const visiveis = registros.filter(r => !r.botao.hidden);
+    vazio.hidden = visiveis.length > 0;
+    selecionar((visiveis.find(r => r.id === caixa.dataset.impressora) || visiveis[0])?.id);
+  }
+
+  const layout = el("div", { class: "monitor-layout" }, lista, painel);
+  layout.addEventListener("leiturasatualizadas", () => {
+    const alertas = registros.filter(r => r.estado.dataset.estado === "alerta").length;
+    const leiturasValidas = registros.some(r => ["lida", "alerta"].includes(r.estado.dataset.estado));
+    const online = registros.filter(r => r.estado.dataset.online === "true").length;
+    const houveVerificacao = registros.some(r => r.estado.dataset.online !== undefined);
+    numeroAlertas.querySelector(".numero-valor").textContent = leiturasValidas ? String(alertas) : "—";
+    numeroOnline.querySelector(".numero-valor").textContent = houveVerificacao ? String(online) : "—";
+    if (filtro.value) filtrar();
+  });
+  busca.addEventListener("input", filtrar);
+  filtro.addEventListener("change", filtrar);
+  filtrar();
+  caixa.append(layout);
 
   // A primeira leitura de suprimentos acontece logo depois de pintar os
   // cartões — assim a tela aparece rápido e os níveis preenchem em seguida.
   relerSuprimentos(caixa);
 }
 
-function numero(valor, rotulo, tom = "") {
-  return el("div", { class: `numero ${tom}` },
-    el("span", { class: "numero-valor" }, String(valor)),
-    el("span", { class: "numero-rotulo" }, rotulo));
+function normalizarBusca(valor) {
+  return valor.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
+}
+
+function numero(valor, rotulo, icone, tom = "") {
+  return el("div", { class: `card monitor-indicador ${tom}` },
+    el("span", { class: "monitor-indicador-icone", html: icon(icone, 25) }),
+    el("div", {}, el("span", {}, rotulo), el("strong", { class: "numero-valor" }, String(valor))));
 }
 
 // ---------------------------------------------------------------------------
@@ -216,6 +252,10 @@ function cartao(p, caixa) {
       ),
       el("div", { class: "muted mon-sub" },
         [p.marca, p.modelo].filter(Boolean).join(" ") || "—"),
+      el("dl", { class: "monitor-ficha-dados" },
+        el("div", {}, el("dt", {}, "Departamento"), el("dd", {}, p.departamento || "Sem departamento")),
+        el("div", {}, el("dt", {}, "Última coleta do contador"), el("dd", {}, p.ultima_leitura_em ? fmtDate(p.ultima_leitura_em, true) : "Sem coleta")),
+      ),
 
       el("div", { class: "mon-suprimentos", "data-suprimentos": p.com_snmp ? p.ativo_id : null },
         p.com_snmp
@@ -260,7 +300,8 @@ async function coletarUma(evento, ativoId, caixa) {
 // ---------------------------------------------------------------------------
 async function relerSuprimentos(caixa) {
   const alvos = [...caixa.querySelectorAll("[data-suprimentos]")];
-  if (!alvos.length) return;
+  if (!alvos.length || caixa.dataset.lendo) return;
+  caixa.dataset.lendo = "true";
 
   const chip = document.getElementById("mon-vivo");
   if (chip) chip.textContent = "lendo…";
@@ -269,19 +310,28 @@ async function relerSuprimentos(caixa) {
   // outras de mostrar o nível — e a que falhou precisa dizer isso no lugar
   // onde o nível apareceria.
   const resultados = await Promise.allSettled(
-    alvos.map((a) => api.get(`/monitor/impressoras/${a.dataset.suprimentos}/alertas`))
+    alvos.map(a => state.podeInventario("impressora")
+      ? consultarSituacaoImpressora(a.dataset.suprimentos)
+      : api.get(`/monitor/impressoras/${a.dataset.suprimentos}/alertas`))
   );
 
   resultados.forEach((r, i) => {
     const alvo = alvos[i];
     if (!alvo) return;
+    if (!caixa.contains(alvo)) return;
     const estado = caixa.querySelector(`[data-monitor-estado="${alvo.dataset.suprimentos}"]`);
     if (estado) {
       const suprimentos = r.value?.suprimentos || [];
       const alerta = suprimentos.some(s => ["atencao", "critico", "vazio"].includes(s.situacao));
+      const comunicacao = r.value?.comunicacao;
       estado.textContent = r.status === "rejected" ? "Leitura indisponível" : alerta ? "Alerta de suprimento"
-        : suprimentos.length ? "Suprimentos lidos" : "Sem leitura de suprimentos";
+        : comunicacao === "online" ? "Online" : comunicacao === "sem_resposta" ? "Sem resposta"
+          : suprimentos.length ? "Suprimentos lidos" : "Sem leitura de suprimentos";
       estado.classList.toggle("aviso", alerta);
+      estado.classList.toggle("ok", comunicacao === "online" && !alerta);
+      if (["online", "sem_resposta"].includes(comunicacao)) estado.dataset.online = String(comunicacao === "online");
+      else delete estado.dataset.online;
+      estado.dataset.estado = alerta ? "alerta" : comunicacao === "online" || suprimentos.length ? "lida" : "sem-leitura";
     }
     alvo.innerHTML = "";
 
@@ -299,9 +349,11 @@ async function relerSuprimentos(caixa) {
     alvo.append(...sup.map((s) => barraSuprimento(s)));
   });
 
+  caixa.querySelector(".monitor-layout")?.dispatchEvent(new Event("leiturasatualizadas"));
   if (chip) {
     chip.textContent = `atualizado ${new Date().toLocaleTimeString("pt-BR")}`;
   }
+  delete caixa.dataset.lendo;
 }
 
 /**
@@ -312,13 +364,16 @@ async function relerSuprimentos(caixa) {
  * outras usam a mesma faixa para "desconhecido" — quem decide o que é crítico
  * é a regra do servidor, aplicada uma vez, e não uma conta refeita aqui.
  */
-function barraSuprimento(s) {
+export function barraSuprimento(s) {
   const pct = s.percentual;
   const tom = s.situacao === "ok" ? "ok"
     : s.situacao === "atencao" ? "aviso"
     : ["critico", "vazio"].includes(s.situacao) ? "erro" : "info";
 
-  return el("div", { class: "mon-sup" },
+  const descricao = normalizarBusca(s.descricao || "");
+  const cor = descricao.match(/\b(cyan|ciano|magenta|yellow|amarelo|black|preto)\b/)?.[0];
+  const cores = { cyan: "#007ea5", ciano: "#007ea5", magenta: "#c12474", yellow: "#b68100", amarelo: "#b68100", black: "#34403b", preto: "#34403b" };
+  return el("div", { class: "mon-sup", style: cor ? `--monitor-toner: ${cores[cor]}` : null },
     el("div", { class: "mon-sup-topo" },
       el("span", { class: "mon-sup-nome", title: s.descricao || "" },
         s.descricao || `Suprimento ${s.indice}`),
@@ -334,7 +389,11 @@ function barraSuprimento(s) {
 // ---------------------------------------------------------------------------
 // Detalhes — os dados do SNMP separados por categoria
 // ---------------------------------------------------------------------------
-export function abrirMonitoramentoImpressora(ativoId, nome, signal) {
+export function consultarSituacaoImpressora(ativoId) {
+  return api.get(`/monitor/impressoras/${ativoId}/situacao`);
+}
+
+export function abrirMonitoramentoImpressora(ativoId, nome, signal, leituraInicial = null) {
   const focoAnterior = document.activeElement;
   const titulo = `Monitoramento · ${nome || `Ativo #${ativoId}`}`;
   const status = el("p", { class: "muted", role: "status" });
@@ -368,7 +427,9 @@ export function abrirMonitoramentoImpressora(ativoId, nome, signal) {
     status.textContent = "Consultando a impressora…";
     dados.replaceChildren();
     try {
-      const leitura = await api.get(`/monitor/impressoras/${ativoId}/situacao`);
+      const pedido = leituraInicial || consultarSituacaoImpressora(ativoId);
+      leituraInicial = null;
+      const leitura = await pedido;
       if (!janela.overlay.isConnected) return;
       const [tom, mensagem] = comunicacaoImpressora[leitura.comunicacao] || comunicacaoImpressora.falha_na_consulta;
       status.replaceChildren(el("span", { class: `chip ${tom}` }, mensagem),
@@ -382,7 +443,7 @@ export function abrirMonitoramentoImpressora(ativoId, nome, signal) {
   }
 }
 
-const comunicacaoImpressora = {
+export const comunicacaoImpressora = {
   online: ["ok", "Online · respondeu por SNMP"],
   sem_resposta: ["aviso", "Sem resposta por SNMP"],
   sem_endereco: ["info", "Sem IP ou hostname cadastrado"],
