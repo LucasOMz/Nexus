@@ -371,6 +371,15 @@ body:has(> .chat-ia) > .fab { right: 100px; }
 .chat-ia-acao { width: 38px; height: 38px; background: transparent; color: inherit; }
 .chat-ia-acao:hover { background: var(--md-sys-color-surface); }
 .chat-ia-log { overflow: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 12px; padding: 16px; }
+.chat-ia-painel > [hidden] { display: none; }
+.chat-ia-conversa {
+  flex: none; display: grid; gap: 4px; padding: 10px 12px; text-align: left; overflow-wrap: anywhere;
+  color: inherit; background: var(--md-sys-color-surface-container); border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 12px; font: inherit; font-size: .875rem; cursor: pointer;
+}
+.chat-ia-conversa:hover { border-color: var(--md-sys-color-primary); }
+.chat-ia-conversa small { color: var(--md-sys-color-on-surface-variant); }
+.chat-ia-exportar { display: block; }
 .chat-ia-mensagem {
   flex: none; align-self: flex-start; max-width: 100%; padding: 10px 12px; border-radius: 14px;
   background: var(--md-sys-color-surface-container); white-space: pre-line; overflow-wrap: anywhere;

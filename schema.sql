@@ -93,6 +93,20 @@ CREATE TABLE sessoes_usuarios (
 CREATE INDEX ix_sessoes_usuarios_usuario_id ON sessoes_usuarios(usuario_id);
 CREATE INDEX ix_sessoes_usuarios_expira_em ON sessoes_usuarios(expira_em);
 
+CREATE TABLE chat_inventario_mensagens (
+    id           SERIAL PRIMARY KEY,
+    conversa_id  UUID NOT NULL,
+    usuario_id   INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    planta_id    INTEGER REFERENCES plantas(id) ON DELETE CASCADE,
+    inventarios  VARCHAR(128) NOT NULL,
+    pergunta     TEXT NOT NULL,
+    resposta     TEXT NOT NULL,
+    resultados   JSON NOT NULL,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX ix_chat_inventario_escopo
+    ON chat_inventario_mensagens(usuario_id, planta_id, inventarios, conversa_id, id);
+
 CREATE TABLE produtos (
     id              SERIAL PRIMARY KEY,
     sku             VARCHAR(80) NOT NULL UNIQUE,

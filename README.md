@@ -98,8 +98,11 @@ O botão redondo no canto inferior direito abre o chat para quem tem acesso a
 Ativos. É possível consultar contagens, listas e percentuais em linguagem
 natural e continuar com perguntas como “e só os notebooks?”. A API do Nexus
 executa as consultas de leitura dentro da planta selecionada e dos inventários
-permitidos para a conta. As perguntas recentes ficam na memória da página e os
-detalhes dos equipamentos são exibidos pelo próprio Nexus.
+permitidos para a conta. O histórico salva perguntas e respostas no Nexus,
+vinculadas à sua conta e ao escopo da consulta. Abra o ícone de histórico para
+retomar uma conversa. Cada resposta oferece **Exportar CSV**, que inclui a
+pergunta, a resposta e os dados exibidos, incluindo a lista de equipamentos
+quando ela estiver aberta.
 
 Para conectar o Ollama, abra **Administração → Integrações → Ollama**. Informe
 o endereço na rede interna (por exemplo, `http://192.168.7.50:11434`), clique

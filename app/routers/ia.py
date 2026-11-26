@@ -2,14 +2,16 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from time import monotonic
 from typing import Annotated
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -18,6 +20,7 @@ from app.core.permissoes import permissoes_efetivas
 from app.core.planta import planta_ativa_obrigatoria
 from app.core.rate_limit import SlidingWindowLimiter, redis_contadores
 from app.database import get_db
+from app.models.chat_ia import ChatInventarioMensagem as MensagemChat
 from app.models.core import Usuario
 from app.services.inventario_ia import ConsultaInventario, FUSO_INVENTARIO, executar_consulta
 from app.services.ollama import DestinoOllama, config_efetiva, destino_ollama
@@ -53,6 +56,7 @@ class EntradaChat(BaseModel):
     model_config = ConfigDict(extra="forbid")
     pergunta: Pergunta
     historico: list[Pergunta] = Field(default_factory=list, max_length=6)
+    conversa_id: UUID | None = None
 
 
 def _perguntar(
@@ -85,7 +89,74 @@ def _perguntar(
 
 
 def _dominios(user: Usuario) -> tuple[str, ...]:
-    return tuple(permissoes_efetivas(user)["inventarios"])
+    return tuple(sorted(set(permissoes_efetivas(user)["inventarios"])))
+
+
+CursorHistorico = Annotated[int | None, Query(ge=1, le=2147483647)]
+
+
+def _historico(db: Session, usuario_id: int, planta_id: int | None, dominios: tuple[str, ...]):
+    return db.query(MensagemChat).filter(MensagemChat.usuario_id == usuario_id, MensagemChat.planta_id == planta_id,
+                                         MensagemChat.inventarios == ",".join(dominios))
+
+
+def _data_utc(data: datetime) -> datetime:
+    return data if data.tzinfo else data.replace(tzinfo=timezone.utc)
+
+
+@router.get("/conversas")
+def listar_conversas(
+    response: Response,
+    antes_de: CursorHistorico = None,
+    user: Usuario = Depends(_usuario_inventario),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
+    db: Session = Depends(get_db),
+) -> dict:
+    limite = 20
+    base = _historico(db, user.id, planta_id, _dominios(user))
+    grupos = base.with_entities(
+        func.min(MensagemChat.id).label("primeira"), func.max(MensagemChat.id).label("ultima"),
+        func.max(MensagemChat.created_at).label("data"),
+    ).group_by(MensagemChat.conversa_id)
+    if antes_de is not None:
+        grupos = grupos.having(func.max(MensagemChat.id) < antes_de)
+    ordenadas = grupos.subquery()
+    linhas = (
+        db.query(MensagemChat.conversa_id, func.substr(MensagemChat.pergunta, 1, 120).label("titulo"),
+                 ordenadas.c.ultima, ordenadas.c.data)
+        .join(ordenadas, MensagemChat.id == ordenadas.c.primeira)
+        .order_by(ordenadas.c.ultima.desc()).limit(limite + 1).all()
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return {
+        "conversas": [{"id": linha.conversa_id, "titulo": linha.titulo, "atualizada_em": _data_utc(linha.data)}
+                      for linha in linhas[:limite]],
+        "proximo": linhas[limite - 1].ultima if len(linhas) > limite else None,
+    }
+
+
+@router.get("/conversas/{conversa_id}")
+def ler_conversa(
+    conversa_id: UUID,
+    response: Response,
+    antes_de: CursorHistorico = None,
+    user: Usuario = Depends(_usuario_inventario),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
+    db: Session = Depends(get_db),
+) -> dict:
+    limite = 20
+    base = _historico(db, user.id, planta_id, _dominios(user)).filter(MensagemChat.conversa_id == conversa_id)
+    if antes_de is not None:
+        base = base.filter(MensagemChat.id < antes_de)
+    linhas = base.order_by(MensagemChat.id.desc()).limit(limite + 1).all()
+    if not linhas and antes_de is None:
+        raise HTTPException(404, "Conversa não encontrada neste escopo.")
+    response.headers["Cache-Control"] = "no-store"
+    return {
+        "mensagens": [{"pergunta": linha.pergunta, "resposta": linha.resposta, "resultados": linha.resultados,
+                       "criada_em": _data_utc(linha.created_at)} for linha in reversed(linhas[:limite])],
+        "proximo": linhas[limite - 1].id if len(linhas) > limite else None,
+    }
 
 
 @router.post("/chat")
@@ -98,22 +169,42 @@ def chat(
     config = config_efetiva(db)
     if not config.url:
         raise HTTPException(503, "O chat ainda não está configurado. Peça à TI para conectar o Ollama em Administração.")
-    if not _limite_chat.is_allowed(str(user.id)):
+    usuario_id = user.id
+    if not _limite_chat.is_allowed(str(usuario_id)):
         raise HTTPException(429, "Muitas perguntas em pouco tempo. Aguarde um minuto para tentar novamente.",
                             headers={"Retry-After": "60"})
     dominios = _dominios(user)
+    conversa_id = entrada.conversa_id or uuid4()
+    historico = entrada.historico
+    if entrada.conversa_id is not None:
+        anteriores = _historico(db, usuario_id, planta_id, dominios).with_entities(MensagemChat.pergunta).filter(
+            MensagemChat.conversa_id == conversa_id,
+        ).order_by(MensagemChat.id.desc()).limit(6).all()
+        if not anteriores:
+            raise HTTPException(404, "Conversa não encontrada neste escopo.")
+        historico = [linha.pergunta for linha in reversed(anteriores)]
     db.rollback()  # Libera a conexão do banco enquanto o modelo processa a pergunta.
+
     destino = destino_ollama(config.url, rede_local=config.origem == "administracao")
+    dados = _responder(db, destino, config.modelo, entrada.pergunta, historico, planta_id, dominios)
+    db.add(MensagemChat(conversa_id=conversa_id, usuario_id=usuario_id, planta_id=planta_id, inventarios=",".join(dominios),
+                        pergunta=entrada.pergunta, resposta=dados["resposta"], resultados=dados["resultados"]))
+    db.commit()
+    return {"conversa_id": conversa_id, **dados}
+
+
+def _responder(db: Session, destino: DestinoOllama, modelo: str, pergunta: str, historico: list[str],
+               planta_id: int | None, dominios: tuple[str, ...]) -> dict:
     hoje = datetime.now(ZoneInfo(FUSO_INVENTARIO)).date()
     mensagens = [
         {"role": "system", "content": f"{_INSTRUCOES}\nData de hoje: {hoje.isoformat()}."},
-        {"role": "user", "content": json.dumps({"perguntas_anteriores": entrada.historico, "pergunta_atual": entrada.pergunta}, ensure_ascii=False)},
+        {"role": "user", "content": json.dumps({"perguntas_anteriores": historico, "pergunta_atual": pergunta}, ensure_ascii=False)},
     ]
     prazo = monotonic() + settings.nexus_ollama_timeout
     resultados = []
     retorno_ferramentas = []
     with httpx.Client(trust_env=False) as client:
-        mensagem = _perguntar(client, destino, mensagens, prazo, modelo=config.modelo, ferramentas=True)
+        mensagem = _perguntar(client, destino, mensagens, prazo, modelo=modelo, ferramentas=True)
         chamadas = mensagem.get("tool_calls") or []
         if not isinstance(chamadas, list):
             raise HTTPException(502, "O modelo do Ollama devolveu uma consulta inválida.")
@@ -148,7 +239,7 @@ def chat(
         mensagens.append({"role": "user", "content": "O Nexus executou as consultas. Resuma os resultados abaixo em até três frases, sem criar valores.\n"
                          + json.dumps(retorno_ferramentas, ensure_ascii=False)})
         try:
-            final = _perguntar(client, destino, mensagens, prazo, modelo=config.modelo, ferramentas=False).get("content")
+            final = _perguntar(client, destino, mensagens, prazo, modelo=modelo, ferramentas=False).get("content")
             if isinstance(final, str) and final.strip():
                 texto = final.strip()[:4000]
         except HTTPException:
