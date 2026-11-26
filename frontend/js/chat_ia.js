@@ -5,6 +5,12 @@ import { el, icon } from "./ui.js";
 
 const numero = new Intl.NumberFormat("pt-BR");
 const dataConversa = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" });
+const atributosTecnicos = {
+  ram_gb: ["RAM", " GB"],
+  armazenamento_gb: ["Armazenamento", " GB"],
+  cpu: ["Processador", ""],
+  so: ["Sistema operacional", ""],
+};
 
 function botaoIcone(icone, rotulo, classe, tipo = "button") {
   return el("button", { type: tipo, class: classe, title: rotulo, "aria-label": rotulo, html: icon(icone, 20) });
@@ -25,7 +31,14 @@ function listaEquipamentos(dados) {
   for (const ativo of equipamentos) {
     const nome = ativo.hostname || ativo.modelo || `Equipamento #${ativo.id}`;
     const detalhes = [ativo.patrimonio ? `Patrimônio ${ativo.patrimonio}` : "Sem patrimônio", ativo.departamento, ativo.planta];
-    lista.append(el("li", {}, el("strong", {}, nome), el("small", {}, detalhes.filter(Boolean).join(" · "))));
+    const linha = el("li", {}, el("strong", {}, nome), el("small", {}, detalhes.filter(Boolean).join(" · ")));
+    for (const campo of dados.atributos || []) {
+      const [rotulo, unidade] = atributosTecnicos[campo];
+      const valor = ativo[campo];
+      const texto = valor == null || valor === "" ? "Sem informação cadastrada" : `${valor}${unidade}`;
+      linha.append(el("small", {}, `${rotulo} · ${texto}`));
+    }
+    lista.append(linha);
   }
   const legenda = total
     ? `Mostrando ${numero.format(equipamentos.length)} de ${numero.format(total)} equipamentos`
@@ -34,8 +47,8 @@ function listaEquipamentos(dados) {
 }
 
 export function criarChatIa() {
-  const elemento = el("aside", { class: "chat-ia", "aria-label": "Assistente de inventário" });
-  const abrir = botaoIcone("chat", "Abrir chat do inventário", "chat-ia-toggle");
+  const elemento = el("aside", { class: "chat-ia", "aria-label": "Assistente do Nexus" });
+  const abrir = botaoIcone("chat", "Abrir assistente do Nexus", "chat-ia-toggle");
   abrir.setAttribute("aria-controls", "chat-ia-painel");
   const limpar = botaoIcone("plus", "Nova conversa", "chat-ia-acao");
   const historico = botaoIcone("historico", "Histórico de conversas", "chat-ia-acao");
@@ -44,12 +57,12 @@ export function criarChatIa() {
   const fechar = botaoIcone("close", "Fechar chat", "chat-ia-acao");
   const log = el("div", { class: "chat-ia-log", role: "log", "aria-label": "Conversa" });
   const listaHistorico = el("div", { id: "chat-ia-historico", class: "chat-ia-log", hidden: true });
-  const entrada = el("textarea", { rows: 2, maxlength: 1000, "aria-label": "Pergunta ao inventário", placeholder: "Pergunte sobre seus equipamentos…" });
+  const entrada = el("textarea", { rows: 2, maxlength: 1000, "aria-label": "Pergunta ao Nexus", placeholder: "Pergunte sobre telas, recursos ou dados…" });
   const enviar = botaoIcone("enviar", "Enviar pergunta", "chat-ia-enviar", "submit");
   const formulario = el("form", { class: "chat-ia-form" }, entrada, enviar);
   const painel = el("section", { id: "chat-ia-painel", class: "chat-ia-painel", "aria-labelledby": "chat-ia-titulo", hidden: true },
     el("header", { class: "chat-ia-topo" },
-      el("h2", { id: "chat-ia-titulo" }, "Chat do inventário"),
+      el("h2", { id: "chat-ia-titulo" }, "Assistente do Nexus"),
       historico, limpar, fechar),
     log, listaHistorico, formulario);
   elemento.append(painel, abrir);
@@ -62,7 +75,7 @@ export function criarChatIa() {
   function mostrar(visivel) {
     painel.hidden = !visivel;
     abrir.setAttribute("aria-expanded", String(visivel));
-    abrir.setAttribute("aria-label", visivel ? "Fechar chat do inventário" : "Abrir chat do inventário");
+    abrir.setAttribute("aria-label", visivel ? "Fechar assistente do Nexus" : "Abrir assistente do Nexus");
     abrir.title = abrir.getAttribute("aria-label");
     abrir.innerHTML = icon(visivel ? "close" : "chat", 24);
     if (visivel) {
@@ -88,7 +101,7 @@ export function criarChatIa() {
     entrada.value = "";
     enviar.disabled = historico.disabled = limpar.disabled = false;
     log.replaceChildren();
-    mensagem("Pergunte sobre o inventário. Por exemplo: quantos computadores estão sem patrimônio por departamento?");
+    mensagem("Pergunte como usar o Nexus, onde encontrar uma tela ou quais dados estão cadastrados.");
   }
 
   function exibirHistorico(visivel) {
@@ -101,6 +114,24 @@ export function criarChatIa() {
 
   function resultado(dados, atual, historica) {
     const bloco = el("div", { class: "chat-ia-resultado" });
+    if (dados.tipo === "informacoes") {
+      for (const secao of dados.blocos || []) {
+        const lista = el("dl", { class: "chat-ia-ficha" });
+        for (const [campo, valor] of secao.linhas) lista.append(el("dt", {}, campo), el("dd", {}, valor));
+        bloco.append(el("strong", {}, secao.titulo), lista);
+      }
+      for (const link of dados.links || []) {
+        const rota = /^#\/([a-z]+)(?:\?[^#]*)?$/.exec(link.rota);
+        if (rota?.[1] !== link.modulo || !state.podeModulo(link.modulo)) continue;
+        if (link.dominio && !state.podeInventario(link.dominio)) continue;
+        bloco.append(el("a", { class: "chat-ia-ver", href: link.rota, onclick: ev => {
+          if (ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.altKey) return;
+          if (link.dominio) state.dominio = link.dominio;
+          mostrar(false);
+        } }, link.rotulo));
+      }
+      return bloco.childNodes.length ? bloco : null;
+    }
     if (dados.aviso) {
       bloco.append(el("p", {}, dados.aviso));
       return bloco;
@@ -152,7 +183,10 @@ export function criarChatIa() {
 
   function montarResposta(turno, atual, historica = false) {
     const resposta = el("div", { class: "chat-ia-mensagem" }, turno.resposta);
-    for (const item of turno.resultados) resposta.append(resultado(item, atual, historica));
+    for (const item of turno.resultados) {
+      const conteudo = resultado(item, atual, historica);
+      if (conteudo) resposta.append(conteudo);
+    }
     resposta.append(el("button", { type: "button", class: "chat-ia-ver chat-ia-exportar",
       onclick: () => baixarCsv(turno, historica) }, "Exportar CSV"));
     return resposta;
@@ -263,7 +297,7 @@ export function criarChatIa() {
     mensagem(pergunta, "chat-ia-pergunta");
     entrada.value = "";
     enviar.disabled = historico.disabled = limpar.disabled = true;
-    const aguardando = mensagem("Consultando o inventário…", "chat-ia-aguarde");
+    const aguardando = mensagem("Consultando o Nexus…", "chat-ia-aguarde");
     try {
       const dados = await api.request("POST", "/ia/chat", { body, enfileirar: false, prazoMs: 315000 });
       if (atual !== geracao || !elemento.isConnected) return;
@@ -286,7 +320,7 @@ export function criarChatIa() {
   return {
     elemento,
     atualizarEscopo() {
-      const chave = JSON.stringify([state.user?.id, state.plantaAtiva, state.user?.permissoes_efetivas?.inventarios]);
+      const chave = JSON.stringify([state.user?.id, state.plantaAtiva, state.perms.inventarios, state.perms.modulos]);
       if (chave !== escopo) {
         escopo = chave;
         reiniciar();

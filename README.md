@@ -92,13 +92,15 @@ Os **filtros valem para o relatório inteiro** — período, unidade, forma de
 aquisição e contrato. Não existe gráfico filtrado ao lado de gráfico sem
 filtro: os números pareceriam certos e não seriam.
 
-### Chat do inventário
+### Assistente do Nexus
 
-O botão redondo no canto inferior direito abre o chat para quem tem acesso a
-Ativos. É possível consultar contagens, listas e percentuais em linguagem
-natural e continuar com perguntas como “e só os notebooks?”. A API do Nexus
-executa as consultas de leitura dentro da planta selecionada e dos inventários
-permitidos para a conta. O histórico salva perguntas e respostas no Nexus,
+O botão redondo no canto inferior direito abre o assistente. Pergunte onde
+encontrar um recurso para receber instruções e links para as telas permitidas.
+O chat também consulta fichas de computadores e impressoras, níveis via SNMP,
+consumíveis, indicadores e contagens em linguagem natural. A API do Nexus
+executa as consultas de leitura dentro da planta, dos módulos e dos inventários
+permitidos para a conta. O saldo de consumíveis é consolidado na visão de todas
+as plantas. O histórico salva perguntas e respostas no Nexus,
 vinculadas à sua conta e ao escopo da consulta. Abra o ícone de histórico para
 retomar uma conversa. Cada resposta oferece **Exportar CSV**, que inclui a
 pergunta, a resposta e os dados exibidos, incluindo a lista de equipamentos

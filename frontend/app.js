@@ -719,16 +719,11 @@ function renderRoute(path) {
   }
 
   if (!shellBuilt) buildShell();
-  if (state.podeModulo("ativos")) {
-    if (!chatIa) {
-      chatIa = criarChatIa();
-      document.body.append(chatIa.elemento);
-    }
-    chatIa.atualizarEscopo();
-  } else if (chatIa) {
-    chatIa.elemento.remove();
-    chatIa = null;
+  if (!chatIa) {
+    chatIa = criarChatIa();
+    document.body.append(chatIa.elemento);
   }
+  chatIa.atualizarEscopo();
   ctx.setChrome(true);
   updateNav(path);
   updateBadge();

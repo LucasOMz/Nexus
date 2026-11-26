@@ -15,33 +15,53 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.core.deps import require_module
-from app.core.permissoes import permissoes_efetivas
+from app.core.deps import get_current_user, require_module
+from app.core.permissoes import eh_admin, permissoes_efetivas
 from app.core.planta import planta_ativa_obrigatoria
 from app.core.rate_limit import SlidingWindowLimiter, redis_contadores
 from app.database import get_db
 from app.models.chat_ia import ChatInventarioMensagem as MensagemChat
 from app.models.core import Usuario
-from app.services.inventario_ia import ConsultaInventario, FUSO_INVENTARIO, executar_consulta
+from app.services.conhecimento_ia import ConsultaTelas, orientar
+from app.services.dados_ia import (
+    ConsultaConsumiveis, ConsultaFicha, ConsultaIndicadores, consultar_consumiveis,
+    consultar_ficha, consultar_indicador, informacoes,
+)
+from app.services.inventario_ia import ConsultaInventario, FUSO_INVENTARIO, executar_consulta, resposta_ficha
 from app.services.ollama import DestinoOllama, config_efetiva, destino_ollama
 
 router = APIRouter(prefix="/ia", tags=["ia"])
 _usuario_inventario = require_module("ativos")
 _limite_chat = SlidingWindowLimiter(8, 60, redis=redis_contadores, grupo="ia_chat")
 _NOME_FERRAMENTA = "consultar_inventario"
-_FERRAMENTA = {"type": "function", "function": {
-    "name": _NOME_FERRAMENTA,
-    "description": "Consulta de leitura de equipamentos. Combine filtros, contagem, listagem, agrupamento e percentual.",
-    "parameters": ConsultaInventario.model_json_schema(),
-}}
-_INSTRUCOES = """Você é o chat de inventário do Nexus. Responda em português do Brasil.
-Para consultar dados do Nexus, sempre use consultar_inventario. Formule os filtros a partir do pedido e do
+_FERRAMENTAS = {
+    _NOME_FERRAMENTA: (ConsultaInventario, "Conte, liste, agrupe ou calcule percentuais no inventário de equipamentos."),
+    "consultar_ficha_ativo": (ConsultaFicha, "Leia a ficha de um computador ou impressora com patrimônio, série ou hostname exato."),
+    "consultar_consumiveis": (ConsultaConsumiveis, "Consulte o catálogo de consumíveis pelo SKU/nome, contagem, estoque ou mínimo."),
+    "consultar_indicador": (ConsultaIndicadores, "Leia quantidades ou resumos de manutenção, empréstimos, contratos, contagens, garantias ou financeiro."),
+    "orientar_nexus": (ConsultaTelas, "Explique como usar uma tela ou recurso do Nexus e forneça o link interno."),
+}
+_ESQUEMAS = [{"type": "function", "function": {
+    "name": nome, "description": descricao, "parameters": schema.model_json_schema(),
+}} for nome, (schema, descricao) in _FERRAMENTAS.items()]
+_INSTRUCOES = """Você é o assistente do Nexus. Responda em português do Brasil.
+Use orientar_nexus para onde clicar, como usar, telas e links (ex.: redefinir MFA de outra pessoa = admin_usuarios).
+Use consultar_consumiveis para catálogo, SKU, preço, estoque e entradas ou saídas de consumíveis.
+Use consultar_indicador para ordens de manutenção abertas, empréstimos atrasados, contratos a vencer, contagens, garantias e resumo financeiro.
+Use consultar_ficha_ativo para ficha completa e detalhes de um equipamento identificado.
+Para impressora identificada: contador para páginas, suprimentos para estoque de cartuchos cadastrados e
+comunicacao para online, SNMP, nível ou percentual de toner. Para computador: hardware, rede, software ou uso.
+Use consultar_inventario para contagens de equipamentos, listagens, agrupamentos e percentuais. Formule os filtros a partir do pedido e do
 histórico de perguntas. Cada conjunto de filtros é combinado por E. Você pode pedir até três consultas para comparar.
 Use o histórico para referências e continuações. Uma nova pergunta completa deve usar os próprios filtros.
 Se a pergunta citar uma planta ou um departamento, use os campos planta e departamento com operador igual
 e o nome ou a sigla que aparece na pergunta. Para contar ativos em geral, não filtre tipo_equipamento.
 Para patrimônio ausente, use campo patrimonio e operador vazio. Para PCs ou computadores, use tipo_equipamento igual
 a computador. O Nexus identifica computadores pelo hostname, pela categoria ou pelo sistema operacional cadastrado.
+Para listar um atributo técnico específico, pode usar consultar_inventario com operacao listar e o campo em atributos.
+RAM ou memória usa ram_gb, disco ou armazenamento usa armazenamento_gb, processador usa cpu e sistema operacional usa so.
+“Quantos GB de RAM tem o ativo ABC123?” pede a ficha. Use consultar_inventario com listar, atributos [ram_gb], filtro patrimonio igual a ABC123.
+Quando a pergunta identificar um ativo pelo patrimônio ou hostname, use o identificador exato sem acrescentar tipo de equipamento.
 'Em manutenção' é status igual a manutencao. Para equipamentos sem reportar pelo agente, use inventario_em antes_de;
 se o pedido incluir máquinas que nunca reportaram, consulte também inventario_em vazio. Use datas AAAA-MM-DD.
 Para proporções, use percentual e inclua o critério que conta como ocorrência em filtros_numerador. Em filtros ponha
@@ -69,10 +89,10 @@ def _perguntar(
     payload = {
         "model": modelo, "messages": mensagens,
         "stream": False, "think": False,
-        "options": {"temperature": 0, "num_predict": 420 if ferramentas else 220, "num_ctx": 4096},
+        "options": {"temperature": 0, "num_predict": 420 if ferramentas else 220, "num_ctx": 6144},
     }
     if ferramentas:
-        payload["tools"] = [_FERRAMENTA]
+        payload["tools"] = _ESQUEMAS
     try:
         resposta = destino.solicitar(client, "POST", "/api/chat", json=payload,
                                     timeout=httpx.Timeout(restante, connect=min(5, restante)))
@@ -93,6 +113,38 @@ def _dominios(user: Usuario) -> tuple[str, ...]:
     return tuple(sorted(set(permissoes_efetivas(user)["inventarios"])))
 
 
+def _modulos(user: Usuario) -> frozenset[str]:
+    modulos = set(permissoes_efetivas(user)["modulos"])
+    if eh_admin(user):
+        modulos.update({"admin", "avisos"})
+    return frozenset(modulos)
+
+
+def _mensagem_historico(linha: MensagemChat, modulos: frozenset[str]) -> dict:
+    autorizado = all(
+        set(resultado.get("modulos_dados", ["ativos"])) <= modulos for resultado in linha.resultados
+    )
+    return {"pergunta": linha.pergunta,
+            "resposta": linha.resposta if autorizado else "Sua conta não tem mais acesso aos dados desta resposta.",
+            "resultados": linha.resultados if autorizado else [], "criada_em": _data_utc(linha.created_at)}
+
+
+def _resumo_para_modelo(dados: dict) -> dict:
+    resumo = {campo: valor for campo, valor in dados.items() if campo not in {"equipamentos", "blocos", "links", "modulos_dados"}}
+    if "grupos" in resumo:
+        resumo["truncado"] = resumo["truncado"] or len(resumo["grupos"]) > 5
+        resumo["grupos"] = resumo["grupos"][:5]
+    if dados.get("atributos"):
+        resumo["atributos_por_ativo"] = [
+            {chave: ativo.get(chave) for chave in ("patrimonio", "hostname", *dados["atributos"])}
+            for ativo in dados["equipamentos"][:5]
+        ]
+    if dados.get("blocos"):
+        resumo["blocos"] = [{"titulo": bloco["titulo"], "linhas": bloco["linhas"][:8]} for bloco in dados["blocos"][:4]
+                            if bloco["titulo"] not in {"Rede", "Interfaces de rede", "Uso do equipamento"}]
+    return resumo
+
+
 CursorHistorico = Annotated[int | None, Query(ge=1, le=2147483647)]
 
 
@@ -109,7 +161,7 @@ def _data_utc(data: datetime) -> datetime:
 def listar_conversas(
     response: Response,
     antes_de: CursorHistorico = None,
-    user: Usuario = Depends(_usuario_inventario),
+    user: Usuario = Depends(get_current_user),
     planta_id: int | None = Depends(planta_ativa_obrigatoria),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -141,7 +193,7 @@ def ler_conversa(
     conversa_id: UUID,
     response: Response,
     antes_de: CursorHistorico = None,
-    user: Usuario = Depends(_usuario_inventario),
+    user: Usuario = Depends(get_current_user),
     planta_id: int | None = Depends(planta_ativa_obrigatoria),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -153,9 +205,9 @@ def ler_conversa(
     if not linhas and antes_de is None:
         raise HTTPException(404, "Conversa não encontrada neste escopo.")
     response.headers["Cache-Control"] = "no-store"
+    modulos = _modulos(user)
     return {
-        "mensagens": [{"pergunta": linha.pergunta, "resposta": linha.resposta, "resultados": linha.resultados,
-                       "criada_em": _data_utc(linha.created_at)} for linha in reversed(linhas[:limite])],
+        "mensagens": [_mensagem_historico(linha, modulos) for linha in reversed(linhas[:limite])],
         "proximo": linhas[limite - 1].id if len(linhas) > limite else None,
     }
 
@@ -163,7 +215,7 @@ def ler_conversa(
 @router.post("/chat")
 def chat(
     entrada: EntradaChat,
-    user: Usuario = Depends(_usuario_inventario),
+    user: Usuario = Depends(get_current_user),
     planta_id: int | None = Depends(planta_ativa_obrigatoria),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -175,6 +227,7 @@ def chat(
         raise HTTPException(429, "Muitas perguntas em pouco tempo. Aguarde um minuto para tentar novamente.",
                             headers={"Retry-After": "60"})
     dominios = _dominios(user)
+    modulos = _modulos(user)
     conversa_id = entrada.conversa_id or uuid4()
     historico = entrada.historico
     if entrada.conversa_id is not None:
@@ -187,7 +240,7 @@ def chat(
     db.rollback()  # Libera a conexão do banco enquanto o modelo processa a pergunta.
 
     destino = destino_ollama(config.url, rede_local=config.origem == "administracao")
-    dados = _responder(db, destino, config.modelo, entrada.pergunta, historico, planta_id, dominios)
+    dados = _responder(db, destino, config.modelo, entrada.pergunta, historico, planta_id, dominios, user, modulos)
     db.add(MensagemChat(conversa_id=conversa_id, usuario_id=usuario_id, planta_id=planta_id, inventarios=",".join(dominios),
                         pergunta=entrada.pergunta, resposta=dados["resposta"], resultados=dados["resultados"]))
     db.commit()
@@ -195,7 +248,7 @@ def chat(
 
 
 def _responder(db: Session, destino: DestinoOllama, modelo: str, pergunta: str, historico: list[str],
-               planta_id: int | None, dominios: tuple[str, ...]) -> dict:
+               planta_id: int | None, dominios: tuple[str, ...], user: Usuario, modulos: frozenset[str]) -> dict:
     hoje = datetime.now(ZoneInfo(FUSO_INVENTARIO)).date()
     mensagens = [
         {"role": "system", "content": f"{_INSTRUCOES}\nData de hoje: {hoje.isoformat()}."},
@@ -212,26 +265,37 @@ def _responder(db: Session, destino: DestinoOllama, modelo: str, pergunta: str, 
         for chamada in chamadas[:3]:
             try:
                 funcao = chamada["function"]
-                if funcao["name"] != _NOME_FERRAMENTA:
-                    continue
-                consulta = ConsultaInventario.model_validate(funcao["arguments"])
+                nome = funcao["name"]
+                schema = _FERRAMENTAS[nome][0]
+                consulta = schema.model_validate(funcao["arguments"])
             except (ValidationError, TypeError, KeyError):
                 continue
-            dados = executar_consulta(db, consulta, planta_id, dominios)
-            resultados.append({"consulta": consulta.model_dump(mode="json"), **dados})
-            # A lista detalhada é exibida pelo Nexus. O modelo recebe os agregados.
-            resumo = {campo: valor for campo, valor in dados.items() if campo != "equipamentos"}
-            if "grupos" in resumo:
-                resumo["truncado"] = resumo["truncado"] or len(resumo["grupos"]) > 5
-                resumo["grupos"] = resumo["grupos"][:5]
-            retorno_ferramentas.append({"consulta": consulta.model_dump(mode="json"), **resumo})
+            if isinstance(consulta, ConsultaTelas):
+                dados = orientar(consulta, modulos)
+            elif isinstance(consulta, ConsultaIndicadores):
+                dados = consultar_indicador(db, consulta, planta_id, dominios, modulos)
+            elif isinstance(consulta, ConsultaConsumiveis):
+                dados = (consultar_consumiveis(db, consulta, planta_id, dominios, modulos) if "produtos" in modulos
+                         else informacoes("Sua conta não tem acesso a Consumíveis."))
+            elif "ativos" not in modulos:
+                dados = informacoes("Sua conta não tem acesso a Ativos.")
+            elif isinstance(consulta, ConsultaFicha):
+                dados = consultar_ficha(db, consulta, planta_id, dominios, user, modulos)
+            else:
+                dados = {"consulta": consulta.model_dump(mode="json"), **executar_consulta(db, consulta, planta_id, dominios)}
+            resultados.append(dados)
+            retorno_ferramentas.append({"consulta": consulta.model_dump(mode="json"), **_resumo_para_modelo(dados)})
         db.rollback()
         if not resultados:
-            return {"resposta": "Não consegui montar uma consulta ao inventário. Tente indicar o que quer contar, listar ou comparar.", "resultados": []}
+            return {"resposta": "Não consegui localizar essa informação. Tente indicar o recurso, equipamento ou consumível que quer consultar.", "resultados": []}
         if len(resultados) == 1:
             unico = resultados[0]
+            if unico.get("tipo") == "informacoes":
+                return {"resposta": unico["resumo"], "resultados": resultados}
             if "aviso" in unico:
                 return {"resposta": unico["aviso"], "resultados": []}
+            if unico.get("atributos"):
+                return {"resposta": resposta_ficha(unico), "resultados": resultados}
             if unico["operacao"] == "contar" and not unico["agrupar_por"]:
                 n = unico["total"]
                 texto = "Encontrei 1 equipamento." if n == 1 else f"Encontrei {n} equipamentos."

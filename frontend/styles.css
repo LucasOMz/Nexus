@@ -380,6 +380,9 @@ body:has(> .chat-ia) > .fab { right: 100px; }
 .chat-ia-conversa:hover { border-color: var(--md-sys-color-primary); }
 .chat-ia-conversa small { color: var(--md-sys-color-on-surface-variant); }
 .chat-ia-exportar { display: block; }
+.chat-ia-ficha { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 4px 10px; margin: 2px 0 8px; }
+.chat-ia-ficha dt { color: var(--md-sys-color-on-surface-variant); }
+.chat-ia-ficha dd { margin: 0; }
 .chat-ia-mensagem {
   flex: none; align-self: flex-start; max-width: 100%; padding: 10px 12px; border-radius: 14px;
   background: var(--md-sys-color-surface-container); white-space: pre-line; overflow-wrap: anywhere;

@@ -186,6 +186,42 @@ def test_chat_aponta_departamento_nao_encontrado(client, auth_headers, inventari
     assert "Não encontrei o departamento" in resposta.json()["resposta"]
 
 
+def test_chat_consulta_ram_cadastrada_por_patrimonio(client, auth_headers, inventario_ia, monkeypatch):
+    with TestingSession() as db:
+        db.get(Ativo, 3).patrimonio = "TP98000011212"
+        db.get(AtivoTI, 3).ram_gb = 32
+        db.get(AtivoTI, 3).cpu = "Processador de teste"
+        db.commit()
+    recebidas = _modelo(monkeypatch, [{
+        "operacao": "listar", "atributos": ["ram_gb"],
+        "filtros": [_filtro("patrimonio", "igual", "tp98000011212")],
+    }])
+    pergunta = {"pergunta": "Quantos gigas de RAM tem o ativo TP98000011212?"}
+    resposta = client.post("/api/v1/ia/chat", headers=auth_headers, json=pergunta)
+    assert resposta.status_code == 200, resposta.text
+    dados = resposta.json()
+    assert dados["resposta"] == "O ativo TP98000011212 tem 32 GB de RAM cadastrados."
+    assert dados["resultados"][0]["atributos"] == ["ram_gb"]
+    assert dados["resultados"][0]["equipamentos"][0]["ram_gb"] == 32
+    assert "cpu" not in dados["resultados"][0]["equipamentos"][0]
+    assert len(recebidas) == 1
+
+    outra_planta = {"Authorization": f"Bearer {create_access_token(2, 'leitor')}"}
+    resposta = client.post("/api/v1/ia/chat", headers=outra_planta, json=pergunta).json()
+    assert resposta["resultados"][0]["equipamentos"] == []
+    assert "Nenhum equipamento encontrado" in resposta["resposta"]
+
+
+def test_chat_informa_quando_o_ativo_nao_tem_ram_cadastrada(client, auth_headers, inventario_ia, monkeypatch):
+    _modelo(monkeypatch, [{
+        "operacao": "listar", "atributos": ["ram_gb"],
+        "filtros": [_filtro("patrimonio", "igual", "PT-2")],
+    }])
+    resposta = client.post("/api/v1/ia/chat", headers=auth_headers, json={"pergunta": "Qual a RAM do ativo PT-2?"}).json()
+    assert resposta["resultados"][0]["equipamentos"][0]["ram_gb"] is None
+    assert "sem informação cadastrada" in resposta["resposta"]
+
+
 def test_chat_salva_e_retoma_conversa_no_mesmo_escopo(client, auth_headers, inventario_ia, monkeypatch):
     recebidas = _modelo(monkeypatch, [{"operacao": "contar"}])
     headers = {**auth_headers, "X-Planta-Id": "1"}

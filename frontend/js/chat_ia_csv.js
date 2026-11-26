@@ -15,11 +15,24 @@ export function montarCsv({ pergunta, resposta, resultados }, historica = false)
   const linhas = [
     ["Consulta", "Linha", "Pergunta", "Resposta", "Total", "Correspondentes", "Percentual (%)",
       "Agrupamento 1", "Valor 1", "Agrupamento 2", "Valor 2", "ID", "Hostname", "Patrimônio", "Modelo",
-      "Planta", "Departamento", "Status", "Observação"],
+      "Planta", "Departamento", "Status", "Observação", "RAM (GB)", "Armazenamento (GB)", "Processador", "Sistema operacional",
+      "Seção", "Campo", "Valor"],
     ["", "Resposta", pergunta, resposta],
   ];
   for (const [indice, item] of resultados.entries()) {
     const n = indice + 1;
+    if (item.tipo === "informacoes") {
+      for (const secao of item.blocos || []) {
+        for (const [campo, valor] of secao.linhas) {
+          const linha = [n, "Informação"];
+          linha[23] = secao.titulo;
+          linha[24] = campo;
+          linha[25] = valor;
+          linhas.push(linha);
+        }
+      }
+      continue;
+    }
     const equipamentos = item.equipamentos_exibidos || item.equipamentos || [];
     const totalDetalhes = item.total_exibidos ?? item.total;
     const cadastros = item.cadastros_consultados;
@@ -40,7 +53,8 @@ export function montarCsv({ pergunta, resposta, resultados }, historica = false)
     }
     for (const ativo of equipamentos) {
       linhas.push([n, "Equipamento", "", "", "", "", "", "", "", "", "",
-        ativo.id, ativo.hostname, ativo.patrimonio, ativo.modelo, ativo.planta, ativo.departamento, ativo.status]);
+        ativo.id, ativo.hostname, ativo.patrimonio, ativo.modelo, ativo.planta, ativo.departamento, ativo.status, "",
+        ativo.ram_gb, ativo.armazenamento_gb, ativo.cpu, ativo.so]);
     }
   }
   const largura = linhas[0].length;

@@ -332,6 +332,12 @@ async function renderList(root) {
 let lookupsCache = null;
 
 export async function renderProdutos(root) {
+  const busca = new URLSearchParams(location.hash.split("?")[1]).get("busca");
+  if (busca !== null) {
+    filtroSearch = busca;
+    page = 1;
+    history.replaceState(null, "", "#/produtos");
+  }
   ctx.setTitle("Consumíveis");
   ctx.setFab(state.canWrite ? { label: "Novo Consumível", icon: "add", onClick: () => openForm(null, lookupsCache) } : null);
 

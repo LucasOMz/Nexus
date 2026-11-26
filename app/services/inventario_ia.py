@@ -22,6 +22,13 @@ Campo = Literal[
     "patrimonio", "numero_serie", "hostname", "marca", "modelo", "inventario_em", "data_aquisicao", "data_garantia",
 ]
 Grupo = Literal["planta", "departamento", "localizacao", "categoria", "tipo_equipamento", "dominio", "status", "marca", "modelo"]
+Atributo = Literal["ram_gb", "armazenamento_gb", "cpu", "so"]
+ATRIBUTOS_TI = {
+    "ram_gb": (AtivoTI.ram_gb, "Memória RAM", " GB"),
+    "armazenamento_gb": (AtivoTI.armazenamento_gb, "Armazenamento", " GB"),
+    "cpu": (AtivoTI.cpu, "Processador", ""),
+    "so": (AtivoTI.so, "Sistema operacional", ""),
+}
 DATAS = {"inventario_em", "data_aquisicao", "data_garantia"}
 OPERADORES_DATA = {"desde", "antes_de"}
 FUSO_INVENTARIO = "America/Sao_Paulo"
@@ -54,6 +61,7 @@ class ConsultaInventario(BaseModel):
     filtros: list[Filtro] = Field(default_factory=list, max_length=10)
     filtros_numerador: list[Filtro] = Field(default_factory=list, max_length=10)
     agrupar_por: list[Grupo] = Field(default_factory=list, max_length=2)
+    atributos: list[Atributo] = Field(default_factory=list, max_length=4)
     ordem: Literal["maior", "menor"] = "maior"
     limite: int = Field(default=15, ge=1, le=30)
 
@@ -63,6 +71,8 @@ class ConsultaInventario(BaseModel):
             raise ValueError("Use agrupamentos distintos apenas em contagens ou percentuais.")
         if bool(self.filtros_numerador) != (self.operacao == "percentual"):
             raise ValueError("Informe filtros_numerador apenas ao calcular um percentual.")
+        if self.atributos and (self.operacao != "listar" or len(self.atributos) != len(set(self.atributos))):
+            raise ValueError("Use atributos distintos apenas em listagens.")
         return self
 
 
@@ -76,7 +86,7 @@ def _normalizar_texto(valor: str | None) -> str:
     return " ".join("".join(c for c in decomposto if not combining(c)).split())
 
 
-def _resolver_cadastro(cadastros, filtro: Filtro) -> dict[int, str]:
+def resolver_cadastro(cadastros, filtro: Filtro) -> dict[int, str]:
     termo = _normalizar_texto(filtro.valor)
     if not termo:
         return {}
@@ -114,7 +124,7 @@ def executar_consulta(db: Session, consulta: ConsultaInventario, planta_id: int 
             catalogo = catalogo.filter(Planta.id == planta_id)
         plantas = catalogo.all()
         for filtro in filtros_planta:
-            ids = _resolver_cadastro(plantas, filtro)
+            ids = resolver_cadastro(plantas, filtro)
             if not ids:
                 aviso = (f'A planta “{filtro.valor}” não corresponde ao escopo atual. Confira a planta selecionada no topo.'
                          if planta_id is not None else
@@ -129,7 +139,7 @@ def executar_consulta(db: Session, consulta: ConsultaInventario, planta_id: int 
             catalogo = catalogo.filter(or_(Departamento.planta_id.is_(None), Departamento.planta_id.in_(plantas_consultadas)))
         departamentos = catalogo.all()
         for filtro in filtros_departamento:
-            ids = _resolver_cadastro(departamentos, filtro)
+            ids = resolver_cadastro(departamentos, filtro)
             if not ids:
                 return {**resultado, "aviso": f'Não encontrei o departamento “{filtro.valor}” nas plantas consultadas. Confira o nome ou a sigla.'}
             cadastros[(filtro.campo, filtro.operador, filtro.valor)] = ids
@@ -203,7 +213,11 @@ def executar_consulta(db: Session, consulta: ConsultaInventario, planta_id: int 
     total = func.count(Ativo.id)
     if consulta.operacao == "listar":
         colunas = ("patrimonio", "hostname", "modelo", "planta", "departamento", "status")
-        linhas = base.with_entities(Ativo.id, *(campos[c].label(c) for c in colunas)).order_by(Ativo.id).limit(consulta.limite).all()
+        selecao = [campos[c].label(c) for c in colunas]
+        selecao.extend(ATRIBUTOS_TI[c][0].label(c) for c in consulta.atributos)
+        linhas = base.with_entities(Ativo.id, *selecao).order_by(Ativo.id).limit(consulta.limite).all()
+        if consulta.atributos:
+            resultado["atributos"] = consulta.atributos
         return {**resultado, "total": base.with_entities(total).scalar(), "equipamentos": [dict(linha._mapping) for linha in linhas]}
 
     numerador = func.count(case((and_(*(expressao(f) for f in consulta.filtros_numerador)), 1))) if consulta.filtros_numerador else None
@@ -225,3 +239,20 @@ def executar_consulta(db: Session, consulta: ConsultaInventario, planta_id: int 
         resultado["grupos"] = [{"valores": list(linha[:k]), **metricas(linha[k:])} for linha in linhas[:consulta.limite]]
         resultado["truncado"] = len(linhas) > consulta.limite
     return resultado
+
+
+def resposta_ficha(dados: dict) -> str:
+    if not dados["equipamentos"]:
+        return "Nenhum equipamento encontrado com esses filtros no escopo atual."
+    if dados["total"] > 1 or len(dados["equipamentos"]) > 1:
+        return f"Encontrei {dados['total']} equipamentos. Veja as informações disponíveis na lista."
+    ativo = dados["equipamentos"][0]
+    identificacao = ativo["patrimonio"] or ativo["hostname"] or f"#{ativo['id']}"
+    if dados["atributos"] == ["ram_gb"] and ativo["ram_gb"] is not None:
+        return f"O ativo {identificacao} tem {ativo['ram_gb']} GB de RAM cadastrados."
+    ficha = []
+    for campo in dados["atributos"]:
+        _, rotulo, unidade = ATRIBUTOS_TI[campo]
+        valor = ativo[campo]
+        ficha.append(f"{rotulo} · {valor}{unidade}" if valor is not None and valor != "" else f"{rotulo} · sem informação cadastrada")
+    return f"Ativo {identificacao}. " + ". ".join(ficha) + "."
