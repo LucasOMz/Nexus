@@ -30,7 +30,9 @@ log = logging.getLogger("app.monitor.impressoras")
 router = APIRouter(prefix="/monitor/impressoras", tags=["impressoras"])
 
 
-def _impressoras(db: Session, planta_id: int | None) -> list[tuple[Ativo, AtivoImpressora]]:
+def _impressoras(
+    db: Session, planta_id: int | None, ids: list[int] | None = None,
+) -> list[tuple[Ativo, AtivoImpressora | None]]:
     q = (
         db.query(Ativo, AtivoImpressora)
         .outerjoin(AtivoImpressora, AtivoImpressora.ativo_id == Ativo.id)
@@ -38,6 +40,8 @@ def _impressoras(db: Session, planta_id: int | None) -> list[tuple[Ativo, AtivoI
         .filter(Ativo.deleted_at.is_(None), Ativo.dominio == Dominio.IMPRESSORA)
     )
     q = aplicar_filtro(q, Ativo, planta_id)
+    if ids is not None:
+        q = q.filter(Ativo.id.in_(ids))
     return q.all()
 
 
@@ -155,6 +159,8 @@ def coletar_uma(
             400, "O suporte a SNMP precisa da biblioteca pysnmp (pip install pysnmp)."
         )
 
+    # Só o endereço validado é necessário durante a espera pela impressora.
+    db.rollback()
     try:
         dados = snmp_service.coletar(endereco, comunidade=comunidade)
     except snmp_service.SNMPIndisponivel as e:
@@ -167,6 +173,13 @@ def coletar_uma(
 
     if not dados.get("respondeu"):
         raise HTTPException(502, f"A impressora {endereco} respondeu, mas sem nenhum dado conhecido.")
+
+    ativo = q.populate_existing().first()
+    if ativo is None:
+        raise HTTPException(404, "Ativo não encontrado")
+    ficha = db.get(AtivoImpressora, ativo_id, populate_existing=True)
+    if _endereco(ficha, ativo) != endereco:
+        raise HTTPException(409, "O endereço da impressora mudou durante a coleta. Atualize a leitura.")
 
     gravado = False
     if dados.get("contador") is not None:
@@ -212,28 +225,42 @@ def coletar_todas(
     if not snmp_service.disponivel():
         raise HTTPException(400, "O suporte a SNMP precisa da biblioteca pysnmp.")
 
+    alvos = [(ativo.id, ativo.patrimonio, _endereco(ficha, ativo))
+             for ativo, ficha in _impressoras(db, planta_id)]
+    db.rollback()
+
     ok, falhas, sem_endereco, sem_contador = 0, [], 0, 0
-    for ativo, ficha in _impressoras(db, planta_id):
-        endereco = _endereco(ficha, ativo)
+    leituras = {}
+    for ativo_id, patrimonio, endereco in alvos:
         if not endereco:
             sem_endereco += 1
             continue
         try:
             dados = snmp_service.coletar(endereco, comunidade=comunidade)
         except Exception as e:  # noqa: BLE001
-            falhas.append({"patrimonio": ativo.patrimonio, "endereco": endereco,
+            falhas.append({"patrimonio": patrimonio, "endereco": endereco,
                            "motivo": type(e).__name__})
             continue
 
         if dados.get("contador") is None:
             sem_contador += 1
             continue
+        leituras[ativo_id] = (patrimonio, endereco, dados["contador"])
+
+    atuais = {ativo.id: (ativo, ficha) for ativo, ficha in _impressoras(db, planta_id, list(leituras))} if leituras else {}
+    for ativo_id, (patrimonio, endereco, contador) in leituras.items():
+        atual = atuais.get(ativo_id)
+        if atual is None or _endereco(atual[1], atual[0]) != endereco:
+            falhas.append({"patrimonio": patrimonio, "endereco": endereco,
+                           "motivo": "Cadastro alterado durante a coleta"})
+            continue
+        _, ficha = atual
         db.add(LeituraContador(
-            ativo_id=ativo.id, contador=dados["contador"],
+            ativo_id=ativo_id, contador=contador,
             observacoes=f"Coleta SNMP automática ({endereco})",
         ))
         if ficha is not None:
-            ficha.contador_paginas = dados["contador"]
+            ficha.contador_paginas = contador
         ok += 1
 
     audit(db, user, "coletar_snmp_lote", "ativo", None,
@@ -275,9 +302,11 @@ def alertas_de_suprimento(
     if not endereco:
         raise HTTPException(400, "Sem IP ou hostname cadastrado para esta impressora.")
 
+    linha = _linha(db, ativo, ficha)
+    db.rollback()
     # Varredura completa: sem isso só o primeiro cartucho seria lido.
     suprimentos = _varrer_suprimentos(endereco, comunidade)
-    _estimar_suprimentos(suprimentos, _linha(db, ativo, ficha))
+    _estimar_suprimentos(suprimentos, linha)
     return {"ativo_id": ativo_id, "endereco": endereco, "suprimentos": suprimentos,
             "alertas": snmp_service.alertas_de_suprimento(suprimentos)}
 
@@ -311,6 +340,7 @@ def situacao_da_impressora(
     ficha = db.get(AtivoImpressora, ativo_id)
     linha = _linha(db, ativo, ficha)
     endereco = linha["endereco"]
+    db.rollback()
     suprimentos = []
     comunicacao = "sem_endereco"
     if endereco:

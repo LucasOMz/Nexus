@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, TimeoutError as SQLAlchemyTimeout
 from starlette.concurrency import run_in_threadpool
 
 from app import __version__
@@ -223,6 +223,16 @@ async def tratar_integridade(request: Request, exc: IntegrityError) -> JSONRespo
     else:
         detalhe = "Não foi possível salvar o registro por uma restrição do banco de dados."
     return JSONResponse(status_code=409, content={"detail": detalhe})
+
+
+@app.exception_handler(SQLAlchemyTimeout)
+async def tratar_timeout_do_banco(request: Request, exc: SQLAlchemyTimeout) -> JSONResponse:
+    logging.getLogger("app").warning("Espera por conexão do banco excedida em %s %s (%s)",
+                                    request.method, request.url.path, exc)
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Banco de dados temporariamente ocupado. Tente novamente em instantes."},
+    )
 
 
 @app.exception_handler(Exception)

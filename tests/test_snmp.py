@@ -7,9 +7,13 @@ códigos especiais da MIB, o índice dos suprimentos, a estimativa de duração.
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import Session
 
-from app.models import Ativo
+from app.database import get_db
+from app.models import Ativo, Base, Planta, Usuario
 from app.models.impressora import AtivoImpressora, LeituraContador
+from app.routers import monitor_impressoras
 from app.services import snmp_service
 from app.services.snmp_service import (
     OIDS,
@@ -21,6 +25,84 @@ from app.services.snmp_service import (
     percentual_suprimento,
 )
 from tests.conftest import TestingSession
+
+
+@pytest.fixture
+def monitor_pool_minimo(client, tmp_path):
+    engine = create_engine(
+        f"sqlite:///{(tmp_path / 'monitor.db').as_posix()}", pool_size=1,
+        max_overflow=0, pool_timeout=0.15, connect_args={"check_same_thread": False},
+    )
+    try:
+        Base.metadata.create_all(engine)
+        with Session(engine) as db:
+            db.add(Planta(id=1, nome="Matriz", sigla="MAT", ativa=True))
+            db.add(Usuario(id=1, nome="Admin", email="pool@teste.com", senha_hash="teste", papel="admin"))
+            db.add(Ativo(id=1, planta_id=1, dominio="impressora", patrimonio="IMP-POOL", numero_serie="POOL-SNMP"))
+            db.flush()
+            db.add(AtivoImpressora(ativo_id=1, hostname="impressora-teste", contador_paginas=100))
+            db.commit()
+
+        def override():
+            with Session(engine, expire_on_commit=False) as db:
+                yield db
+
+        anterior = client.app.dependency_overrides[get_db]
+        client.app.dependency_overrides[get_db] = override
+        try:
+            yield engine
+        finally:
+            client.app.dependency_overrides[get_db] = anterior
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize(("metodo", "rota", "grava_contador"), [
+    ("GET", "/1/situacao", False),
+    ("GET", "/1/alertas", False),
+    ("POST", "/1/coletar", True),
+    ("POST", "/coletar-todas", True),
+])
+def test_monitor_devolve_conexao_antes_do_snmp(
+    client, auth_headers, monkeypatch, monitor_pool_minimo, metodo, rota, grava_contador,
+):
+    conexoes_disponiveis = []
+
+    def medir(endereco, comunidade="public"):
+        with monitor_pool_minimo.connect() as conexao:
+            conexoes_disponiveis.append(conexao.scalar(text("SELECT 1")))
+
+    def monitorar(endereco):
+        medir(endereco)
+        return [], True
+
+    def varrer(endereco, comunidade):
+        medir(endereco, comunidade)
+        return []
+
+    def coletar(endereco, comunidade):
+        medir(endereco, comunidade)
+        return {"respondeu": True, "contador": 150}
+
+    monkeypatch.setattr(snmp_service, "monitorar_suprimentos", monitorar)
+    monkeypatch.setattr(monitor_impressoras, "_varrer_suprimentos", varrer)
+    monkeypatch.setattr(snmp_service, "coletar", coletar)
+    monkeypatch.setattr(snmp_service, "disponivel", lambda: True)
+
+    resposta = client.request(metodo, "/api/v1/monitor/impressoras" + rota, headers=auth_headers)
+    assert resposta.status_code == 200, resposta.text
+    assert conexoes_disponiveis == [1]
+    with Session(monitor_pool_minimo) as db:
+        assert db.get(AtivoImpressora, 1).contador_paginas == (150 if grava_contador else 100)
+        assert db.query(LeituraContador).count() == int(grava_contador)
+
+
+def test_api_responde_503_quando_pool_esta_ocupado(client, auth_headers, monitor_pool_minimo):
+    with monitor_pool_minimo.connect():
+        resposta = client.get("/api/v1/auth/me", headers=auth_headers)
+    assert resposta.status_code == 503
+    assert "temporariamente ocupado" in resposta.json()["detail"]
+    assert client.get("/api/v1/auth/me", headers=auth_headers).status_code == 200
 
 
 @pytest.mark.parametrize(("respondeu", "nivel", "comunicacao"), [

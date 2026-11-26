@@ -32,8 +32,8 @@
  * 1. **A aba escondida não consulta.** Sem isto, a tela aberta num
  *    computador esquecido dispararia uma consulta SNMP por impressora a cada
  *    15 segundos, para sempre, sem ninguém olhando.
- * 2. **As consultas se espalham no intervalo.** Disparar o parque inteiro no
- *    mesmo instante cria um pico a cada 15s; escalonar distribui.
+ * 2. **Até três consultas simultâneas por tela.** Cada resultado aparece assim
+ *    que chega, mesmo que outra impressora demore para responder.
  *
  * @module views/monitor_impressoras
  */
@@ -46,6 +46,7 @@ import { el, icon, toast, dialog, emptyState, skeleton, fmtDate, mostrarErro } f
 // Intervalo de releitura dos suprimentos. O contador não precisa disso: ele
 // só muda quando alguém imprime, e a coleta manual já o atualiza.
 const INTERVALO_MS = 15000;
+const LEITURAS_SIMULTANEAS = 3;
 
 // Guardado no módulo para poder ser cancelado ao sair da tela. Sem isto, cada
 // visita ao monitor deixaria um temporizador rodando para sempre — e depois
@@ -300,25 +301,40 @@ async function coletarUma(evento, ativoId, caixa) {
 // ---------------------------------------------------------------------------
 async function relerSuprimentos(caixa) {
   const alvos = [...caixa.querySelectorAll("[data-suprimentos]")];
-  if (!alvos.length || caixa.dataset.lendo) return;
+  if (!alvos.length || caixa.dataset.lendo || !caixa.isConnected || document.hidden) return;
   caixa.dataset.lendo = "true";
 
   const chip = document.getElementById("mon-vivo");
   if (chip) chip.textContent = "lendo…";
 
-  // Em paralelo, mas tolerante: uma impressora fora do ar não pode impedir as
-  // outras de mostrar o nível — e a que falhou precisa dizer isso no lugar
-  // onde o nível apareceria.
-  const resultados = await Promise.allSettled(
-    alvos.map(a => state.podeInventario("impressora")
-      ? consultarSituacaoImpressora(a.dataset.suprimentos)
-      : api.get(`/monitor/impressoras/${a.dataset.suprimentos}/alertas`))
-  );
+  const consultaCompleta = state.podeInventario("impressora");
+  const selecionado = alvos.findIndex(a => a.dataset.suprimentos === caixa.dataset.impressora);
+  if (selecionado > 0) alvos.unshift(...alvos.splice(selecionado, 1));
+  let proximo = 0;
+  try {
+    await Promise.all(Array.from({ length: Math.min(alvos.length, LEITURAS_SIMULTANEAS) }, ler));
+    if (chip?.isConnected && !document.hidden && proximo >= alvos.length && alvos.every(a => caixa.contains(a))) {
+      chip.textContent = `atualizado ${new Date().toLocaleTimeString("pt-BR")}`;
+    }
+  } finally {
+    delete caixa.dataset.lendo;
+  }
 
-  resultados.forEach((r, i) => {
-    const alvo = alvos[i];
-    if (!alvo) return;
-    if (!caixa.contains(alvo)) return;
+  async function ler() {
+    while (caixa.isConnected && !document.hidden && proximo < alvos.length) {
+      const alvo = alvos[proximo++];
+      if (!caixa.contains(alvo)) return;
+      const id = alvo.dataset.suprimentos;
+      const [resultado] = await Promise.allSettled([consultaCompleta
+        ? consultarSituacaoImpressora(id)
+        : api.get(`/monitor/impressoras/${id}/alertas`)]);
+      if (!caixa.isConnected || !caixa.contains(alvo)) return;
+      pintarLeitura(alvo, resultado);
+      caixa.querySelector(".monitor-layout")?.dispatchEvent(new Event("leiturasatualizadas"));
+    }
+  }
+
+  function pintarLeitura(alvo, r) {
     const estado = caixa.querySelector(`[data-monitor-estado="${alvo.dataset.suprimentos}"]`);
     if (estado) {
       const suprimentos = r.value?.suprimentos || [];
@@ -347,13 +363,7 @@ async function relerSuprimentos(caixa) {
       return;
     }
     alvo.append(...sup.map((s) => barraSuprimento(s)));
-  });
-
-  caixa.querySelector(".monitor-layout")?.dispatchEvent(new Event("leiturasatualizadas"));
-  if (chip) {
-    chip.textContent = `atualizado ${new Date().toLocaleTimeString("pt-BR")}`;
   }
-  delete caixa.dataset.lendo;
 }
 
 /**
