@@ -2,9 +2,9 @@ import { api } from "../api.js";
 import { el, fmtDate, icon } from "../ui.js";
 
 const ACOES = [
-  ["coletar", "Solicitar nova coleta", "refresh"],
-  ["testar_comunicacao", "Testar comunicação com o Nexus", "integracoes"],
-  ["status_servico", "Consultar status do serviço", "server"],
+  ["coletar", "Solicitar nova coleta", "Nova coleta", "refresh"],
+  ["testar_comunicacao", "Testar comunicação com o Nexus", "Testar conexão", "integracoes"],
+  ["status_servico", "Consultar status do serviço", "Status do serviço", "server"],
 ];
 const ESTADOS = {
   aguardando: "Aguardando agente", entregue: "Aguardando resultado", concluida: "Concluída",
@@ -24,6 +24,7 @@ const pendente = item => ["aguardando", "entregue"].includes(item.estado);
 export function painelAcoesAgente(ativoId) {
   const rota = `/ativos/${ativoId}/acoes-agente`;
   const painel = el("section", { class: "card ativo-acoes-agente", hidden: true, "aria-label": "Ações remotas" });
+  const resumoFila = el("span", { class: "chip aviso", role: "status", hidden: true });
   const contato = el("p", { class: "muted" });
   const recado = el("p", { class: "muted", role: "status", hidden: true });
   const lista = el("ul", { class: "ativo-acoes-historico" });
@@ -35,18 +36,23 @@ export function painelAcoesAgente(ativoId) {
   let timer;
   let revisao = 0;
 
-  const botoes = ACOES.map(([tipo, rotulo, icone]) => [tipo, el("button", {
-    class: "btn tonal", type: "button", onclick: () => solicitar(tipo),
-    html: icon(icone, 17) + " " + rotulo,
+  const botoes = ACOES.map(([tipo, rotulo, curto, icone]) => [tipo, el("button", {
+    class: "btn text small", type: "button", onclick: () => solicitar(tipo), title: rotulo,
+    "aria-label": rotulo, html: icon(icone, 16) + " " + curto,
   })]);
   const atualizar = el("button", { class: "iconbtn", type: "button", title: "Atualizar histórico",
     "aria-label": "Atualizar histórico", onclick: carregar, html: icon("refresh", 19) });
   const mais = el("button", { class: "btn text", type: "button", hidden: true, onclick: carregarAnteriores },
     "Ver ações anteriores");
+  const historico = el("details", { class: "ativo-acoes-detalhes" },
+    el("summary", {}, "Histórico", el("span", { class: "ativo-acoes-seta", html: icon("chevron", 16) })),
+    el("div", { class: "row between ativo-acoes-contato" }, contato, atualizar),
+    vazio, lista, mais,
+  );
   painel.append(
-    el("div", { class: "row between" }, el("h3", { class: "section-title" }, "Ações remotas"), atualizar),
-    contato, el("div", { class: "row wrap ativo-acoes-botoes" }, ...botoes.map(([, botao]) => botao)),
-    recado, el("h4", {}, "Histórico de ações"), vazio, lista, mais,
+    el("div", { class: "row between wrap" }, el("h3", { class: "section-title" }, "Ações remotas"), resumoFila),
+    el("div", { class: "row wrap ativo-acoes-botoes" }, ...botoes.map(([, botao]) => botao)),
+    recado, historico,
   );
 
   function atualizarBotoes() {
@@ -68,6 +74,7 @@ export function painelAcoesAgente(ativoId) {
       contato.textContent = "Último contato do agente: " + data
         + (dados.recebe_acoes ? "" : ". Aguardando o primeiro contato de uma versão compatível com ações remotas.");
       itens = dados.historico;
+      atualizarResumoFila();
       if (!anteriores.length) cursor = dados.proximo;
       atualizarBotoes();
       desenharHistorico();
@@ -78,6 +85,13 @@ export function painelAcoesAgente(ativoId) {
         timer = setTimeout(carregar, 8000);
       }
     }
+  }
+
+  function atualizarResumoFila() {
+    const total = itens.filter(pendente).length;
+    const texto = total === 1 ? "1 pendente" : `${total} pendentes`;
+    resumoFila.hidden = total === 0;
+    if (resumoFila.textContent !== texto) resumoFila.textContent = texto;
   }
 
   async function carregarAnteriores() {
@@ -97,7 +111,6 @@ export function painelAcoesAgente(ativoId) {
 
   function desenharHistorico() {
     const todos = new Map([...anteriores, ...itens].map(i => [i.id, i]));
-    const rolagem = lista.scrollTop;
     vazio.hidden = todos.size > 0;
     mais.hidden = !cursor;
     lista.replaceChildren(...[...todos.values()].sort((a, b) => b.id - a.id).map(i => el("li", {},
@@ -109,7 +122,6 @@ export function painelAcoesAgente(ativoId) {
         RESULTADOS[i.resultado], i.encerrada_em ? fmtDate(i.encerrada_em, true) : "",
       ].filter(Boolean).join(" · ")) : null,
     )));
-    lista.scrollTop = rolagem;
   }
 
   function informar(texto) {
@@ -123,8 +135,10 @@ export function painelAcoesAgente(ativoId) {
     atualizarBotoes();
     informar("");
     try {
-      await api.request("POST", rota, { body: { tipo }, enfileirar: false });
-      informar("Solicitação registrada.");
+      const registrada = await api.request("POST", rota, { body: { tipo }, enfileirar: false });
+      if (!itens.some(i => i.id === registrada.id)) itens.unshift(registrada);
+      atualizarResumoFila();
+      desenharHistorico();
     } catch (e) {
       informar(e.message);
     } finally {
