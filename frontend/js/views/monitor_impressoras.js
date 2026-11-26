@@ -59,9 +59,10 @@ export async function renderMonitor(root) {
   root.innerHTML = "";
 
   pararAtualizacao();
+  ctx.limpar = pararAtualizacao;
 
   root.append(
-    el("div", { class: "row between wrap", style: "gap:10px" },
+    el("div", { class: "row between wrap monitor-topo", style: "gap:10px" },
       el("div", {},
         el("h1", { class: "page-title" }, "Monitor de impressoras"),
         el("p", { class: "muted", style: "margin:4px 0 0" },
@@ -82,7 +83,7 @@ export async function renderMonitor(root) {
   root.append(caixa);
 
   await carregar(caixa);
-  ligarAtualizacao(caixa);
+  if (caixa.isConnected) ligarAtualizacao(caixa);
 }
 
 /** Cancela o temporizador e o observador de visibilidade da tela anterior. */
@@ -142,15 +143,42 @@ async function carregar(caixa) {
   );
 
   if (!d.itens?.length) {
-    caixa.append(emptyState("Nenhuma impressora",
+    caixa.append(emptyState("print", "Nenhuma impressora",
       "Cadastre impressoras no inventário de impressoras para monitorá-las. "
       + "Se elas existem noutra unidade, troque a unidade no topo da tela."));
     return;
   }
 
-  const grade = el("div", { class: "grade-impressoras" },
-    ...d.itens.map((p) => cartao(p, caixa)));
-  caixa.append(grade);
+  const lista = el("div", { class: "card monitor-lista" },
+    el("h2", { class: "section-title" }, "Impressoras"));
+  const painel = el("div", { class: "monitor-ficha" });
+  const registros = d.itens.map(p => {
+    const id = String(p.ativo_id);
+    const estado = el("small", { class: "monitor-estado", "data-monitor-estado": id },
+      p.com_snmp ? "Aguardando leitura" : "Sem IP/hostname");
+    const botao = el("button", { type: "button", class: "monitor-item", onclick: () => selecionar(id) },
+      el("span", { html: icon("print", 21) }),
+      el("span", {}, el("strong", {}, p.patrimonio || `Ativo #${id}`),
+        el("small", {}, [p.marca, p.modelo].filter(Boolean).join(" ") || "Sem modelo")),
+      estado);
+    const ficha = cartao(p, caixa);
+    lista.append(botao);
+    painel.append(ficha);
+    return { id, botao, ficha };
+  });
+
+  function selecionar(id) {
+    caixa.dataset.impressora = id;
+    for (const registro of registros) {
+      const atual = registro.id === id;
+      registro.botao.setAttribute("aria-pressed", String(atual));
+      registro.ficha.hidden = !atual;
+    }
+  }
+
+  const atual = registros.find(r => r.id === caixa.dataset.impressora) || registros[0];
+  selecionar(atual.id);
+  caixa.append(el("div", { class: "monitor-layout" }, lista, painel));
 
   // A primeira leitura de suprimentos acontece logo depois de pintar os
   // cartões — assim a tela aparece rápido e os níveis preenchem em seguida.
@@ -189,7 +217,7 @@ function cartao(p, caixa) {
       el("div", { class: "muted mon-sub" },
         [p.marca, p.modelo].filter(Boolean).join(" ") || "—"),
 
-      el("div", { class: "mon-suprimentos", "data-suprimentos": p.ativo_id },
+      el("div", { class: "mon-suprimentos", "data-suprimentos": p.com_snmp ? p.ativo_id : null },
         p.com_snmp
           ? el("span", { class: "muted mon-carregando" }, "lendo níveis…")
           : el("span", { class: "muted mon-carregando" },
@@ -247,6 +275,14 @@ async function relerSuprimentos(caixa) {
   resultados.forEach((r, i) => {
     const alvo = alvos[i];
     if (!alvo) return;
+    const estado = caixa.querySelector(`[data-monitor-estado="${alvo.dataset.suprimentos}"]`);
+    if (estado) {
+      const suprimentos = r.value?.suprimentos || [];
+      const alerta = suprimentos.some(s => ["atencao", "critico", "vazio"].includes(s.situacao));
+      estado.textContent = r.status === "rejected" ? "Leitura indisponível" : alerta ? "Alerta de suprimento"
+        : suprimentos.length ? "Suprimentos lidos" : "Sem leitura de suprimentos";
+      estado.classList.toggle("aviso", alerta);
+    }
     alvo.innerHTML = "";
 
     if (r.status === "rejected") {

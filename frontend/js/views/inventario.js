@@ -3,9 +3,10 @@
  * @module views/inventario
  */
 import { state } from "../state.js";
+import { api } from "../api.js";
 import { ctx } from "../context.js";
 import { APP_VERSION } from "../version.js";
-import { el, icon } from "../ui.js";
+import { el, icon, skeleton } from "../ui.js";
 
 const DESCRICAO_INVENTARIO = {
   ti: "Notebooks, monitores, switches, celulares e periféricos",
@@ -79,13 +80,78 @@ export function renderSelecao(root) {
   root.append(wrap);
 }
 
-/** Menu inicial do inventário selecionado. */
+const atalhos = ["mapa", "monitor", "produtos", "relatorios"];
+const numero = new Intl.NumberFormat("pt-BR");
+
+function indicador(rotulo, valor, icone) {
+  return el("div", { class: "card inicio-indicador" },
+    el("span", { class: "inicio-indicador-rotulo" }, el("span", { html: icon(icone, 23) }), rotulo),
+    el("strong", {}, numero.format(valor ?? 0)));
+}
+
+function pendencia(rotulo, valor, icone, destino) {
+  return el("button", { type: "button", class: "inicio-pendencia", onclick: () => ctx.navigate(destino) },
+    el("span", { class: "inicio-pendencia-icone", html: icon(icone, 20) }), rotulo,
+    el("strong", {}, numero.format(valor)), el("span", { html: icon("chevR", 16) }));
+}
+
+async function carregarResumo(root) {
+  const dominio = state.dominio;
+  const temRelatorios = state.podeModulo("relatorios");
+  const temEmprestimos = state.podeModulo("emprestimos");
+  const [stats, graficos, avisos] = await Promise.allSettled([
+    temRelatorios ? api.get("/dashboard/stats", { dominio }) : null,
+    temRelatorios ? api.get("/relatorios/graficos", { dominio }) : null,
+    temEmprestimos ? api.get("/notificacoes") : null,
+  ]);
+  if (!root.isConnected) return;
+  const dados = stats.value;
+  const departamentos = graficos.value?.departamento?.slice(0, 5) || [];
+  const maximo = Math.max(1, ...departamentos.map(d => d.valor));
+  const fila = el("div", { class: "inicio-paineis" });
+  root.replaceChildren();
+  if (dados) {
+    const status = dados.por_status || {};
+    root.append(el("div", { class: "inicio-indicadores" },
+      indicador("Total de ativos", dados.total, "ativos"), indicador("Alocados", dados.alocados, "user"),
+      indicador("Em estoque", status.estoque, "produtos"), indicador("Em manutenção", status.manutencao, "manutencoes")));
+  } else if (temRelatorios) {
+    root.append(el("p", { class: "muted", role: "status" }, "Os indicadores estão indisponíveis. Os módulos continuam acessíveis abaixo."));
+  }
+  if (graficos.value) {
+    fila.append(el("section", { class: "card inicio-departamentos" },
+      el("h2", { class: "section-title" }, "Ativos por departamento"),
+      departamentos.length ? el("ul", {},
+        ...departamentos.map(d => el("li", {},
+          el("span", {}, d.rotulo),
+          el("span", { class: "inicio-barra", "aria-hidden": "true" },
+            el("span", { style: `width:${100 * d.valor / maximo}%` })),
+          el("strong", {}, numero.format(d.valor))))) : el("p", { class: "muted" }, "Nenhum ativo por departamento neste inventário.")));
+  }
+  const itens = [];
+  if (dados) itens.push(pendencia("Garantias a vencer em 30 dias", dados.garantias?.["30"] ?? 0, "shield", "relatorios"));
+  if (graficos.value && state.podeModulo("manutencoes")) {
+    const abertas = graficos.value.manutencoes_status?.find(x => x.rotulo === "Aberta")?.valor ?? 0;
+    itens.push(pendencia("Manutenções abertas", abertas, "manutencoes", "manutencoes"));
+  }
+  if (avisos.value) {
+    const atrasados = (avisos.value.itens || []).filter(x => x.tipo === "emprestimo_atrasado").length;
+    itens.push(pendencia("Devoluções atrasadas na planta", atrasados, "historico", "emprestimos"));
+  }
+  if (itens.length) fila.append(el("section", { class: "card inicio-pendencias" },
+    el("h2", { class: "section-title" }, "Pendências"), ...itens));
+  if (fila.childElementCount) root.append(fila);
+}
+
+/** Visão geral do inventário e acesso a todos os módulos disponíveis. */
 export function renderHome(root) {
   document.title = `${state.dominioLabel} — Menu`;
   ctx.setFab(null);
   ctx.setChrome(true);
 
   const disponiveis = TILES.filter((t) => state.podeModulo(t.modulo));
+  const resumo = el("div", { class: "inicio-resumo" });
+  const rapidos = atalhos.map(path => disponiveis.find(t => t.path === path)).filter(Boolean);
 
   const tiles = disponiveis.map((t) => {
     const tile = el("button", { class: "home-tile", type: "button" },
@@ -99,8 +165,16 @@ export function renderHome(root) {
 
   root.innerHTML = "";
   root.append(
-    el("h1", { class: "page-title" }, state.dominioLabel),
-    el("p", { class: "page-sub" }, "Escolha um módulo para trabalhar. Use o botão de menu no topo para voltar aqui a qualquer momento."),
+    el("div", { class: "inicio-cabecalho row between wrap" },
+      el("div", {}, el("h1", { class: "page-title" }, "Visão geral"),
+        el("p", { class: "page-sub" }, state.dominioLabel)),
+      state.podeModulo("ativos") ? el("button", { class: "btn filled", onclick: () => ctx.navigate("ativos") }, "Ver ativos") : null),
+    resumo,
+    rapidos.length ? el("section", { class: "inicio-atalhos" }, el("h2", { class: "section-title" }, "Acessos rápidos"),
+      el("div", { class: "inicio-atalhos-grade" }, ...rapidos.map(t =>
+        el("button", { class: "card inicio-atalho", type: "button", onclick: () => ctx.navigate(t.path) },
+          el("span", { html: icon(t.icone, 23) }), t.rotulo)))) : null,
+    el("h2", { class: "section-title inicio-modulos-titulo" }, "Todos os módulos"),
     el("div", { class: "home-grid" }, ...tiles),
     el("div", { class: "card mt", style: "margin-top:24px" },
       el("div", { class: "row between" },
@@ -112,4 +186,8 @@ export function renderHome(root) {
       ),
     ),
   );
+  if (state.podeModulo("relatorios") || state.podeModulo("emprestimos")) {
+    resumo.append(skeleton(2));
+    carregarResumo(resumo);
+  }
 }

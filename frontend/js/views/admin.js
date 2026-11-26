@@ -317,39 +317,66 @@ function secaoMfaUsuario(usuario) {
 async function abaUsuarios(root) {
   const usuarios = await api.get("/usuarios").catch(() => []);
   const lookups = await loadLookups();
+  if (!root.isConnected) return;
 
-  root.append(el("div", { class: "card" },
-    el("div", { class: "row between" },
-      el("div", {},
-        el("div", { class: "section-title", style: "margin:0" }, "Usuários e permissões"),
-        el("div", { class: "muted", style: "font-size:13px" }, "Defina o que cada pessoa pode ver e fazer no sistema."),
-      ),
-      el("button", { class: "btn tonal small", onclick: () => abrirUsuario(null, lookups), html: icon("add", 18) + " Novo usuário" }),
-    ),
-  ));
-
-  const lista = el("div", { class: "card" });
-  if (!usuarios.length) lista.append(emptyState("user", "Sem usuários", "Cadastre o primeiro usuário."));
-  usuarios.forEach((u) => {
+  const perfis = { admin: "Administrador", ti: "TI", leitor: "Leitor", auditor: "Auditor" };
+  const busca = el("input", { class: "search-input", type: "search", placeholder: "Buscar por nome ou e-mail",
+    "aria-label": "Buscar por nome ou e-mail" });
+  const perfil = el("select", { "aria-label": "Filtrar por perfil" },
+    el("option", { value: "" }, "Todos os perfis"),
+    ...Object.entries(perfis).map(([valor, rotulo]) => el("option", { value: valor }, rotulo)));
+  const lista = el("div", { class: "table-wrap" });
+  function linha(u) {
     const perms = u.permissoes_efetivas || {};
-    lista.append(el("div", { class: "list-row" },
-      el("div", { class: "list-main" },
-        el("div", { class: "list-title" }, `${u.nome} ${u.papel === "admin" ? "· admin" : ""}`),
-        el("div", { class: "list-sub" }, `${u.email} · ${(perms.modulos || []).length} módulos · ${perms.pode_escrever ? "pode editar" : "somente leitura"}${perms.pode_excluir ? " · pode excluir" : ""}`),
-      ),
-      el("div", { class: "row" },
-        el("button", { class: "iconbtn", title: "Editar", onclick: () => abrirUsuario(u, lookups), html: icon("edit", 20) }),
-        el("button", { class: "iconbtn", title: "Excluir", onclick: async () => {
+    const planta = (lookups.plantas || []).find(p => p.id === u.planta_id);
+    const iniciais = u.nome.trim().split(/\s+/).slice(0, 2).map(s => s[0]).join("").toUpperCase();
+    const liberado = u.chat_ia_ativo !== false;
+    return el("tr", {},
+      el("td", {}, el("div", { class: "admin-identidade" },
+        el("span", { class: "admin-avatar", "aria-hidden": "true" }, iniciais),
+        el("div", {}, el("strong", {}, u.nome), el("div", { class: "list-sub" }, u.email),
+          el("div", { class: "list-sub" }, `${(perms.modulos || []).length} módulos · ${perms.pode_escrever ? "pode editar" : "somente leitura"}${perms.pode_excluir ? " · pode excluir" : ""}`)))),
+      el("td", {}, perfis[u.papel] || u.papel),
+      el("td", {}, planta?.nome || u.planta_sigla || (u.papel === "admin" ? "Todas as plantas" : "Sem planta")),
+      el("td", {}, el("span", { class: `admin-acesso ${liberado ? "ok" : "bloqueado"}` }, liberado ? "Liberado" : "Bloqueado")),
+      el("td", {}, el("div", { class: "row" },
+        el("button", { class: "iconbtn", title: "Editar", "aria-label": `Editar ${u.nome}`, onclick: () => abrirUsuario(u, lookups), html: icon("edit", 20) }),
+        el("button", { class: "iconbtn", title: "Excluir", "aria-label": `Excluir ${u.nome}`, onclick: async () => {
           if (await confirmSheet("Excluir usuário", `Excluir ${u.nome}?`)) {
             try { await api.del(`/usuarios/${u.id}`); toast("Excluído"); renderAdmin(document.getElementById("view")); }
             catch (e) { mostrarErro(e); }
           }
-        }, html: icon("trash", 20) }),
-      ),
-    ));
-  });
-  root.append(lista);
+        }, html: icon("trash", 20) }))));
+  }
+  function atualizar() {
+    const termo = normalizarBuscaAdmin(busca.value);
+    const encontrados = usuarios.filter(u =>
+      (!perfil.value || u.papel === perfil.value) && normalizarBuscaAdmin(`${u.nome} ${u.email}`).includes(termo));
+    if (!encontrados.length) {
+      lista.replaceChildren(usuarios.length
+        ? emptyState("search", "Nenhum usuário encontrado", "Ajuste os filtros de busca.")
+        : emptyState("user", "Sem usuários", "Cadastre o primeiro usuário."));
+      return;
+    }
+    lista.replaceChildren(el("table", { class: "data admin-usuarios-tabela" },
+      el("thead", {}, el("tr", {}, ...["Usuário", "Perfil", "Planta", "Assistente", "Ações"].map(rotulo =>
+        el("th", { scope: "col" }, rotulo)))),
+      el("tbody", {}, ...encontrados.map(linha))));
+  }
+  busca.addEventListener("input", atualizar);
+  perfil.addEventListener("change", atualizar);
+  atualizar();
+  root.append(el("section", { class: "card admin-usuarios" },
+    el("div", { class: "row between wrap admin-usuarios-topo" },
+      el("h2", { class: "section-title" }, "Usuários e permissões"),
+      el("button", { class: "btn filled", onclick: () => abrirUsuario(null, lookups), html: icon("add", 18) + " Novo usuário" })),
+    el("div", { class: "admin-usuarios-filtros" }, busca, perfil), lista),
+  el("div", { class: "card admin-atalhos" },
+    el("a", { class: "btn text", href: "#/admin?aba=ollama", html: icon("chat", 18) + " Configuração do Ollama" }),
+    el("a", { class: "btn text", href: "#/admin?aba=backups", html: icon("arquivo", 18) + " Backups" })));
 }
+
+const normalizarBuscaAdmin = (texto) => String(texto).normalize("NFD").replace(/\p{M}/gu, "").trim().toLowerCase();
 
 // ---------------------------------------------------------------------------
 // Dispositivos de impressão
@@ -620,6 +647,7 @@ export async function renderAdmin(root) {
   root.append(conteudo);
 
   try { meta = await api.get("/admin/metadados"); } catch { meta = { modulos: [], inventarios: [] }; }
+  if (conteudo.parentElement !== root) return;
 
   // A ordem desta lista é a ordem das abas na tela — e a ordem do despacho
   // logo abaixo. Mantenha as duas iguais.
@@ -695,6 +723,7 @@ export async function renderAdmin(root) {
   const agrupadas = new Set(GRUPOS.flatMap(([, ks]) => ks));
   const semGrupo = abas.map(([k]) => k).filter((k) => !agrupadas.has(k));
   const grupos = semGrupo.length ? [...GRUPOS, ["Outros", semGrupo]] : GRUPOS;
+  const iconesGrupo = ["user", "ativos", "doc", "shield", "settings", "server"];
 
   const rotuloDe = (chave) => (abas.find(([c]) => c === chave) || [, chave])[1];
   const grupoDaAba = (chave) => grupos.find(([, ks]) => ks.includes(chave));
@@ -702,7 +731,7 @@ export async function renderAdmin(root) {
   const busca = el("input", {
     type: "search",
     class: "busca-abas",
-    placeholder: "Buscar opção…",
+    placeholder: "Buscar opção de administração",
     "aria-label": "Buscar opção de administração",
   });
   const filaCategorias = el("div", { class: "categorias-admin" });
@@ -717,26 +746,29 @@ export async function renderAdmin(root) {
     barraAberta = true;
     const g = grupoDaAba(chave);
     if (g) categoriaAberta = g[0];
-    renderAdmin(document.getElementById("view"));
+    const rota = `#/admin?aba=${chave}`;
+    if (location.hash === rota) renderAdmin(document.getElementById("view"));
+    else location.hash = rota;
   }
 
   function casa(chave, termo) {
-    const alvo = `${rotuloDe(chave)} ${(AJUDA_ABA[chave] || []).join(" ")}`.toLowerCase();
+    const alvo = normalizarBuscaAdmin(`${rotuloDe(chave)} ${(AJUDA_ABA[chave] || []).join(" ")}`);
     return alvo.includes(termo);
   }
 
   function pintarCategorias() {
-    const termo = busca.value.trim().toLowerCase();
+    const termo = normalizarBuscaAdmin(busca.value);
     filaCategorias.innerHTML = "";
 
-    for (const [titulo, chaves] of grupos) {
+    for (const [indice, [titulo, chaves]] of grupos.entries()) {
       const temResultado = !termo || chaves.some((k) => casa(k, termo));
       filaCategorias.append(el("button", {
         class: [
           "categoria-admin",
-          titulo === categoriaAberta ? "ativa" : "",
+          titulo === categoriaAberta || grupoDaAba(abaAtiva)?.[0] === titulo ? "ativa" : "",
           temResultado ? "" : "sem-resultado",
         ].filter(Boolean).join(" "),
+        "aria-expanded": String(titulo === categoriaAberta),
         onclick: () => {
           if (termo) return;   // durante a busca, a categoria não navega
           // Clicar na categoria que já está aberta fecha a barra.
@@ -755,14 +787,14 @@ export async function renderAdmin(root) {
           else pintar();
         },
       },
+        el("span", { html: icon(iconesGrupo[indice] || "menu", 18) }),
         el("span", {}, titulo),
-        el("span", { class: "categoria-conta" }, String(chaves.length)),
       ));
     }
   }
 
   function pintarBarra() {
-    const termo = busca.value.trim().toLowerCase();
+    const termo = normalizarBuscaAdmin(busca.value);
     // Visível ao clicar numa categoria, ou sempre que houver busca ativa.
     const visivel = barraAberta || Boolean(termo);
     barra.classList.toggle("oculto", !visivel);
@@ -788,6 +820,7 @@ export async function renderAdmin(root) {
       el("div", { class: "barra-trilho" },
         ...itens.map(([chave, titulo]) => el("button", {
           class: `opcao-admin${chave === abaAtiva ? " ativa" : ""}`,
+          "aria-current": chave === abaAtiva ? "page" : null,
           title: termo ? titulo : undefined,
           onclick: () => irPara(chave),
         },
@@ -804,11 +837,11 @@ export async function renderAdmin(root) {
   busca.addEventListener("input", pintar);
   pintar();
 
-  const tabsEl = el("div", { class: "tabs-wrap" }, busca, filaCategorias, barra);
-
-  const alvo = el("div");
-  root.insertBefore(tabsEl, conteudo);
-  conteudo.replaceWith(alvo);
+  const alvo = el("div", { class: "admin-conteudo" });
+  root.insertBefore(busca, conteudo);
+  conteudo.replaceWith(el("div", { class: "admin-layout" },
+    el("nav", { class: "card admin-destinos", "aria-label": "Seções da administração" }, filaCategorias, barra),
+    alvo));
 
   // Despacho explícito, na mesma ordem das abas: usar um `else` genérico como
   // último caso escondia qual aba era o padrão.

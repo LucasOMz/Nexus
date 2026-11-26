@@ -762,8 +762,8 @@ async function renderList(root, lookups) {
   //
   // "Usuário" entrou no lugar: é a pergunta que a lista não respondia —
   // com quem está este equipamento.
-  const cabecalhos = podeLote ? ["", "", "Patrimônio", "Planta", "Modelo", "Status", "Usuário", "Localização", "Ações"]
-                              : ["", "Patrimônio", "Planta", "Modelo", "Status", "Usuário", "Localização", "Ações"];
+  const colunas = ["", "Patrimônio", "Equipamento", "Hostname", "Departamento", "Status", "Planta", "Usuário", "Localização", "Ações"];
+  const cabecalhos = podeLote ? ["", ...colunas] : colunas;
 
   const table = el("table", { class: "data" },
     el("thead", {}, el("tr", {}, ...cabecalhos.map((h, i) => {
@@ -772,6 +772,7 @@ async function renderList(root, lookups) {
     }))),
     el("tbody", {}, ...data.items.map((a) => {
       const loc = lookups.localizacoes.find((l) => l.id === a.localizacao_id)?.nome;
+      const departamento = lookups.departamentos?.find(d => d.id === a.departamento_id)?.nome;
 
       // A caixa é criada ANTES da linha e ligada a ela só depois. Referenciar
       // `tr` dentro da montagem lançaria "Cannot access 'tr' before
@@ -787,7 +788,7 @@ async function renderList(root, lookups) {
       const tr = el("tr", { class: destacado ? "row-destaque" : "" },
         ...(caixaLinha ? [el("td", { style: "padding-right:0" }, caixaLinha)] : []),        el("td", { style: "padding-right:0" }, a.foto_id
           ? fotoProtegida(a.foto_id, { alt: "", loading: "lazy", style: "width:38px;height:38px;object-fit:cover;border-radius:8px;display:block" })
-          : el("div", { style: "width:38px;height:38px;border-radius:8px;background:var(--md-sys-color-surface-container-high)" })),
+          : el("span", { class: "ativos-miniatura", html: icon(a.dominio === "impressora" ? "print" : "ativos", 21) })),
         el("td", { style: "font-weight:600" },
           a.patrimonio,
           // O chip responde a pergunta que o patrimônio sozinho não responde:
@@ -799,11 +800,16 @@ async function renderList(root, lookups) {
                 title: "Locado — não é patrimônio da empresa e não deprecia",
               }, "Locado")
             : null),
+        el("td", {}, el("button", { type: "button", class: "ativos-modelo", title: "Abrir ficha do ativo", onclick: (ev) => {
+          ev.stopPropagation();
+          openDetail(a, lookups);
+        } }, a.modelo || a.numero_serie || "Abrir ficha")),
+        el("td", {}, a.hostname || a.ti?.hostname || a.impressora?.hostname || "—"),
+        el("td", {}, departamento || "—"),
+        el("td", { html: statusBadge(a.status) }),
         el("td", {}, a.planta_sigla
           ? el("span", { class: "chip" }, a.planta_sigla)
           : el("span", { class: "muted" }, "—")),
-        el("td", {}, a.modelo || "—"),
-        el("td", { html: statusBadge(a.status) }),
         // Quem usa a máquina. A ordem importa:
         //
         // 1. ultimo_usuario — quem o AGENTE viu logado. É o dado vivo,
@@ -992,13 +998,19 @@ export async function renderAtivos(root) {
 
   root.innerHTML = "";
   root.append(
-    el("h1", { class: "page-title" }, `${state.dominioLabel} — Ativos`),
+    el("div", { class: "ativos-topo row between wrap" },
+      el("div", {}, el("h1", { class: "page-title" }, "Ativos"),
+        el("p", { class: "page-sub" }, state.dominioLabel)),
+      state.canWrite ? el("button", { class: "btn filled ativos-novo", type: "button", disabled: true,
+        onclick: () => openForm(null, lookups), html: icon("add", 18) + " Novo ativo" }) : null),
     toolbar,
     el("div", { id: "ativos-list" }, skeleton(6)),
   );
 
   listRoot = root.querySelector("#ativos-list");
   lookups = await loadLookups();
+  const novo = root.querySelector(".ativos-novo");
+  if (novo) novo.disabled = false;
   ctx.setFab(state.canWrite ? { label: "Novo Ativo", icon: "add", onClick: () => openForm(null, lookups) } : null);
   await renderList(listRoot, lookups);
 }

@@ -29,10 +29,10 @@ export function renderLogin(root) {
 
   const miolo = el("div");
   const card = el("div", { class: "login-card card elevated" },
-    el("div", { class: "login-logo", html:
-      `<div style="font-size:40px">${icon("dashboard", 48)}</div>` +
-      '<h2 style="margin:8px 0 0">Nexus</h2>' +
-      '<p class="muted">Inventário de TI e Impressoras</p>' }),
+    el("div", { class: "login-logo" },
+      el("span", { class: "nexus-marca-icone", "aria-hidden": "true" }),
+      el("h2", {}, "Nexus"),
+      el("p", { class: "muted" }, "Inventário de TI e Impressoras")),
     miolo,
   );
   root.append(card);

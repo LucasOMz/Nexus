@@ -11,7 +11,7 @@ import { criarChatIa } from "./js/chat_ia.js";
 import { Router } from "./js/router.js";
 import { ctx } from "./js/context.js";
 import { el, icon, toast, mostrarErro, dialog } from "./js/ui.js";
-import { ligarAtalhoDeBusca } from "./js/views/busca.js";
+import { abrirBusca, ligarAtalhoDeBusca } from "./js/views/busca.js";
 import { APP_VERSION } from "./js/version.js";
 import { renderLogin } from "./js/views/login.js";
 import { renderSelecao, renderHome } from "./js/views/inventario.js";
@@ -94,9 +94,7 @@ const VIEWS = {
   admin: renderAdmin,
 };
 
-// O Dashboard foi incorporado a Relatórios: a tela inicial do inventário
-// passa a ser os indicadores + gráficos.
-const ROTA_INICIAL = "relatorios";
+const NAVEGACAO_PRINCIPAL = ["home", "ativos", "produtos", "manutencoes", "emprestimos", "monitor", "mapa", "relatorios"];
 const BOTTOM_NAV = ["relatorios", "ativos", "scanner"];
 
 const router = new Router();
@@ -106,6 +104,7 @@ let chatIa = null;
 let consultaChat = 0;
 let timerChat;
 let currentPath = "home";
+let revisaoTela = 0;
 
 const currentRoute = () => (location.hash || "#/home").replace(/^#\/?/, "").split("?")[0] || "home";
 
@@ -117,7 +116,7 @@ function buildShell() {
   root.innerHTML = "";
 
   const menuBtn = el("button", { class: "iconbtn", title: "Menu", onclick: openDrawer, html: icon("menu") });
-  const homeBtn = el("button", { class: "iconbtn", title: "Menu inicial do inventário", onclick: () => router.go("home"), html: icon("home") });
+  const homeBtn = el("button", { class: "iconbtn nexus-home-mobile", title: "Menu inicial do inventário", onclick: () => router.go("home"), html: icon("home") });
 
 /**
  * Seletor da planta que a tela está mostrando.
@@ -137,11 +136,14 @@ function buildShell() {
  * agora dá para trabalhar dentro de uma planta específica.
  */
 function seletorDePlanta() {
-  if (!state.isAdmin) return el("span", {});
+  if (!state.isAdmin) return state.user?.planta_sigla
+    ? el("span", { class: "nexus-planta-fixa", title: "Planta da sua conta" }, state.user.planta_sigla)
+    : null;
 
   const caixa = el("select", {
     class: "seletor-planta",
     title: "Planta que esta tela está mostrando",
+    "aria-label": "Planta que esta tela está mostrando",
     onchange: (ev) => {
       const valor = ev.target.value;
       state.plantaAtiva = valor === "" ? null : Number(valor);
@@ -175,6 +177,10 @@ function seletorDePlanta() {
     // A versão saiu daqui de propósito: na barra superior ela competia com o
     // nome sem ajudar. Fica na gaveta, onde há espaço e quem procura vai.
     el("div", { class: "brand", html: '<span class="long">Nexus</span>' }),
+    el("button", { class: "nexus-busca", type: "button", onclick: abrirBusca,
+      "aria-label": "Buscar patrimônio, hostname ou série", "aria-keyshortcuts": "Control+K Meta+K" },
+      el("span", { html: icon("search", 20) }),
+      el("span", { class: "nexus-busca-texto" }, "Buscar patrimônio, hostname ou série")),
     el("div", { class: "spacer" }),
     seletorDePlanta(),
     badge,
@@ -183,11 +189,17 @@ function seletorDePlanta() {
     el("button", { class: "iconbtn", title: "Sair", onclick: logout, html: icon("logout") }),
   );
 
-  const rail = el("nav", { class: "rail", "data-nav": "rail", id: "rail" });
+  const rail = el("nav", { class: "rail", "data-nav": "rail", id: "rail", "aria-label": "Favoritos" });
+  const lateral = el("aside", { class: "nexus-lateral" },
+    el("button", { class: "nexus-marca", type: "button", onclick: () => router.go("home"), "aria-label": "Nexus, início" },
+      el("span", { class: "nexus-marca-icone", "aria-hidden": "true" }), "Nexus"),
+    el("nav", { class: "nexus-nav", id: "nexus-nav", "aria-label": "Navegação principal" }),
+    rail,
+    el("nav", { class: "nexus-nav nexus-nav-admin", id: "nexus-nav-admin", "aria-label": "Administração" }));
   const content = el("main", { class: "content", id: "view" });
   const bottomnav = el("nav", { class: "bottomnav", "data-nav": "bottom", id: "bottomnav" });
 
-  root.append(topbar, el("div", { class: "shell" }, rail, content), bottomnav);
+  root.append(topbar, el("div", { class: "shell" }, lateral, content), bottomnav);
 
   fabEl = el("button", { class: "fab hidden" });
   document.body.append(fabEl);
@@ -229,7 +241,11 @@ function destroyShell() {
 
 function updateBadge() {
   const b = document.getElementById("inv-badge");
-  if (b) b.innerHTML = icon(state.dominio === "ti" ? "ativos" : "print", 18) + `<span>${state.dominioLabel}</span>`;
+  if (!b) return;
+  b.querySelector("svg").outerHTML = icon(state.dominio === "ti" ? "ativos" : "print", 18);
+  b.querySelector("span").textContent = state.dominioLabel;
+  b.setAttribute("aria-label", state.inventariosPermitidos().length > 1
+    ? `Trocar de inventário. Atual: ${state.dominioLabel}` : state.dominioLabel);
 }
 
 /**
@@ -543,11 +559,12 @@ function navItemsFor(container) {  const permitidos = Object.keys(MODULOS).filte
 
 
 function navButton(key, active, compact = false) {
-  const meta = key === "home" ? { rotulo: "Menu", icone: "home" } : MODULOS[key];
+  const meta = key === "home" ? { rotulo: "Início", icone: "home" } : MODULOS[key];
   if (!meta) return null;
   return el("button", {
     class: "nav-item" + (key === active ? " active" : ""),
     title: meta.rotulo,
+    "aria-current": key === active ? "page" : null,
     onclick: () => router.go(key),
     html: icon(meta.icone, 24) + `<span>${meta.rotulo}</span>`,
   });
@@ -589,6 +606,10 @@ function estrelaFavorito(key, aoMudar) {
 }
 
 function updateNav(active) {
+  const principal = document.getElementById("nexus-nav");
+  const admin = document.getElementById("nexus-nav-admin");
+  principal?.replaceChildren(...NAVEGACAO_PRINCIPAL.filter(k => k === "home" || state.podeModulo(k)).map(k => navButton(k, active)));
+  admin?.replaceChildren(...(state.podeModulo("admin") ? [navButton("admin", active)] : []));
   for (const [id, tipo] of [["rail", "rail"], ["bottomnav", "bottom"]]) {
     const cont = document.getElementById(id);
     if (!cont) continue;
@@ -596,7 +617,7 @@ function updateNav(active) {
 
     if (tipo === "rail") {
       // A barra rápida mostra os FAVORITOS. O resto vive na gaveta.
-      navItemsFor("rail").forEach((k) => {
+      navItemsFor("rail").filter(k => k !== "home").forEach((k) => {
         const b = navButton(k, active);
         if (b) cont.append(b);
       });
@@ -719,6 +740,7 @@ function openDrawer() {
 // Roteamento
 // ---------------------------------------------------------------------------
 function renderRoute(path) {
+  const revisao = ++revisaoTela;
   ctx.limpar();
   ctx.limpar = () => {};
   currentPath = path;
@@ -760,7 +782,9 @@ function renderRoute(path) {
   try {
     const resultado = view(document.getElementById("view"));
     if (resultado instanceof Promise) {
-      resultado.catch((e) => mostrarTelaQuebrada(path, e));
+      resultado.catch((e) => {
+        if (revisao === revisaoTela) mostrarTelaQuebrada(path, e);
+      });
     }
   } catch (e) {
     mostrarTelaQuebrada(path, e);

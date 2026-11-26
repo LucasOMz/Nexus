@@ -1,0 +1,202 @@
+/* Layout e superfícies do Nexus. As preferências de tema e paleta continuam
+   usando os tokens compartilhados por todos os módulos. */
+:root {
+  --nexus-side: #112a22;
+  --nexus-side-text: #edf7f1;
+  --nexus-side-active: #1c593f;
+  --nexus-side-muted: #b9d1c4;
+  --nexus-rail-width: clamp(190px, 17vw, 246px);
+  --nexus-radius: 10px;
+  --font: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+:root[data-theme="light"]:is(:not([data-fundo]),[data-fundo="verde"]) {
+  --md-sys-color-background: #f4f6f3;
+  --md-sys-color-on-background: #131a16;
+  --md-sys-color-surface: #fff;
+  --md-sys-color-surface-container-low: #f7f8f7;
+  --md-sys-color-surface-container: #edf1ee;
+  --md-sys-color-surface-container-high: #e5ede8;
+  --md-sys-color-outline-variant: #d1d9d4;
+}
+:root[data-theme="light"]:is(:not([data-paleta]),[data-paleta="nexus"]) {
+  --md-sys-color-primary: #087344;
+  --md-sys-color-primary-container: #dbf1e4;
+  --md-sys-color-on-primary-container: #15452e;
+}
+:root[data-theme="dark"] {
+  --nexus-side: #0b2219;
+  --nexus-side-active: #255c43;
+}
+
+.nexus-lateral { display: none; }
+.nexus-busca { display: inline-flex; align-items: center; gap: 10px; min-height: 40px;
+  padding: 0 12px; min-width: 0; border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 8px; background: var(--md-sys-color-surface-container-low);
+  color: var(--md-sys-color-on-surface-variant); cursor: pointer; text-align: left; }
+.nexus-busca span:first-child { display: grid; place-items: center; }
+.nexus-busca-texto { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nexus-planta-fixa { padding: 3px 7px; white-space: nowrap; color: var(--md-sys-color-on-surface-variant); font-size: .8rem; }
+.topbar .inv-badge { border-radius: 8px; }
+#app > .topbar { background: var(--md-sys-color-surface); }
+#app > .topbar::after, .page-title::before { display: none; }
+.page-title { font-size: clamp(1.55rem, 2.6vw, 2.18rem); font-weight: 740; line-height: 1.15; margin: 0 0 12px; padding-left: 0; letter-spacing: -.04em; }
+.section-title { font-size: 1.1rem; font-weight: 710; letter-spacing: -.018em; }
+.card, .table-wrap, .home-tile { border-radius: var(--nexus-radius); box-shadow: none; }
+.btn, .chip, .field input, .field select, .field textarea { border-radius: 8px; }
+.btn:focus-visible, .nexus-busca:focus-visible, .nexus-lateral button:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary); outline-offset: 3px;
+}
+.nexus-lateral button:focus-visible { outline-color: #89efb6; }
+.table-wrap { background: var(--md-sys-color-surface); }
+table.data thead { background: var(--md-sys-color-surface-container); }
+table.data td, table.data th { padding: 11px 14px; }
+.chat-ia-toggle { background: var(--nexus-side); color: #fff; }
+.chat-ia-painel { border-radius: 15px; }
+.nexus-marca-icone { display: inline-block; width: 26px; height: 22px; background: #43c88a;
+  clip-path: polygon(0 100%, 0 19%, 24% 0, 73% 51%, 73% 0, 100% 18%, 100% 82%, 74% 100%, 27% 49%, 27% 83%); }
+.login-logo .nexus-marca-icone { width: 40px; height: 34px; background: var(--md-sys-color-primary); }
+.login-logo h2 { margin: 4px 0; font-size: 1.8rem; font-weight: 750; }
+
+.inicio-cabecalho { gap: 14px; margin-bottom: 19px; }
+.inicio-cabecalho .page-title { margin-bottom: 6px; }
+.inicio-cabecalho .page-sub { margin: 0; }
+.inicio-resumo { min-width: 0; }
+.inicio-pendencias { align-self: stretch; min-width: 0; }
+.inicio-indicadores, .inicio-atalhos-grade { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.inicio-paineis { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; margin-top: 16px; }
+.inicio-paineis > :only-child { grid-column: 1 / -1; }
+.inicio-indicadores > .card, .inicio-paineis > .card { margin: 0; }
+.inicio-indicador { display: grid; gap: 8px; padding: 15px 17px; }
+.inicio-indicador-rotulo { display: flex; align-items: center; gap: 8px; color: var(--md-sys-color-on-surface-variant); font-weight: 600; }
+.inicio-indicador-rotulo svg, .inicio-atalho svg { color: var(--md-sys-color-primary); vertical-align: middle; }
+.inicio-indicador > strong { font-size: clamp(1.7rem, 4vw, 2.65rem); line-height: 1.15; letter-spacing: -.055em; font-variant-numeric: tabular-nums; }
+.inicio-departamentos ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 11px; }
+.inicio-departamentos li { display: grid; grid-template-columns: minmax(86px, 1fr) minmax(50px, 2fr) minmax(25px, auto); align-items: center; gap: 10px; font-size: .88rem; }
+.inicio-departamentos li > span:first-child { overflow-wrap: anywhere; }
+.inicio-barra { height: 12px; background: var(--md-sys-color-surface-container); border-radius: 3px; overflow: hidden; }
+.inicio-barra span { display: block; height: 100%; border-radius: inherit; background: var(--md-sys-color-primary); }
+.inicio-pendencia { width: 100%; padding: 8px 0; background: none; border: 0; text-align: left; cursor: pointer;
+  display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 8px; }
+.inicio-pendencia + .inicio-pendencia { border-top: 1px solid var(--md-sys-color-outline-variant); }
+.inicio-pendencia:hover { color: var(--md-sys-color-primary); }
+.inicio-pendencia-icone, .inicio-pendencia strong { color: var(--cor-aviso); background: color-mix(in srgb, var(--cor-aviso) 12%, transparent); border-radius: 6px; padding: 4px 7px; }
+.inicio-pendencia svg { display: block; }
+.inicio-atalhos, .inicio-modulos-titulo { margin-top: 22px; }
+.inicio-atalho { display: flex; gap: 10px; align-items: center; padding: 13px; cursor: pointer; text-align: left; font: inherit; font-weight: 650; }
+.inicio-atalho:hover, .home-tile:hover { border-color: var(--md-sys-color-primary); box-shadow: none; }
+.inicio-atalhos-grade > .card { margin: 0; }
+.home-tile { padding: 14px; }
+
+.admin-layout { display: grid; grid-template-columns: minmax(170px, 216px) minmax(0, 1fr); gap: 16px; align-items: start; }
+#view > .busca-abas { width: 100%; max-width: none; border-radius: 8px; }
+.admin-conteudo { min-width: 0; }
+.admin-destinos { padding: 9px; }
+.admin-destinos .categorias-admin, .admin-destinos .barra-trilho { flex-direction: column; flex-wrap: nowrap; gap: 4px; }
+.admin-destinos .categoria-admin, .admin-destinos .opcao-admin { width: 100%; min-height: 38px;
+  border: 0; border-radius: 7px; padding: 8px 10px; background: none; text-align: left; white-space: normal; }
+.admin-destinos .categoria-admin span:first-child { display: grid; place-items: center; }
+.admin-destinos .categoria-admin.ativa, .admin-destinos .opcao-admin.ativa {
+  background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); }
+.admin-destinos .categoria-admin:hover, .admin-destinos .opcao-admin:hover { background: var(--md-sys-color-surface-container-high); }
+.admin-destinos .opcoes-admin { border: 0; margin: 7px 0 0; padding: 8px 3px 2px; background: none;
+  border-top: 1px solid var(--md-sys-color-outline-variant); border-radius: 0; }
+.admin-usuarios { padding: 16px; }
+.admin-usuarios-topo { gap: 12px; margin-bottom: 14px; }
+.admin-usuarios-topo .section-title { margin: 0; }
+.admin-usuarios-filtros { display: grid; grid-template-columns: minmax(0, 1fr) minmax(138px, .55fr); gap: 10px; margin: 0 0 12px; }
+.admin-usuarios-filtros input, .admin-usuarios-filtros select { min-width: 0; width: 100%; font: inherit; color: inherit;
+  border: 1px solid var(--md-sys-color-outline-variant); border-radius: 8px; padding: 8px 10px; background: var(--md-sys-color-surface); }
+.admin-usuarios-tabela .list-sub { font-size: .74rem; }
+.admin-identidade { display: flex; align-items: center; gap: 8px; }
+.admin-avatar { display: grid; place-items: center; border-radius: 50%; flex: 0 0 32px; height: 32px;
+  color: var(--md-sys-color-on-primary-container); background: var(--md-sys-color-primary-container); font-size: .77rem; font-weight: 720; }
+.admin-acesso { display: inline-flex; padding: 2px 8px; border-radius: 8px; font-size: .79rem; font-weight: 680; }
+.admin-acesso.ok { background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); }
+.admin-acesso.bloqueado { background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); }
+.admin-atalhos { display: flex; gap: 8px; flex-wrap: wrap; padding: 8px 12px; }
+
+.ativos-topo { gap: 12px; margin-bottom: 14px; }
+.ativos-topo .page-title { margin-bottom: 5px; }
+.ativos-topo .page-sub { margin: 0; }
+.ativos-miniatura { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 7px;
+  background: var(--md-sys-color-surface-container); color: var(--md-sys-color-primary); }
+.ativos-modelo { font: inherit; font-weight: 675; text-align: left; padding: 0; color: inherit;
+  border: 0; background: none; cursor: pointer; }
+.ativos-modelo:hover { text-decoration: underline; color: var(--md-sys-color-primary); }
+body:has(.ativos-novo) > .fab { display: none; }
+
+.monitor-topo { margin-bottom: 14px; }
+.monitor-layout { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.monitor-lista { padding: 14px; min-width: 0; }
+.monitor-item { width: 100%; display: grid; grid-template-columns: 22px minmax(0, 1fr) minmax(80px, auto);
+  align-items: center; gap: 10px; padding: 10px 7px; border: 0;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant); font: inherit; background: none;
+  color: var(--md-sys-color-on-surface); text-align: left; cursor: pointer; }
+.monitor-item span, .monitor-item small { min-width: 0; overflow-wrap: anywhere; }
+.monitor-item > span:nth-child(2) > small { display: block; color: var(--md-sys-color-on-surface-variant); }
+.monitor-item[aria-pressed="true"] { background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); }
+.monitor-estado { color: var(--md-sys-color-on-surface-variant); text-align: right; font-size: .72rem; }
+.monitor-estado.aviso { color: var(--cor-aviso); font-weight: 700; }
+.monitor-ficha { min-width: 0; }
+.monitor-ficha .mon-cartao { display: flex; flex-wrap: wrap; gap: 12px; padding: 16px; border-radius: var(--nexus-radius); }
+.monitor-ficha .mon-cartao[hidden] { display: none; }
+.monitor-ficha .mon-centro { flex: 1 1 170px; min-width: 0; }
+.monitor-ficha .mon-direita { flex: 1 0 100%; flex-direction: row; flex-wrap: wrap; }
+.mapa-workspace .mapa-palco, .mapa-workspace .mapa-lateral { border-radius: var(--nexus-radius); }
+.mapa-workspace .mapa-cabecalho h1 { font-size: clamp(1.55rem, 2.6vw, 2.18rem); letter-spacing: -.04em; }
+.mapa-workspace .mapa-modos { border-radius: 8px; }
+
+@media (min-width: 769px) {
+  #app:has(> .shell) { display: grid; grid-template-columns: var(--nexus-rail-width) minmax(0, 1fr); grid-template-rows: auto 1fr; align-items: start; }
+  #app > .shell { display: contents; }
+  #app > .topbar { grid-column: 2; grid-row: 1; min-width: 0; gap: clamp(5px, 1vw, 14px); padding-inline: clamp(12px, 2vw, 30px); }
+  #app #view { grid-column: 2; grid-row: 2; max-width: 1680px; padding-inline: clamp(16px, 2.3vw, 36px); }
+  .topbar .brand, .topbar .nexus-home-mobile { display: none; }
+  .topbar .spacer { display: none; }
+  .nexus-busca { flex: 1 1 160px; }
+  .topbar .seletor-planta, .topbar .inv-badge { border: 1px solid var(--md-sys-color-outline-variant); background-color: var(--md-sys-color-surface-container-low); color: var(--md-sys-color-on-surface);
+    border-radius: 8px; min-height: 40px; max-width: 220px; }
+  .nexus-lateral { grid-column: 1; grid-row: 1 / 3; position: sticky; top: 0; height: 100dvh;
+    min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 9px; padding: 15px 10px 14px;
+    background: var(--nexus-side); color: var(--nexus-side-text); }
+  .nexus-marca { display: flex; align-items: center; gap: 9px; background: transparent; border: 0; color: inherit;
+    font: inherit; font-size: 1.6rem; font-weight: 760; padding: 6px 10px; cursor: pointer; margin-bottom: 9px; }
+  .nexus-nav, .nexus-lateral .rail { display: flex; flex-direction: column; gap: 4px; }
+  .nexus-lateral .rail { position: static; width: auto; height: auto; flex: 0 0 auto; padding: 8px 0; border: 0; border-top: 1px solid #ffffff32; background: none; }
+  .nexus-lateral .nav-item { display: flex; align-items: center; flex-direction: row; justify-content: flex-start; gap: 9px;
+    min-height: 38px; padding: 7px 9px; border: 0; border-radius: 8px; width: 100%; color: inherit;
+    background: transparent; text-align: left; font: inherit; font-size: .87rem; cursor: pointer; }
+  .nexus-lateral .nav-item svg { width: 19px; height: 19px; flex: 0 0 19px; }
+  .nexus-lateral .nav-item:hover { background: #ffffff1b; }
+  .nexus-lateral .nav-item.active { background: var(--nexus-side-active); color: #fff; font-weight: 690; }
+  .nexus-lateral .nav-vazio { color: var(--nexus-side-muted); }
+  .nexus-nav-admin { margin-top: auto; border-top: 1px solid #ffffff32; padding-top: 8px; }
+  .nexus-nav-admin:empty { display: none; }
+}
+@media (max-width: 1080px) {
+  .inicio-indicadores, .inicio-atalhos-grade { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .inicio-paineis { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 960px) {
+  .monitor-layout { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 768px) {
+  .admin-layout { grid-template-columns: minmax(0, 1fr); }
+  .admin-destinos .categorias-admin, .admin-destinos .barra-trilho { flex-direction: row; overflow-x: auto; }
+  .admin-destinos .categoria-admin, .admin-destinos .opcao-admin { width: auto; flex: 0 0 auto; }
+  .nexus-busca { padding-inline: 8px; }
+  .nexus-busca-texto, .topbar .brand { display: none; }
+  .topbar .inv-badge { max-width: 34vw; padding-inline: 6px; font-size: .76rem; gap: 3px; }
+  .topbar .seletor-planta { min-width: 0; max-width: 27vw; margin-right: 0; }
+  .topbar .inv-badge > span:first-of-type { overflow: hidden; text-overflow: ellipsis; }
+  .topbar .inv-badge > svg { display: none; }
+  .topbar .iconbtn { width: 32px; }
+  .topbar { gap: 4px; }
+}
+@media print {
+  #app:has(> .shell), #app > .shell { display: block; }
+  #app #view { width: 100%; padding: 0; }
+  .nexus-lateral { display: none; }
+  .admin-layout { display: block; }
+  .admin-destinos { display: none; }
+}

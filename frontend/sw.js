@@ -11,9 +11,9 @@
    cache continua servindo como reserva quando esta offline.
    (cache-first causava o site ficar preso em uma versao antiga)
    ===================================================================== */
-const VERSION = "v303";
+const VERSION = "v304";
 const CACHE = `patrimonio-${VERSION}`;
-const CORE = ["/", "/index.html", "/styles.css", "/app.js", "/manifest.json"];
+const CORE = ["/", "/index.html", "/styles.css", "/nexus-ui.css", "/app.js", "/manifest.json"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

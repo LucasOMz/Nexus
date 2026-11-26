@@ -641,7 +641,7 @@ verificar("tela inexistente cai no menu",
   verificar("a busca filtra por rotulo E palavras-chave",
     // A variavel pode se chamar k ou chave: o que importa e a busca consultar
     // o rótulo E as palavras-chave da aba.
-    /AJUDA_ABA\[/.test(fonteAdmin) && /busca\.value\.trim\(\)\.toLowerCase\(\)/.test(fonteAdmin));
+    /AJUDA_ABA\[/.test(fonteAdmin) && /normalizarBuscaAdmin\(busca\.value\)/.test(fonteAdmin));
   verificar("existe o campo de busca das abas",
     /class: "busca-abas"/.test(fonteAdmin));
   verificar("busca sem resultado avisa em vez de ficar vazio",
@@ -654,10 +654,10 @@ verificar("tela inexistente cai no menu",
 {
   const blocoGrupos = /const GRUPOS = \[([\s\S]*?)\n  \];/.exec(fonteAdmin);
   verificar("existem categorias declaradas", Boolean(blocoGrupos));
-  verificar("as categorias ficam alinhadas no topo",
+  verificar("as categorias ficam no menu da administração",
     /class: "categorias-admin"/.test(fonteAdmin));
   verificar("as opcoes ficam logo abaixo das categorias",
-    /el\("div", \{ class: "tabs-wrap" \}, busca, filaCategorias, barra\)/.test(fonteAdmin)
+    /el\("nav", \{ class: "card admin-destinos", [^\n]+ \}, filaCategorias, barra\)/.test(fonteAdmin)
     && !/document\.body\.append\(barra\)/.test(fonteAdmin));
   verificar("a barra comeca OCULTA",
     /let barraAberta = false;/.test(fonteAdmin)
@@ -755,7 +755,7 @@ verificar("tela inexistente cai no menu",
   const fs = await import("node:fs");
   const path = await import("node:path");
 
-  const css = fs.readFileSync("frontend/styles.css", "utf8");
+  const css = ["frontend/styles.css", "frontend/nexus-ui.css"].map(arquivo => fs.readFileSync(arquivo, "utf8")).join("\n");
   // Classes definidas no CSS (fora de comentarios, para nao casar exemplos).
   const cssSemComentario = css.replace(/\/\*[\s\S]*?\*\//g, "");
   const definidas = new Set(
