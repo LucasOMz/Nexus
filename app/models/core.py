@@ -800,13 +800,15 @@ class TemplateEtiqueta(BaseModel, Base):
 class ConfiguracaoSistema(BaseModel, Base):
     """Configuração global editável pela tela de Administração (linha única, id=1).
 
-    Hoje guarda a autenticação via LDAP/AD. A senha da conta de serviço é
-    gravada CIFRADA (ver `app/core/cripto.py`).
+    A senha da conta de serviço do LDAP é gravada cifrada.
     """
 
     __tablename__ = "configuracoes"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+
+    ollama_url: Mapped[str | None] = mapped_column(String(500))
+    ollama_modelo: Mapped[str | None] = mapped_column(String(250))
 
     # --- Autenticação LDAP/AD ---
     ldap_ativo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

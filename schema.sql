@@ -414,6 +414,8 @@ ALTER TABLE usuarios ADD COLUMN origem VARCHAR(10) NOT NULL DEFAULT 'local';
 -- A senha da conta de serviço é gravada CIFRADA (app/core/cripto.py).
 CREATE TABLE configuracoes (
     id                       INTEGER PRIMARY KEY DEFAULT 1,
+    ollama_url               VARCHAR(500),
+    ollama_modelo            VARCHAR(250),
     ldap_ativo               BOOLEAN NOT NULL DEFAULT FALSE,
     ldap_servidor            VARCHAR(300),
     ldap_porta               INTEGER NOT NULL DEFAULT 636,

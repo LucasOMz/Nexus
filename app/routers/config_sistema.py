@@ -15,6 +15,7 @@ from app.models.core import Usuario
 from app.services.audit_service import audit
 from app.services.config_service import obter_config
 from app.services.ldap_service import autenticar, testar_conexao
+from app.services.ollama import config_efetiva, listar_modelos, normalizar_url
 
 router = APIRouter(prefix="/admin/config", tags=["configuracao"])
 
@@ -72,6 +73,46 @@ class BuscaAD(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     usuario: str
+
+
+class EnderecoOllama(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    url: str = Field(min_length=1, max_length=500)
+
+
+class SalvarOllama(EnderecoOllama):
+    modelo: str = Field(min_length=1, max_length=250)
+
+
+@router.get("/ollama")
+def ler_ollama(db: Session = Depends(get_db), _: Usuario = Depends(require_admin)) -> dict:
+    config = config_efetiva(db)
+    return {"url": config.url, "modelo": config.modelo, "origem": config.origem}
+
+
+@router.post("/ollama/testar")
+def testar_ollama(body: EnderecoOllama, db: Session = Depends(get_db), _: Usuario = Depends(require_admin)) -> dict:
+    db.rollback()
+    return {"modelos": listar_modelos(body.url)}
+
+
+@router.put("/ollama")
+def salvar_ollama(
+    body: SalvarOllama, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_admin),
+) -> dict:
+    url = str(normalizar_url(body.url)).rstrip("/")
+    db.rollback()
+    if body.modelo not in listar_modelos(url):
+        raise HTTPException(422, "O modelo selecionado não está disponível nesse servidor Ollama.")
+
+    cfg = obter_config(db)
+    cfg.ollama_url = url
+    cfg.ollama_modelo = body.modelo
+    audit(db, user, "update", "configuracao", cfg.id,
+          ip=request.client.host if request.client else None,
+          diff={"ollama_url": url, "ollama_modelo": body.modelo})
+    db.commit()
+    return {"url": url, "modelo": body.modelo, "origem": "administracao"}
 
 
 @router.post("/buscar-ad")

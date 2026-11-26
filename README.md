@@ -101,7 +101,13 @@ executa as consultas de leitura dentro da planta selecionada e dos inventários
 permitidos para a conta. As perguntas recentes ficam na memória da página e os
 detalhes dos equipamentos são exibidos pelo próprio Nexus.
 
-Para conectar o Ollama, configure as variáveis da stack e recrie a API.
+Para conectar o Ollama, abra **Administração → Integrações → Ollama**. Informe
+o endereço na rede interna (por exemplo, `http://192.168.7.50:11434`), clique
+em **Testar conexão**, selecione um modelo com suporte a ferramentas (como
+`qwen3:32b`) e salve. A API usa a configuração salva na próxima pergunta.
+
+Em instalações que gerenciam a conexão pelo Docker, estas variáveis continuam
+disponíveis como configuração inicial. A configuração salva na tela tem prioridade.
 
 ```dotenv
 NEXUS_OLLAMA_URL=http://IP_DO_PC_COM_OLLAMA:11434
@@ -111,8 +117,7 @@ NEXUS_OLLAMA_TIMEOUT=180
 
 Se o Ollama estiver em outro computador, configure `OLLAMA_HOST` para escutar na
 interface de rede e restrinja a porta 11434 no firewall ao servidor do Nexus.
-O endereço precisa ser alcançável a partir do contêiner da API. Consulte
-`/api/tags` nesse endereço para conferir a comunicação e o nome do modelo.
+O endereço precisa ser alcançável a partir do contêiner da API.
 A [documentação de configuração do Ollama](https://docs.ollama.com/faq)
 mostra como ajustar a interface de escuta.
 

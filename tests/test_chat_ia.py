@@ -40,8 +40,8 @@ def _filtro(campo, operador, valor=None):
 def _modelo(monkeypatch, consultas):
     recebidas = []
 
-    def perguntar(client, url, mensagens, prazo, *, ferramentas):
-        recebidas.append((str(url), mensagens[-1]["content"]))
+    def perguntar(client, destino, mensagens, prazo, *, modelo, ferramentas):
+        recebidas.append((str(destino.url), mensagens[-1]["content"]))
         if not ferramentas:
             return {"content": "Resultados do inventário."}
         return {"tool_calls": [
@@ -68,7 +68,7 @@ def test_chat_percentual_por_departamento_e_detalhes(client, auth_headers, inven
     dados = resposta.json()["resultados"][0]
     assert (dados["total"], dados["correspondentes"], dados["percentual"]) == (2, 1, 50)
     assert dados["grupos"] == [{"valores": ["Operações"], "total": 2, "correspondentes": 1, "percentual": 50}]
-    assert recebidas[0][0] == "http://ollama:11434/api/chat"
+    assert recebidas[0][0] == "http://ollama:11434"
     assert "Quantos computadores" in recebidas[0][1]
     lista = client.post("/api/v1/ia/equipamentos", headers=headers, json=dados["consulta"]).json()
     assert [ativo["hostname"] for ativo in lista["equipamentos"]] == ["DTAT0001"]

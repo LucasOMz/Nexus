@@ -17,6 +17,7 @@ import { renderChecklist } from "./admin_checklist.js";
 import { renderBanco } from "./admin_banco.js";
 import { renderAuditoria } from "./admin_auditoria.js";
 import { renderNotificacoes } from "./admin_notificacoes.js";
+import { renderOllama } from "./admin_ollama.js";
 import { renderManutencao } from "./admin_manutencao.js";
 import { renderAgente } from "./admin_agente.js";
 import { renderPlantas } from "./admin_plantas.js";
@@ -627,6 +628,7 @@ export async function renderAdmin(root) {
     ["lgpd", "Privacidade (LGPD)"],
     ["manutencao", "Modo Manutenção"],
     ["agente", "Agente Nexus"],
+    ["ollama", "Ollama"],
     ["banco", "Conexão com DBA"],
   ];
 
@@ -654,6 +656,7 @@ export async function renderAdmin(root) {
     agente: ["agente", "nexus", "instalacao", "instalação", "serial", "token", "pendente"],
     manutencao: ["manutencao", "manutenção", "sessao", "sessão", "derrubar", "logado", "online", "bloqueio"],
     notificacoes: ["email", "smtp", "aviso", "alerta", "notificar", "toner", "devolucao"],
+    ollama: ["chat", "ia", "modelo", "qwen", "conexao", "inteligencia artificial", "integracao"],
   };
 
   const GRUPOS = [
@@ -676,6 +679,7 @@ export async function renderAdmin(root) {
     // oposto do OCS, que é a entrada. Quem procura "por que não chega e-mail"
     // procura em Sistema, não em Patrimônio.
     ["Sistema", ["auth", "notificacoes", "backups", "banco", "manutencao", "agente"]],
+    ["Integrações", ["ollama"]],
   ];
 
   // Aba fora de qualquer grupo não pode sumir: cai em "Outros".
@@ -812,5 +816,6 @@ export async function renderAdmin(root) {
   else if (abaAtiva === "lgpd") await renderLgpd(alvo);
   else if (abaAtiva === "manutencao") await renderManutencao(alvo);
   else if (abaAtiva === "agente") await renderAgente(alvo);
+  else if (abaAtiva === "ollama") await renderOllama(alvo);
   else if (abaAtiva === "banco") await renderBanco(alvo);
 }

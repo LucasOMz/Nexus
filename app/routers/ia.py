@@ -20,6 +20,7 @@ from app.core.rate_limit import SlidingWindowLimiter, redis_contadores
 from app.database import get_db
 from app.models.core import Usuario
 from app.services.inventario_ia import ConsultaInventario, FUSO_INVENTARIO, executar_consulta
+from app.services.ollama import DestinoOllama, config_efetiva, destino_ollama
 
 router = APIRouter(prefix="/ia", tags=["ia"])
 _usuario_inventario = require_module("ativos")
@@ -53,32 +54,22 @@ class EntradaChat(BaseModel):
     historico: list[Pergunta] = Field(default_factory=list, max_length=6)
 
 
-def _url_configurada() -> httpx.URL:
-    url = settings.nexus_ollama_url.strip().rstrip("/")
-    if not url:
-        raise HTTPException(503, "O chat ainda não está configurado. Peça à TI para conectar o Ollama ao Nexus.")
-    try:
-        endereco = httpx.URL(url)
-    except httpx.InvalidURL as exc:
-        raise HTTPException(503, "O endereço do Ollama no Nexus é inválido.") from exc
-    if endereco.scheme not in {"http", "https"} or not endereco.host or endereco.userinfo or endereco.query or endereco.fragment:
-        raise HTTPException(503, "O endereço do Ollama no Nexus é inválido.")
-    return httpx.URL(f"{endereco}/api/chat")
-
-
-def _perguntar(client: httpx.Client, url: httpx.URL, mensagens: list[dict], prazo: float, *, ferramentas: bool) -> dict:
+def _perguntar(
+    client: httpx.Client, destino: DestinoOllama, mensagens: list[dict], prazo: float, *, modelo: str, ferramentas: bool,
+) -> dict:
     restante = prazo - monotonic()
     if restante <= 0:
         raise HTTPException(504, "O Ollama demorou demais para responder. Tente novamente.")
     payload = {
-        "model": settings.nexus_ollama_modelo, "messages": mensagens,
+        "model": modelo, "messages": mensagens,
         "stream": False, "think": False,
         "options": {"temperature": 0, "num_predict": 420 if ferramentas else 220, "num_ctx": 4096},
     }
     if ferramentas:
         payload["tools"] = [_FERRAMENTA]
     try:
-        resposta = client.post(url, json=payload, timeout=httpx.Timeout(restante, connect=min(5, restante)))
+        resposta = destino.solicitar(client, "POST", "/api/chat", json=payload,
+                                    timeout=httpx.Timeout(restante, connect=min(5, restante)))
         if resposta.status_code == 404:
             raise HTTPException(502, "O modelo configurado não está disponível no Ollama.")
         resposta.raise_for_status()
@@ -103,12 +94,15 @@ def chat(
     planta_id: int | None = Depends(planta_ativa_obrigatoria),
     db: Session = Depends(get_db),
 ) -> dict:
-    url = _url_configurada()
+    config = config_efetiva(db)
+    if not config.url:
+        raise HTTPException(503, "O chat ainda não está configurado. Peça à TI para conectar o Ollama em Administração.")
     if not _limite_chat.is_allowed(str(user.id)):
         raise HTTPException(429, "Muitas perguntas em pouco tempo. Aguarde um minuto para tentar novamente.",
                             headers={"Retry-After": "60"})
     dominios = _dominios(user)
     db.rollback()  # Libera a conexão do banco enquanto o modelo processa a pergunta.
+    destino = destino_ollama(config.url, rede_local=config.origem == "administracao")
     hoje = datetime.now(ZoneInfo(FUSO_INVENTARIO)).date()
     mensagens = [
         {"role": "system", "content": f"{_INSTRUCOES}\nData de hoje: {hoje.isoformat()}."},
@@ -118,7 +112,7 @@ def chat(
     resultados = []
     retorno_ferramentas = []
     with httpx.Client(trust_env=False) as client:
-        mensagem = _perguntar(client, url, mensagens, prazo, ferramentas=True)
+        mensagem = _perguntar(client, destino, mensagens, prazo, modelo=config.modelo, ferramentas=True)
         chamadas = mensagem.get("tool_calls") or []
         if not isinstance(chamadas, list):
             raise HTTPException(502, "O modelo do Ollama devolveu uma consulta inválida.")
@@ -145,7 +139,7 @@ def chat(
         mensagens.append({"role": "user", "content": "O Nexus executou as consultas. Resuma os resultados abaixo em até três frases, sem criar valores.\n"
                          + json.dumps(retorno_ferramentas, ensure_ascii=False)})
         try:
-            final = _perguntar(client, url, mensagens, prazo, ferramentas=False).get("content")
+            final = _perguntar(client, destino, mensagens, prazo, modelo=config.modelo, ferramentas=False).get("content")
             if isinstance(final, str) and final.strip():
                 texto = final.strip()[:4000]
         except HTTPException:
@@ -160,7 +154,8 @@ def equipamentos(
     planta_id: int | None = Depends(planta_ativa_obrigatoria),
     db: Session = Depends(get_db),
 ) -> dict:
-    _url_configurada()
+    if not config_efetiva(db).url:
+        raise HTTPException(503, "O chat ainda não está configurado.")
     lista = consulta.model_copy(update={"operacao": "listar", "agrupar_por": [], "limite": 30,
                                        "filtros": consulta.filtros + consulta.filtros_numerador, "filtros_numerador": []})
     return executar_consulta(db, lista, planta_id, _dominios(user))
