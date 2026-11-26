@@ -21,43 +21,68 @@ const RESULTADOS = {
 };
 const pendente = item => ["aguardando", "entregue"].includes(item.estado);
 
-export function painelAcoesAgente(ativoId) {
+export function botaoAcoesAgente(ativoId, patrimonio) {
   const rota = `/ativos/${ativoId}/acoes-agente`;
-  const painel = el("section", { class: "card ativo-acoes-agente", hidden: true, "aria-label": "Ações remotas" });
+  const botao = el("button", {
+    class: "btn outline small ativo-acoes-abrir", type: "button", hidden: true,
+    "aria-haspopup": "dialog", onclick: () => abrirAcoesAgente(rota, patrimonio, botao),
+    html: icon("integracoes", 17) + " Ações remotas",
+  });
+  api.get(rota).then(dados => { if (botao.isConnected) botao.hidden = !dados.vinculado; }).catch(() => {});
+  return botao;
+}
+
+function abrirAcoesAgente(rota, patrimonio, origem) {
+  const painel = el("dialog", { class: "dialog ativo-acoes-agente", "aria-labelledby": "ativo-acoes-titulo" });
   const resumoFila = el("span", { class: "chip aviso", role: "status", hidden: true });
+  const fechar = el("button", { class: "iconbtn", type: "button", title: "Fechar", "aria-label": "Fechar",
+    autofocus: true, onclick: () => painel.close(), html: icon("close", 20) });
   const contato = el("p", { class: "muted" });
   const recado = el("p", { class: "muted", role: "status", hidden: true });
   const lista = el("ul", { class: "ativo-acoes-historico" });
-  const vazio = el("p", { class: "muted" }, "Nenhuma solicitação registrada.");
+  const vazio = el("p", { class: "muted" }, "Carregando histórico…");
   let itens = [];
   let anteriores = [];
   let cursor = null;
   let solicitando = false;
+  let vinculado = false;
   let timer;
   let revisao = 0;
 
   const botoes = ACOES.map(([tipo, rotulo, curto, icone]) => [tipo, el("button", {
-    class: "btn text small", type: "button", onclick: () => solicitar(tipo), title: rotulo,
+    class: "btn tonal small", type: "button", disabled: true, onclick: () => solicitar(tipo), title: rotulo,
     "aria-label": rotulo, html: icon(icone, 16) + " " + curto,
   })]);
   const atualizar = el("button", { class: "iconbtn", type: "button", title: "Atualizar histórico",
     "aria-label": "Atualizar histórico", onclick: carregar, html: icon("refresh", 19) });
   const mais = el("button", { class: "btn text", type: "button", hidden: true, onclick: carregarAnteriores },
     "Ver ações anteriores");
-  const historico = el("details", { class: "ativo-acoes-detalhes" },
-    el("summary", {}, "Histórico", el("span", { class: "ativo-acoes-seta", html: icon("chevron", 16) })),
-    el("div", { class: "row between ativo-acoes-contato" }, contato, atualizar),
+  painel.append(
+    el("div", { class: "row between ativo-acoes-topo" },
+      el("div", {}, el("h2", { id: "ativo-acoes-titulo" }, "Ações remotas"),
+        el("p", { class: "muted" }, patrimonio)), fechar),
+    el("div", { class: "row between wrap ativo-acoes-contato" }, contato, resumoFila),
+    el("div", { class: "row wrap ativo-acoes-botoes" }, ...botoes.map(([, botao]) => botao)),
+    recado,
+    el("div", { class: "row between ativo-acoes-historico-topo" },
+      el("h3", { class: "section-title" }, "Histórico"), atualizar),
     vazio, lista, mais,
   );
-  painel.append(
-    el("div", { class: "row between wrap" }, el("h3", { class: "section-title" }, "Ações remotas"), resumoFila),
-    el("div", { class: "row wrap ativo-acoes-botoes" }, ...botoes.map(([, botao]) => botao)),
-    recado, historico,
-  );
+
+  painel.addEventListener("close", () => {
+    clearTimeout(timer);
+    painel.remove();
+    if (origem.isConnected && !origem.hidden) origem.focus();
+  });
+  painel.addEventListener("click", ev => {
+    if (ev.target !== painel) return;
+    const { left, right, top, bottom } = painel.getBoundingClientRect();
+    if (ev.clientX < left || ev.clientX > right || ev.clientY < top || ev.clientY > bottom) painel.close();
+  });
 
   function atualizarBotoes() {
     for (const [tipo, botao] of botoes) {
-      botao.disabled = solicitando || itens.some(i => i.tipo === tipo && pendente(i));
+      botao.disabled = !vinculado || solicitando || itens.some(i => i.tipo === tipo && pendente(i));
     }
   }
 
@@ -68,20 +93,28 @@ export function painelAcoesAgente(ativoId) {
     try {
       const dados = await api.get(rota);
       if (atual !== revisao || !painel.isConnected) return;
-      painel.hidden = !dados.vinculado;
-      if (!dados.vinculado) return;
-      const data = dados.ultimo_contato ? fmtDate(dados.ultimo_contato, true) : "sem registro";
-      contato.textContent = "Último contato do agente: " + data
-        + (dados.recebe_acoes ? "" : ". Aguardando o primeiro contato de uma versão compatível com ações remotas.");
+      vinculado = dados.vinculado;
+      origem.hidden = !vinculado;
+      if (vinculado) {
+        const data = dados.ultimo_contato ? fmtDate(dados.ultimo_contato, true) : "sem registro";
+        contato.textContent = "Último contato do agente: " + data
+          + (dados.recebe_acoes ? "" : ". Aguardando contato de um agente compatível.");
+      } else {
+        contato.textContent = "Agente sem vínculo ativo.";
+      }
       itens = dados.historico;
+      vazio.textContent = "Nenhuma solicitação registrada.";
       atualizarResumoFila();
       if (!anteriores.length) cursor = dados.proximo;
       atualizarBotoes();
       desenharHistorico();
     } catch (e) {
-      if (atual === revisao && !painel.hidden) informar(e.message);
+      if (atual === revisao && painel.isConnected) {
+        if (!vinculado) vazio.textContent = "Histórico indisponível.";
+        informar(e.message);
+      }
     } finally {
-      if (atual === revisao && painel.isConnected && !painel.hidden && itens.some(pendente)) {
+      if (atual === revisao && painel.isConnected && vinculado && itens.some(pendente)) {
         timer = setTimeout(carregar, 8000);
       }
     }
@@ -148,6 +181,7 @@ export function painelAcoesAgente(ativoId) {
     }
   }
 
-  setTimeout(carregar, 0);
-  return painel;
+  document.body.append(painel);
+  painel.showModal();
+  carregar();
 }

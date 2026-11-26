@@ -217,19 +217,18 @@ body:has(.ativos-novo) > .fab { display: none; }
 .nexus-pagina-titulo { display: flex; align-items: center; gap: 12px; }
 .nexus-pagina-icone { display: grid; flex: 0 0 auto; place-items: center; width: 49px; height: 49px; border-radius: 12px; background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); }
 .ativos-categoria { display: block; margin-top: 3px; font-size: .78rem; }
-.ativo-acoes-agente { margin: 12px 0; padding: 11px 13px; }
-.ativo-acoes-agente[hidden], .ativo-acoes-agente [hidden] { display: none; }
-.ativo-acoes-agente .section-title { margin: 0; }
+.ativo-acoes-abrir { display: flex; margin: 12px 0; }
+.ativo-acoes-abrir[hidden], .ativo-acoes-agente [hidden] { display: none; }
+dialog.ativo-acoes-agente { width: min(570px, calc(100% - 24px)); max-height: min(86dvh, 760px); margin: auto;
+  padding: clamp(15px, 4vw, 24px); border: 1px solid var(--md-sys-color-outline-variant); border-radius: 16px; color: var(--md-sys-color-on-surface); }
+.ativo-acoes-agente::backdrop { background: #07181275; }
+.ativo-acoes-agente .section-title, .ativo-acoes-topo h2 { margin: 0; }
 .ativo-acoes-agente .chip { min-height: 22px; font-size: .75rem; }
 .ativo-acoes-agente p { margin: 4px 0; }
-.ativo-acoes-botoes { gap: 3px 6px; margin: 5px 0 3px; }
+.ativo-acoes-topo { align-items: flex-start; gap: 8px; margin-bottom: 10px; }
+.ativo-acoes-botoes { gap: 5px; margin: 8px 0 12px; }
 .ativo-acoes-botoes .btn { min-height: 34px; padding: 4px 8px; font-size: .83rem; }
-.ativo-acoes-detalhes { border-top: 1px solid var(--md-sys-color-outline-variant); padding-top: 3px; }
-.ativo-acoes-detalhes summary { display: flex; align-items: center; justify-content: space-between; min-height: 32px;
-  padding-inline: 3px; border-radius: 5px; cursor: pointer; list-style: none; color: var(--md-sys-color-primary); font-size: .85rem; font-weight: 600; }
-.ativo-acoes-detalhes summary::-webkit-details-marker { display: none; }
-.ativo-acoes-seta svg { display: block; }
-.ativo-acoes-detalhes[open] .ativo-acoes-seta { transform: rotate(180deg); }
+.ativo-acoes-historico-topo { border-top: 1px solid var(--md-sys-color-outline-variant); padding-top: 5px; }
 .ativo-acoes-contato { gap: 8px; font-size: .8rem; }
 .ativo-acoes-historico { list-style: none; margin: 3px 0 0; padding: 0; }
 .ativo-acoes-historico li { padding: 7px 3px; border-top: 1px solid var(--md-sys-color-outline-variant); }

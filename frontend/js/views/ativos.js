@@ -9,7 +9,7 @@ import { state } from "../state.js";
 import { ctx } from "../context.js";
 import { el, icon, toast, dialog, confirmSheet, emptyState, skeleton, fmtDate, fmtMoney, statusBadge, mostrarErro } from "../ui.js";
 import { abrirDetalhes, abrirSoftwares } from "./ativo_detalhes.js";
-import { painelAcoesAgente } from "./ativo_acoes_agente.js";
+import { botaoAcoesAgente } from "./ativo_acoes_agente.js";
 import { loadLookups, optionsOf } from "../lookups.js";
 import { renderLabelSVG, renderAvisos } from "../label.js";
 import { importarAtivos } from "./importar_ativos.js";
@@ -546,7 +546,7 @@ function openDetail(ativo, lookups) {
       ativo.foto_id ? fotoProtegida(ativo.foto_id, { class: "photo-preview mb", alt: "Foto do ativo" }) : null,
       el("div", { style: "margin:6px 0 10px", html: statusBadge(ativo.status) }),
       ...identificacao.map(linhaInfo),
-      isTI && state.perms.pode_acoes_agente ? painelAcoesAgente(ativo.id) : null,
+      isTI && state.perms.pode_acoes_agente ? botaoAcoesAgente(ativo.id, ativo.patrimonio || ativo.numero_serie) : null,
       ...info.map(linhaInfo),
     ),
     actions: [
