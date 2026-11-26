@@ -134,6 +134,7 @@ class Permissoes(BaseModel):
     modulos: list[str] = []
     pode_escrever: bool = False
     pode_excluir: bool = False
+    pode_acoes_agente: bool | None = None
 
     # Permissões que não são por módulo nem booleanas — hoje só
     # `licencas.ver_chave`.

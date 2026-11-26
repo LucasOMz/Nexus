@@ -9,6 +9,7 @@ import { state } from "../state.js";
 import { ctx } from "../context.js";
 import { el, icon, toast, dialog, confirmSheet, emptyState, skeleton, fmtDate, fmtMoney, statusBadge, mostrarErro } from "../ui.js";
 import { abrirDetalhes, abrirSoftwares } from "./ativo_detalhes.js";
+import { painelAcoesAgente } from "./ativo_acoes_agente.js";
 import { loadLookups, optionsOf } from "../lookups.js";
 import { renderLabelSVG, renderAvisos } from "../label.js";
 import { importarAtivos } from "./importar_ativos.js";
@@ -503,10 +504,13 @@ function openDetail(ativo, lookups) {
   const isTI = ativo.dominio === "ti";
   const ext = isTI ? ativo.ti : ativo.impressora;
   const locNome = lookups.localizacoes.find((l) => l.id === ativo.localizacao_id)?.nome;
-  const info = [
+  const identificacao = [
     ["Inventário", ativo.dominio === "ti" ? "TI" : "Impressora"], ["Status", ativo.status],
     ["Modelo", ativo.modelo || "—"], ["Marca", ativo.marca || "—"],
-    ["Nº de Série", ativo.numero_serie || "—"], ["Garantia", ativo.data_garantia ? fmtDate(ativo.data_garantia) : "—"],
+    ["Nº de Série", ativo.numero_serie || "—"],
+  ];
+  const info = [
+    ["Garantia", ativo.data_garantia ? fmtDate(ativo.data_garantia) : "—"],
     ["Valor", fmtMoney(ativo.valor)], ["Localização", locNome || "—"],
     // A natureza patrimonial muda o que `Valor` significa: num locado ele é
     // vazio porque não houve compra, e "—" sozinho parece dado faltando.
@@ -533,15 +537,17 @@ function openDetail(ativo, lookups) {
       info.push([k.replace(/_/g, " "), v === null || v === "" ? "—" : String(v)]);
     }
   }
-  const rows = info.map(([k, v]) => el("div", { class: "row between", style: "border-bottom:1px solid var(--md-sys-color-outline-variant);padding:8px 0" },
-    el("span", { class: "muted" }, k), el("span", {}, v)));
+  const linhaInfo = ([k, v]) => el("div", { class: "row between", style: "border-bottom:1px solid var(--md-sys-color-outline-variant);padding:8px 0" },
+    el("span", { class: "muted" }, k), el("span", {}, v));
 
   dialog({
     title: `Patrimônio ${ativo.patrimonio}`,
     body: el("div", {},
       ativo.foto_id ? fotoProtegida(ativo.foto_id, { class: "photo-preview mb", alt: "Foto do ativo" }) : null,
       el("div", { style: "margin:6px 0 10px", html: statusBadge(ativo.status) }),
-      ...rows,
+      ...identificacao.map(linhaInfo),
+      isTI && state.perms.pode_acoes_agente ? painelAcoesAgente(ativo.id) : null,
+      ...info.map(linhaInfo),
     ),
     actions: [
       { label: "Fechar", variant: "text" },

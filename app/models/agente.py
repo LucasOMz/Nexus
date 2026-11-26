@@ -32,7 +32,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, BaseModel
@@ -133,8 +133,30 @@ class TokenAgente(BaseModel, Base):
     serial: Mapped[str | None] = mapped_column(String(120))
 
     ultimo_uso_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ultimo_contato_acoes_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ultimo_ip: Mapped[str | None] = mapped_column(String(64))
     revogado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AcaoAgente(Base):
+    __tablename__ = "acoes_agente"
+    __table_args__ = (
+        Index("ix_acoes_agente_fila", "token_id", "estado", "id"),
+        Index("ix_acoes_agente_historico", "ativo_id", "planta_id", "id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    token_id: Mapped[int] = mapped_column(ForeignKey("tokens_agente.id"))
+    ativo_id: Mapped[int] = mapped_column(ForeignKey("ativos.id"))
+    planta_id: Mapped[int | None] = mapped_column(ForeignKey("plantas.id"))
+    solicitante_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id", ondelete="SET NULL"))
+    solicitante_nome: Mapped[str] = mapped_column(String(160))
+    tipo: Mapped[str] = mapped_column(String(32))
+    estado: Mapped[str] = mapped_column(String(20))
+    solicitada_em: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expira_em: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    encerrada_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resultado: Mapped[str | None] = mapped_column(String(32))
 
 
 class EquipamentoPendente(BaseModel, Base):

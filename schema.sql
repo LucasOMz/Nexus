@@ -798,6 +798,7 @@ CREATE TABLE IF NOT EXISTS tokens_agente (
 	hostname VARCHAR(120), 
 	serial VARCHAR(120), 
 	ultimo_uso_em TIMESTAMP WITH TIME ZONE, 
+	ultimo_contato_acoes_em TIMESTAMP WITH TIME ZONE,
 	ultimo_ip VARCHAR(64), 
 	revogado_em TIMESTAMP WITH TIME ZONE, 
 	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
@@ -806,6 +807,24 @@ CREATE TABLE IF NOT EXISTS tokens_agente (
 	PRIMARY KEY (id), 
 	FOREIGN KEY(ativo_id) REFERENCES ativos (id)
 );
+
+CREATE TABLE IF NOT EXISTS acoes_agente (
+	id SERIAL PRIMARY KEY,
+	token_id INTEGER NOT NULL REFERENCES tokens_agente (id),
+	ativo_id INTEGER NOT NULL REFERENCES ativos (id),
+	planta_id INTEGER REFERENCES plantas (id),
+	solicitante_id INTEGER REFERENCES usuarios (id) ON DELETE SET NULL,
+	solicitante_nome VARCHAR(160) NOT NULL,
+	tipo VARCHAR(32) NOT NULL,
+	estado VARCHAR(20) NOT NULL,
+	solicitada_em TIMESTAMP WITH TIME ZONE NOT NULL,
+	expira_em TIMESTAMP WITH TIME ZONE NOT NULL,
+	encerrada_em TIMESTAMP WITH TIME ZONE,
+	resultado VARCHAR(32)
+);
+
+CREATE INDEX IF NOT EXISTS ix_acoes_agente_fila ON acoes_agente (token_id, estado, id);
+CREATE INDEX IF NOT EXISTS ix_acoes_agente_historico ON acoes_agente (ativo_id, planta_id, id);
 
 CREATE TABLE IF NOT EXISTS equipamentos_pendentes (
 	id SERIAL NOT NULL, 

@@ -80,6 +80,10 @@ function blocoPermissoes(usuario, lookups) {
           <input type="checkbox" name="pode_excluir" ${perms.pode_excluir ? "checked" : ""}>
           <span>Excluir</span>
         </label>
+        <label class="perm-item ${perms.pode_acoes_agente ? "checked" : ""}">
+          <input type="checkbox" name="pode_acoes_agente" ${perms.pode_acoes_agente ? "checked" : ""}>
+          <span>Ações remotas do agente</span>
+        </label>
       </div>
     </div>`;
 }
@@ -239,6 +243,8 @@ function abrirUsuario(usuario, lookups) {
             modulos,
             pode_escrever: Boolean(fd.get("pode_escrever")),
             pode_excluir: Boolean(fd.get("pode_excluir")),
+            pode_acoes_agente: Boolean(fd.get("pode_acoes_agente")),
+            permissoes_extra: usuario?.permissoes?.permissoes_extra || [],
           },
         };
         const senha = fd.get("senha");

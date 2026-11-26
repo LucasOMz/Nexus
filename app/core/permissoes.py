@@ -98,6 +98,8 @@ def permissoes_efetivas(usuario: Any) -> dict[str, Any]:
     # do papel não concede nenhuma. Sem esta linha, o valor gravado no
     # usuário ficaria invisível para quem consulta `permissoes_efetivas`.
     efetivas["permissoes_extra"] = list(custom.get("permissoes_extra") or [])
+    acesso_agente = custom.get("pode_acoes_agente")
+    efetivas["pode_acoes_agente"] = papel == "admin" if acesso_agente is None else acesso_agente is True
 
     # Admin nunca perde acesso.
     if papel == "admin":

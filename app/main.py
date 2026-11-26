@@ -29,6 +29,7 @@ from app.database import SessionLocal, init_db
 from app.routers import (
     admin,
     agente,
+    acoes_agente,
     ativos,
     auditoria,
     auth,
@@ -306,6 +307,7 @@ app.include_router(notificacoes.router, prefix=API)
 app.include_router(notificacoes_admin.router, prefix=API)
 app.include_router(manutencao_admin.router, prefix=API)
 app.include_router(agente.router, prefix=API)
+app.include_router(acoes_agente.router, prefix=API)
 app.include_router(kanban.router, prefix=API)
 app.include_router(mapa.router, prefix=API)
 app.include_router(reportes.router, prefix=API)
