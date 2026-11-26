@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timezone
 from typing import Literal
+from unicodedata import combining, normalize
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -10,7 +11,7 @@ from sqlalchemy import and_, case, cast, func, or_, String
 from sqlalchemy.orm import Session
 
 from app.core.planta import aplicar_filtro
-from app.models.core import Ativo, Categoria, Departamento, Localizacao, Planta
+from app.models.core import Ativo, Categoria, Departamento, Localizacao, Planta, PlantaLocalidade
 from app.models.enums import Dominio, TipoItem
 from app.models.impressora import AtivoImpressora
 from app.models.ti import AtivoTI
@@ -68,15 +69,61 @@ def _lookup_no_escopo(modelo, chave):
                 or_(modelo.planta_id.is_(None), modelo.planta_id == Ativo.planta_id))
 
 
+def _normalizar_texto(valor: str | None) -> str:
+    decomposto = normalize("NFD", (valor or "").casefold())
+    return " ".join("".join(c for c in decomposto if not combining(c)).split())
+
+
+def _ids_de_plantas(plantas, filtro: Filtro) -> set[int]:
+    termo = _normalizar_texto(filtro.valor)
+    if not termo:
+        return set()
+    nomes = [(p.id, _normalizar_texto(p.nome), [_normalizar_texto(alias) for alias in (p.sigla, p.cidade, p.codigo)])
+             for p in plantas]
+    if filtro.operador == "igual":
+        exatos = {id_ for id_, nome, aliases in nomes if termo == nome or termo in aliases}
+        if exatos:
+            return exatos
+        # O cadastro pode usar um nome composto, como “Unidade Tatuí”.
+        return {id_ for id_, nome, _ in nomes if f" {termo} " in f" {nome} "}
+    if filtro.operador == "começa_com":
+        return {id_ for id_, nome, aliases in nomes if any(s.startswith(termo) for s in (nome, *aliases))}
+    return {id_ for id_, nome, aliases in nomes if any(termo in s for s in (nome, *aliases))}
+
+
 def executar_consulta(db: Session, consulta: ConsultaInventario, planta_id: int | None, dominios: tuple[str, ...]) -> dict:
+    resultado: dict = {"operacao": consulta.operacao, "agrupar_por": consulta.agrupar_por}
+    filtros_planta = [f for f in consulta.filtros + consulta.filtros_numerador
+                     if f.campo == "planta" and f.operador not in {"vazio", "preenchido"}]
+    plantas_por_filtro = {}
+    if filtros_planta:
+        catalogo = db.query(Planta.id, Planta.nome, Planta.sigla, Planta.cidade, PlantaLocalidade.codigo).outerjoin(
+            PlantaLocalidade, PlantaLocalidade.planta_id == Planta.id
+        ).filter(Planta.deleted_at.is_(None))
+        if planta_id is not None:
+            catalogo = catalogo.filter(Planta.id == planta_id)
+        plantas = catalogo.all()
+        for filtro in filtros_planta:
+            ids = _ids_de_plantas(plantas, filtro)
+            if not ids:
+                aviso = (f'A planta “{filtro.valor}” não corresponde ao escopo atual. Confira a planta selecionada no topo.'
+                         if planta_id is not None else
+                         f'Não encontrei a planta “{filtro.valor}”. Confira o nome, a cidade ou a sigla.')
+                return {**resultado, "aviso": aviso}
+            plantas_por_filtro[(filtro.operador, filtro.valor)] = ids
+
     hostname = func.coalesce(func.nullif(func.trim(AtivoTI.hostname), ""), AtivoImpressora.hostname)
     cat = func.lower(Categoria.nome)
+    so = func.lower(func.trim(AtivoTI.so))
     classe = case(
         (Ativo.dominio == Dominio.IMPRESSORA, "impressora"),
         (or_(func.upper(hostname).regexp_match(r"^N[A-Z]{3}[0-9]{4}([.]|$)"), cat.contains("notebook"), cat.contains("laptop")), "notebook"),
         (or_(func.upper(hostname).regexp_match(r"^D[A-Z]{3}[0-9]{4}([.]|$)"), cat.contains("desktop")), "desktop"),
         (or_(func.upper(hostname).regexp_match(r"^R[A-Z]{3}[0-9]{4}([.]|$)"), cat.contains("raspberry")), "raspberry"),
         (or_(cat.contains("computador"), cat.in_(("pc", "pcs"))), "computador"),
+        (and_(Ativo.dominio == Dominio.TI,
+              or_(so.startswith("windows"), so.startswith("linux"), so.startswith("macos"),
+                  so.startswith("ubuntu"), so.startswith("debian"), so.startswith("raspbian"))), "computador"),
         else_="outro",
     )
     campos = {
@@ -99,10 +146,10 @@ def executar_consulta(db: Session, consulta: ConsultaInventario, planta_id: int 
             if filtro.campo == "inventario_em":
                 limite = datetime.combine(dia, time.min, ZoneInfo(FUSO_INVENTARIO)).astimezone(timezone.utc)
             return coluna >= limite if operador == "desde" else coluna < limite
-        if filtro.campo == "tipo_equipamento" and operador == "igual" and valor.lower() == "computador":
+        if filtro.campo == "tipo_equipamento" and operador == "igual" and valor.lower() in {"computador", "computadores", "pc", "pcs"}:
             return coluna.in_(("computador", "desktop", "notebook", "raspberry"))
-        if filtro.campo == "planta" and operador == "igual":
-            return or_(func.lower(coluna) == valor.lower(), func.lower(Planta.sigla) == valor.lower())
+        if filtro.campo == "planta":
+            return Ativo.planta_id.in_(plantas_por_filtro[(operador, valor)])
         if operador == "igual":
             return func.lower(coluna) == valor.lower()
         if operador == "começa_com":
@@ -122,7 +169,6 @@ def executar_consulta(db: Session, consulta: ConsultaInventario, planta_id: int 
     )
     base = aplicar_filtro(base, Ativo, planta_id)
     total = func.count(Ativo.id)
-    resultado: dict = {"operacao": consulta.operacao, "agrupar_por": consulta.agrupar_por}
     if consulta.operacao == "listar":
         colunas = ("patrimonio", "hostname", "modelo", "planta", "departamento", "status")
         linhas = base.with_entities(Ativo.id, *(campos[c].label(c) for c in colunas)).order_by(Ativo.id).limit(consulta.limite).all()

@@ -17,6 +17,7 @@ function metricas(dados) {
 }
 
 function listaEquipamentos(dados) {
+  if (dados.aviso) return el("p", {}, dados.aviso);
   const { equipamentos, total } = dados;
   const lista = el("ul", { class: "chat-ia-lista" });
   for (const ativo of equipamentos) {
@@ -83,6 +84,10 @@ export function criarChatIa() {
 
   function resultado(dados, atual) {
     const bloco = el("div", { class: "chat-ia-resultado" });
+    if (dados.aviso) {
+      bloco.append(el("p", {}, dados.aviso));
+      return bloco;
+    }
     if (dados.operacao === "listar") {
       bloco.append(listaEquipamentos(dados));
       return bloco;

@@ -3,7 +3,7 @@ import pytest
 from app.config import settings
 from app.core.rate_limit import SlidingWindowLimiter
 from app.core.security import create_access_token
-from app.models import Ativo, Departamento, Planta, Usuario
+from app.models import Ativo, Departamento, Planta, PlantaLocalidade, Usuario
 from app.models.ti import AtivoTI
 from app.routers import ia
 from tests.conftest import TestingSession
@@ -100,3 +100,39 @@ def test_chat_informa_quando_ollama_nao_configurado(client, auth_headers, monkey
     resposta = client.post("/api/v1/ia/chat", headers=auth_headers, json={"pergunta": "Quantos computadores?"})
     assert resposta.status_code == 503
     assert "não está configurado" in resposta.json()["detail"]
+
+
+@pytest.mark.parametrize("planta_pedida", ["Tatui", "TATUÍ", "TAT", "UTU"])
+def test_chat_encontra_computador_em_tatui(client, auth_headers, inventario_ia, monkeypatch, planta_pedida):
+    with TestingSession() as db:
+        planta = db.get(Planta, 2)
+        planta.nome = "Unidade Tatuí"
+        planta.sigla = "UTU"
+        planta.cidade = "Tatuí"
+        db.add(PlantaLocalidade(planta_id=2, codigo="TAT"))
+        computador = db.get(AtivoTI, 3)
+        computador.hostname = "PC-LEGADO"
+        computador.so = "Windows 11 Pro"
+        db.commit()
+
+    recebidas = _modelo(monkeypatch, [{
+        "operacao": "contar",
+        "filtros": [_filtro("planta", "igual", planta_pedida), _filtro("tipo_equipamento", "igual", "computador")],
+    }])
+    resposta = client.post("/api/v1/ia/chat", headers=auth_headers, json={"pergunta": "Quantos computadores tenho na planta de Tatui?"})
+    assert resposta.status_code == 200, resposta.text
+    dados = resposta.json()
+    assert dados["resposta"] == "Encontrei 1 equipamento."
+    assert dados["resultados"][0]["total"] == 1
+    assert len(recebidas) == 1
+    lista = client.post("/api/v1/ia/equipamentos", headers=auth_headers, json=dados["resultados"][0]["consulta"]).json()
+    assert [ativo["hostname"] for ativo in lista["equipamentos"]] == ["PC-LEGADO"]
+
+
+def test_chat_explicita_planta_fora_do_escopo_em_vez_de_zero(client, auth_headers, inventario_ia, monkeypatch):
+    _modelo(monkeypatch, [{"operacao": "contar", "filtros": [_filtro("planta", "igual", "Filial")]}])
+    resposta = client.post("/api/v1/ia/chat", headers={**auth_headers, "X-Planta-Id": "1"},
+                           json={"pergunta": "Quantos ativos tenho na Filial?"})
+    assert resposta.status_code == 200, resposta.text
+    assert resposta.json()["resultados"] == []
+    assert "escopo atual" in resposta.json()["resposta"]

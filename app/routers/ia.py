@@ -34,9 +34,10 @@ _FERRAMENTA = {"type": "function", "function": {
 _INSTRUCOES = """Você é o chat de inventário do Nexus. Responda em português do Brasil.
 Para consultar dados do Nexus, sempre use consultar_inventario. Formule os filtros a partir do pedido e do
 histórico de perguntas. Cada conjunto de filtros é combinado por E. Você pode pedir até três consultas para comparar.
-Aplique os filtros pedidos. O campo planta aceita tanto o nome quanto a sigla no operador igual.
+Aplique os filtros pedidos. Se a pergunta citar uma planta, use campo planta com operador igual e o nome
+ou a sigla que aparece na pergunta, sem adivinhar outra sigla. Para contar ativos em geral, não filtre tipo_equipamento.
 Para patrimônio ausente, use campo patrimonio e operador vazio. Para PCs ou computadores, use tipo_equipamento igual
-a computador, que inclui desktop, notebook e Raspberry identificados pelo padrão do hostname ou pela categoria cadastrada.
+a computador. O Nexus identifica computadores pelo hostname, pela categoria ou pelo sistema operacional cadastrado.
 'Em manutenção' é status igual a manutencao. Para equipamentos sem reportar pelo agente, use inventario_em antes_de;
 se o pedido incluir máquinas que nunca reportaram, consulte também inventario_em vazio. Use datas AAAA-MM-DD.
 Para proporções, use percentual e inclua o critério que conta como ocorrência em filtros_numerador. Em filtros ponha
@@ -135,6 +136,14 @@ def chat(
         db.rollback()
         if not resultados:
             return {"resposta": "Não consegui montar uma consulta ao inventário. Tente indicar o que quer contar, listar ou comparar.", "resultados": []}
+        if len(resultados) == 1:
+            unico = resultados[0]
+            if "aviso" in unico:
+                return {"resposta": unico["aviso"], "resultados": []}
+            if unico["operacao"] == "contar" and not unico["agrupar_por"]:
+                n = unico["total"]
+                texto = "Encontrei 1 equipamento." if n == 1 else f"Encontrei {n} equipamentos."
+                return {"resposta": texto, "resultados": resultados}
         texto = "Consulta concluída. Veja o resultado abaixo."
         mensagens.append({"role": "user", "content": "O Nexus executou as consultas. Resuma os resultados abaixo em até três frases, sem criar valores.\n"
                          + json.dumps(retorno_ferramentas, ensure_ascii=False)})
