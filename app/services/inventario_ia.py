@@ -37,6 +37,22 @@ OPERADORES_DATA = {"desde", "antes_de"}
 NUMERICOS = {"ram_gb", "armazenamento_gb"}
 FUSO_INVENTARIO = "America/Sao_Paulo"
 _PREFIXO_CADASTRO = re.compile(r"^(?:(?:departamento|setor|planta|unidade)\s+)?(?:d(?:e|a|o|as|os)\s+)?")
+_CONTAGEM_DEPARTAMENTO = re.compile(
+    r"(?:quantos|quantas) (?P<tipo>computadores|pcs|ativos|equipamentos|notebooks|desktops|impressoras)"
+    r"(?: (?:eu |nos )?(?:tenho|temos|tem|ha|existem))?(?: hoje)?"
+    r" (?:no|na) (?:departamento|setor) (?:d(?:e|a|o|as|os) )?(?P<nome>.+)"
+)
+_TIPOS_CONTAGEM = {
+    "computadores": "computador", "pcs": "computador", "notebooks": "notebook",
+    "desktops": "desktop", "impressoras": "impressora",
+}
+_REFERENCIA_ESCOPO = re.compile(
+    r"\b(?:(?P<departamento>departamento|setor)(?: d(?:e|a|o|as|os))?"
+    r"|(?P<planta>planta|unidade)(?: d(?:e|a|o|as|os))?"
+    r"|(?P<ligacao>de|do|da|dos|das|em|no|na|e|ou)) "
+)
+_ESCOPO_AMBIGUO = re.compile(r"\b(?:ou|versus|vs|contra|compare|comparar|comparacao|exceto|fora de|sem contar)\b")
+_TIPO_PERGUNTADO = re.compile(r"^(?:quantos|quantas|quais) (computadores|pcs|notebooks|desktops|impressoras)\b")
 
 
 class Filtro(BaseModel):
@@ -106,7 +122,35 @@ def _normalizar_texto(valor: str | None) -> str:
     return " ".join("".join(c for c in decomposto if not combining(c)).split())
 
 
-def resolver_cadastro(cadastros, filtro: Filtro) -> dict[int, str]:
+def _sigla_departamento(nome: str) -> str:
+    palavras = [p for p in re.findall(r"[a-z0-9]+", nome) if p not in {"da", "das", "de", "do", "dos", "e"}]
+    return "".join(p[0] for p in palavras) if len(palavras) > 1 else ""
+
+
+def _departamentos_no_escopo(db: Session, plantas: set[int] | None):
+    catalogo = db.query(Departamento.id, Departamento.nome, Departamento.sigla).filter(Departamento.deleted_at.is_(None))
+    if plantas is not None:
+        catalogo = catalogo.filter(or_(Departamento.planta_id.is_(None), Departamento.planta_id.in_(plantas)))
+    return catalogo.all()
+
+
+def plantas_catalogadas(db: Session, planta_id: int | None = None):
+    catalogo = db.query(Planta.id, Planta.nome, Planta.sigla, Planta.cidade, PlantaLocalidade.codigo).outerjoin(
+        PlantaLocalidade, PlantaLocalidade.planta_id == Planta.id,
+    ).filter(Planta.deleted_at.is_(None))
+    if planta_id is not None:
+        catalogo = catalogo.filter(Planta.id == planta_id)
+    return catalogo.all()
+
+
+def _sigla_chave(valor: str | None) -> str:
+    termo = _normalizar_texto(valor)
+    if re.fullmatch(r"[a-z0-9](?:[. ]+[a-z0-9])+\.?", termo):
+        return re.sub(r"[^a-z0-9]", "", termo)
+    return termo
+
+
+def resolver_cadastro(cadastros, filtro: Filtro, *, exato: bool = False) -> dict[int, str]:
     termo = _normalizar_texto(filtro.valor)
     if not termo:
         return {}
@@ -118,6 +162,16 @@ def resolver_cadastro(cadastros, filtro: Filtro) -> dict[int, str]:
             exatos = {id_: nome for id_, nome, aliases in nomes if candidato in aliases}
             if exatos:
                 return exatos
+        chave = _sigla_chave(limpo)
+        siglas = {id_: nome for id_, nome, aliases in nomes if chave and any(_sigla_chave(a) == chave for a in aliases)}
+        if siglas:
+            return siglas
+        if filtro.campo == "departamento" and re.fullmatch(r"[a-z]{2,6}", chave):
+            siglas = {id_: nome for id_, nome, aliases in nomes if _sigla_departamento(aliases[0]) == chave}
+            if siglas:
+                return siglas
+        if exato:
+            return {}
         # Um nome curto pode se referir ao cadastro “Unidade Tatuí” ou “Engenharia Industrial”.
         if not limpo:
             return {}
@@ -126,6 +180,93 @@ def resolver_cadastro(cadastros, filtro: Filtro) -> dict[int, str]:
     if filtro.operador == "começa_com":
         return {id_: nome for id_, nome, aliases in nomes if any(s.startswith(termo) for s in aliases)}
     return {id_: nome for id_, nome, aliases in nomes if any(termo in s for s in aliases)}
+
+
+def contagem_explicita_departamento(db: Session, pergunta: str, planta_id: int | None) -> ConsultaInventario | None:
+    # Só resolve pedidos completos e simples. Qualificadores livres seguem para o modelo.
+    pedido = _CONTAGEM_DEPARTAMENTO.fullmatch(_normalizar_texto(pergunta).rstrip("?!. "))
+    if not pedido:
+        return None
+    nome = pedido["nome"]
+    if len(nome) > 120:
+        return None
+    departamento = Filtro(campo="departamento", operador="igual", valor=nome)
+    catalogo = _departamentos_no_escopo(db, {planta_id} if planta_id is not None else None)
+    if not resolver_cadastro(catalogo, departamento, exato=True):
+        return None
+    tipo = _TIPOS_CONTAGEM.get(pedido["tipo"])
+    filtros = [departamento]
+    if tipo:
+        filtros.append(Filtro(campo="tipo_equipamento", operador="igual", valor=tipo))
+    return ConsultaInventario(operacao="contar", filtros=filtros)
+
+
+def referencias_de_escopo(db: Session, pergunta: str) -> dict[str, list[str]]:
+    texto = _normalizar_texto(pergunta)
+    marcadores = list(_REFERENCIA_ESCOPO.finditer(texto))
+    if not marcadores:
+        return {}
+    departamentos = {chave for _, nome, sigla in _departamentos_no_escopo(db, None)
+                     for chave in (_sigla_chave(sigla), _sigla_departamento(_normalizar_texto(nome)))}
+    plantas = {_sigla_chave(codigo) for _, _, sigla, _, localidade in plantas_catalogadas(db)
+              for codigo in (sigla, localidade)}
+    chaves = {"departamento": departamentos - {""}, "planta": plantas - {""}}
+    referencias: dict[str, dict[str, str]] = {}
+    for trecho in marcadores:
+        if trecho["ligacao"] and re.search(
+            r"\b(?:inventario|dominio|patrimonio|hostname|serie|versao|software) $", texto[:trecho.start()],
+        ):
+            continue
+        depois = re.match(r"[\w.-]+(?: [\w.-]+)*", texto[trecho.end():].lstrip('"“‘\''))
+        if not depois:
+            continue
+        # O tamanho cadastrado é de até 20 caracteres. Compare a maior
+        # expressão primeiro para também reconhecer siglas com pontos e espaços.
+        candidatos = []
+        prefixo = ""
+        for palavra in depois[0].split():
+            prefixo = f"{prefixo} {palavra}".strip()
+            if len(prefixo) > 21:
+                break
+            candidatos.append(prefixo.rstrip("."))
+        for valor in reversed(candidatos):
+            chave = _sigla_chave(valor)
+            if trecho.lastgroup == "ligacao" and len(chave) < 2:
+                continue
+            tipos = [campo for campo, siglas in chaves.items() if chave in siglas]
+            if not tipos:
+                continue
+            campo = trecho.lastgroup
+            if campo == "ligacao":
+                preferido = {"do": "departamento", "da": "departamento", "dos": "departamento",
+                             "das": "departamento", "em": "planta"}.get(trecho["ligacao"])
+                campo = tipos[0] if len(tipos) == 1 else preferido
+            if campo in tipos and (trecho["ligacao"] not in {"e", "ou"} or campo in referencias):
+                referencias.setdefault(campo, {})[chave] = valor
+            break
+    return {campo: list(valores.values()) for campo, valores in referencias.items()}
+
+
+def aplicar_referencias_de_escopo(consulta: ConsultaInventario, pergunta: str,
+                                 referencias: dict[str, list[str]]) -> ConsultaInventario:
+    texto = _normalizar_texto(pergunta)
+    if not referencias or consulta.operacao == "percentual" or _ESCOPO_AMBIGUO.search(texto):
+        return consulta
+    filtros = consulta.filtros.copy()
+    for campo, valores in referencias.items():
+        anteriores = [f for f in filtros if f.campo == campo]
+        if len(valores) != 1 or len(anteriores) > 1 or (not anteriores and len(filtros) >= 10):
+            continue
+        chave = _sigla_chave(valores[0])
+        filtros = [f for f in filtros if f.campo != campo and not (
+            f.campo in {"dominio", "tipo_equipamento"} and f.operador == "igual" and _sigla_chave(f.valor) == chave
+            and "inventario" not in texto
+        )]
+        filtros.append(Filtro(campo=campo, operador="igual", valor=valores[0]))
+    tipo = _TIPO_PERGUNTADO.match(texto)
+    if tipo and len(filtros) < 10 and all(f.campo != "tipo_equipamento" for f in filtros):
+        filtros.append(Filtro(campo="tipo_equipamento", operador="igual", valor=_TIPOS_CONTAGEM[tipo[1]]))
+    return consulta.model_copy(update={"filtros": filtros})
 
 
 def _condicao_software(filtro: FiltroSoftware):
@@ -192,12 +333,7 @@ def executar_consulta(db: Session, consulta: ConsultaInventario, planta_id: int 
     cadastros = {}
     plantas_consultadas = None if planta_id is None else {planta_id}
     if filtros_planta:
-        catalogo = db.query(Planta.id, Planta.nome, Planta.sigla, Planta.cidade, PlantaLocalidade.codigo).outerjoin(
-            PlantaLocalidade, PlantaLocalidade.planta_id == Planta.id
-        ).filter(Planta.deleted_at.is_(None))
-        if planta_id is not None:
-            catalogo = catalogo.filter(Planta.id == planta_id)
-        plantas = catalogo.all()
+        plantas = plantas_catalogadas(db, planta_id)
         for filtro in filtros_planta:
             ids = resolver_cadastro(plantas, filtro)
             if not ids:
@@ -209,10 +345,7 @@ def executar_consulta(db: Session, consulta: ConsultaInventario, planta_id: int 
             if filtro in consulta.filtros:
                 plantas_consultadas = plantas_consultadas & ids.keys() if plantas_consultadas is not None else set(ids)
     if filtros_departamento:
-        catalogo = db.query(Departamento.id, Departamento.nome, Departamento.sigla).filter(Departamento.deleted_at.is_(None))
-        if plantas_consultadas is not None:
-            catalogo = catalogo.filter(or_(Departamento.planta_id.is_(None), Departamento.planta_id.in_(plantas_consultadas)))
-        departamentos = catalogo.all()
+        departamentos = _departamentos_no_escopo(db, plantas_consultadas)
         for filtro in filtros_departamento:
             ids = resolver_cadastro(departamentos, filtro)
             if not ids:

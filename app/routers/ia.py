@@ -27,7 +27,10 @@ from app.services.dados_ia import (
     ConsultaConsumiveis, ConsultaFicha, ConsultaIndicadores, consultar_consumiveis,
     consultar_ficha, consultar_indicador, informacoes,
 )
-from app.services.inventario_ia import ATRIBUTOS_TI, ConsultaInventario, FUSO_INVENTARIO, detalhar_consulta, executar_consulta, resposta_ficha
+from app.services.inventario_ia import (
+    ATRIBUTOS_TI, ConsultaInventario, FUSO_INVENTARIO, aplicar_referencias_de_escopo, contagem_explicita_departamento,
+    detalhar_consulta, executar_consulta, referencias_de_escopo, resposta_ficha,
+)
 from app.services.ollama import ConfigOllama, DestinoOllama, config_efetiva, destino_ollama
 from app.services.ia_externa import DestinoExterno, destino_externo
 from app.services.retencao_chat import limite_historico
@@ -65,6 +68,11 @@ Nesse exemplo, "hoje" quer dizer o inventário atual, sem filtro de data ou stat
 Use o histórico para referências e continuações. Uma nova pergunta completa deve usar os próprios filtros.
 Se a pergunta citar uma planta ou um departamento, use os campos planta e departamento com operador igual
 e o nome ou a sigla que aparece na pergunta. Para contar ativos em geral, não filtre tipo_equipamento.
+"Departamento de TI" e "setor de TI" indicam departamento igual a TI. Use dominio somente se o usuário pedir o inventário
+de TI ou de impressoras. Não deduza status, categoria, hostname ou estado de coleta pelo nome do departamento.
+Quando referencias_de_escopo identificar siglas cadastradas, use-as diretamente nos campos correspondentes com operador
+igual. Exemplo: "computadores do TI em TAT com Chrome na versão 120.0.1" combina departamento TI, planta TAT,
+tipo_equipamento computador e o filtro de software. Em comparações e percentuais, use cada sigla na parte que a pergunta indicar.
 Para patrimônio ausente, use campo patrimonio e operador vazio. Para PCs ou computadores, use tipo_equipamento igual
 a computador. O Nexus identifica computadores pelo hostname, pela categoria ou pelo sistema operacional cadastrado.
 Para listar um atributo técnico específico, pode usar consultar_inventario com operacao listar e o campo em atributos.
@@ -322,10 +330,21 @@ def _executar_ferramenta(db: Session, consulta, planta_id: int | None, dominios:
 
 def _responder(db: Session, destino: DestinoOllama | DestinoExterno, modelo: str, pergunta: str, historico: list[str],
                planta_id: int | None, dominios: tuple[str, ...], user: Usuario, modulos: frozenset[str]) -> dict:
+    consulta_direta = contagem_explicita_departamento(db, pergunta, planta_id) if "ativos" in modulos else None
+    if consulta_direta:
+        dados = _executar_ferramenta(db, consulta_direta, planta_id, dominios, user, modulos)
+        if "aviso" in dados:
+            return {"resposta": dados["aviso"], "resultados": []}
+        return {"resposta": _texto_contagem(dados["total"]), "resultados": [dados]}
+    referencias = referencias_de_escopo(db, pergunta) if "ativos" in modulos else {}
+    db.rollback()
     hoje = datetime.now(ZoneInfo(FUSO_INVENTARIO)).date()
+    pedido = {"perguntas_anteriores": historico, "pergunta_atual": pergunta}
+    if referencias:
+        pedido["referencias_de_escopo"] = referencias
     mensagens = [
         {"role": "system", "content": f"{_INSTRUCOES}\nData de hoje: {hoje.isoformat()}."},
-        {"role": "user", "content": json.dumps({"perguntas_anteriores": historico, "pergunta_atual": pergunta}, ensure_ascii=False)},
+        {"role": "user", "content": json.dumps(pedido, ensure_ascii=False)},
     ]
     prazo = monotonic() + settings.nexus_ollama_timeout
     resultados = []
@@ -343,6 +362,8 @@ def _responder(db: Session, destino: DestinoOllama | DestinoExterno, modelo: str
                 consulta = schema.model_validate(funcao["arguments"])
             except (ValidationError, TypeError, KeyError):
                 continue
+            if isinstance(consulta, ConsultaInventario):
+                consulta = aplicar_referencias_de_escopo(consulta, pergunta, referencias)
             dados = _executar_ferramenta(db, consulta, planta_id, dominios, user, modulos)
             if isinstance(consulta, (ConsultaFicha, ConsultaConsumiveis, ConsultaIndicadores)) and dados.get("modulos_dados"):
                 # Contador e comunicação ao vivo descrevem a leitura que foi respondida.
@@ -362,9 +383,7 @@ def _responder(db: Session, destino: DestinoOllama | DestinoExterno, modelo: str
             if unico.get("atributos"):
                 return {"resposta": resposta_ficha(unico), "resultados": resultados}
             if unico["operacao"] == "contar" and not unico["agrupar_por"]:
-                n = unico["total"]
-                texto = "Encontrei 1 equipamento." if n == 1 else f"Encontrei {n} equipamentos."
-                return {"resposta": texto, "resultados": resultados}
+                return {"resposta": _texto_contagem(unico["total"]), "resultados": resultados}
         texto = "Consulta concluída. Veja o resultado abaixo."
         mensagens.append({"role": "user", "content": "O Nexus executou as consultas. Resuma os resultados abaixo em até três frases, sem criar valores.\n"
                          + json.dumps(retorno_ferramentas, ensure_ascii=False)})
@@ -375,6 +394,10 @@ def _responder(db: Session, destino: DestinoOllama | DestinoExterno, modelo: str
         except HTTPException:
             pass  # Os resultados do banco continuam disponíveis mesmo se o resumo falhar.
     return {"resposta": texto, "resultados": resultados}
+
+
+def _texto_contagem(total: int) -> str:
+    return "Encontrei 1 equipamento." if total == 1 else f"Encontrei {total} equipamentos."
 
 
 @router.post("/equipamentos")

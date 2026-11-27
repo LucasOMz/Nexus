@@ -14,11 +14,11 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.planta import aplicar_filtro
 from app.models import Ativo, AtivoImpressora, AtivoTI, Contagem, Contrato, Emprestimo, LeituraContador, Manutencao, Movimentacao
-from app.models import Planta, PlantaLocalidade, Produto, SoftwareInstalado, SuprimentoImpressora, Usuario
+from app.models import Produto, SoftwareInstalado, SuprimentoImpressora, Usuario
 from app.models.emprestimo import SituacaoEmprestimo
 from app.models.enums import Dominio, StatusManut, TipoMov
 from app.services.conhecimento_ia import link_nexus
-from app.services.inventario_ia import FUSO_INVENTARIO, Filtro, resolver_cadastro
+from app.services.inventario_ia import FUSO_INVENTARIO, Filtro, plantas_catalogadas, resolver_cadastro
 
 
 class ConsultaFicha(BaseModel):
@@ -47,12 +47,7 @@ class ConsultaIndicadores(BaseModel):
 
 
 def _plantas_permitidas(db: Session, planta: str, planta_id: int | None) -> dict[int, str]:
-    catalogo = db.query(Planta.id, Planta.nome, Planta.sigla, Planta.cidade, PlantaLocalidade.codigo).outerjoin(
-        PlantaLocalidade, Planta.id == PlantaLocalidade.planta_id,
-    ).filter(Planta.deleted_at.is_(None))
-    if planta_id is not None:
-        catalogo = catalogo.filter(Planta.id == planta_id)
-    return resolver_cadastro(catalogo.all(), Filtro(campo="planta", operador="igual", valor=planta))
+    return resolver_cadastro(plantas_catalogadas(db, planta_id), Filtro(campo="planta", operador="igual", valor=planta))
 
 
 def informacoes(resumo: str, *, blocos=(), links=(), modulos=()) -> dict:

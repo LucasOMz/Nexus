@@ -54,6 +54,86 @@ def _modelo(monkeypatch, consultas):
     return recebidas
 
 
+@pytest.mark.parametrize("sigla_cadastrada", [None, "TI"])
+def test_contagem_departamento_por_sigla_e_nome_aplica_o_mesmo_escopo(
+    client, auth_headers, inventario_ia, monkeypatch, sigla_cadastrada,
+):
+    with TestingSession() as db:
+        db.add(Departamento(id=2, nome="Técnologia da Informação", sigla=sigla_cadastrada, planta_id=1))
+        db.flush()
+        db.get(Ativo, 1).departamento_id = 2
+        db.get(Ativo, 4).departamento_id = 2
+        ficha = db.get(AtivoTI, 1)
+        ficha.hostname = "LUCASMENDES"
+        ficha.so = "Windows 11"
+        db.commit()
+    chamadas = _modelo(monkeypatch, [{
+        "operacao": "contar",
+        "filtros": [_filtro("departamento", "igual", "TI"), _filtro("tipo_equipamento", "igual", "desktop")],
+    }])
+    headers = {**auth_headers, "X-Planta-Id": "1"}
+    for nome in ("TI", "T.I.", "Técnologia da Informação"):
+        resposta = client.post("/api/v1/ia/chat", headers=headers, json={
+            "pergunta": f"Quantos computadores tenho no departamento de {nome}?",
+        })
+        assert resposta.status_code == 200, resposta.text
+        dados = resposta.json()["resultados"][0]
+        assert dados["total"] == 1
+        assert dados["cadastros_consultados"]["departamento"] == ["Técnologia da Informação"]
+        assert [a["hostname"] for a in dados["amostra_equipamentos"]["equipamentos"]] == ["LUCASMENDES"]
+    assert not chamadas
+    client.post("/api/v1/ia/chat", headers=headers, json={
+        "pergunta": "Quantos computadores tenho no departamento de TI com Windows 11?",
+    })
+    assert chamadas
+
+
+def test_siglas_da_planta_e_departamento_com_software_e_versao(client, auth_headers, inventario_ia, monkeypatch):
+    with TestingSession() as db:
+        planta = db.get(Planta, 2)
+        planta.nome = "Unidade Tatuí"
+        planta.sigla = "UTU"
+        db.add(PlantaLocalidade(codigo="TAT", planta_id=2))
+        db.add_all([
+            Departamento(id=2, nome="Tecnologia da Informação", sigla="TI", planta_id=2),
+            Departamento(id=3, nome="Tecnologia da Informação", sigla="TI", planta_id=1),
+            Departamento(id=4, nome="Qualidade", sigla="QL-2", planta_id=2),
+        ])
+        db.flush()
+        db.get(Ativo, 3).departamento_id = 2
+        db.get(Ativo, 1).departamento_id = 3
+        db.add(Ativo(id=5, planta_id=2, departamento_id=4, numero_serie="QA-5", dominio="ti"))
+        db.add(AtivoTI(ativo_id=5, hostname="DTAT0005", so="Windows 11"))
+        db.add_all([SoftwareInstalado(ativo_id=i, nome="Google Chrome", versao="120.0.1") for i in (1, 3, 5)])
+        db.commit()
+
+    chamadas = _modelo(monkeypatch, [{
+        "operacao": "contar", "softwares": [{"nome": "Chrome", "versao": "120.0.1"}],
+        "filtros": [_filtro("dominio", "igual", "TI"), _filtro("planta", "igual", "Matriz")],
+    }])
+    for depto, planta, id_, nome in (
+        ("TI", "TAT", 3, "Tecnologia da Informação"), ("T.I.", "UTU", 3, "Tecnologia da Informação"),
+        ("QL-2", "T.A.T.", 5, "Qualidade"),
+    ):
+        resposta = client.post("/api/v1/ia/chat", headers=auth_headers, json={
+            "pergunta": f"quantos computadores do {depto} em {planta} têm o Chrome na versão 120.0.1?",
+        })
+        assert resposta.status_code == 200, resposta.text
+        chat = resposta.json()
+        dados = chat["resultados"][0]
+        assert dados["total"] == 1
+        assert dados["cadastros_consultados"] == {"planta": ["Unidade Tatuí"], "departamento": [nome]}
+        assert dados["amostra_equipamentos"]["equipamentos"][0]["id"] == id_
+        csv = client.get(f"/api/v1/ia/mensagens/{chat['id']}/exportacao", headers=auth_headers).json()
+        assert [a["id"] for a in csv["resultados"][0]["equipamentos_exibidos"]] == [id_]
+    assert '"referencias_de_escopo": {"departamento": ["ti"], "planta": ["tat"]}' in chamadas[0][1]
+
+    fora = client.post("/api/v1/ia/chat", headers={**auth_headers, "X-Planta-Id": "1"}, json={
+        "pergunta": "Quantos computadores do TI em TAT têm o Chrome na versão 120.0.1?",
+    })
+    assert "não corresponde ao escopo atual" in fora.json()["resposta"]
+
+
 def test_software_por_versao_com_lista_paginada_e_exportacao_completa(client, auth_headers, inventario_ia, monkeypatch):
     with TestingSession() as db:
         for id_ in range(10, 55):
