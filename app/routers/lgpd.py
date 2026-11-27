@@ -23,7 +23,7 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func
+from sqlalchemy import false, func
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_admin
@@ -48,6 +48,12 @@ FONTES = {
 }
 
 
+def _condicao_limpeza(modelo, acao: str | None, vencido):
+    if acao == "anonimizar":
+        return vencido & modelo.usuario_id.is_not(None)
+    return vencido if acao == "apagar" else false()
+
+
 def _contar_vencidos(db: Session) -> list[dict]:
     """Um item por tipo de registro, com o total e o que passou do prazo."""
     agora = datetime.now(timezone.utc)
@@ -55,26 +61,23 @@ def _contar_vencidos(db: Session) -> list[dict]:
 
     for tipo, (modelo, campo_data) in FONTES.items():
         coluna = getattr(modelo, campo_data)
-        total = db.query(func.count(modelo.id)).scalar() or 0
-
         prazo = plataforma.prazo_de(tipo, agora=agora)
-        # Item sem prazo (`None`) nunca vence: a foto do ativo vive enquanto o
-        # ativo existir. Contar como "0 vencidos" está certo, mas o texto
-        # precisa dizer que é por não haver prazo, e não por não haver dado.
-        vencidos = 0
-        if prazo is not None:
-            vencidos = (
-                db.query(func.count(modelo.id)).filter(coluna < prazo).scalar() or 0
-            )
-
         politica = plataforma.RETENCAO.get(tipo, {})
+        acao = politica.get("acao")
+        vencido = coluna < prazo if prazo is not None else false()
+        total, vencidos, pendentes = db.query(
+            func.count(modelo.id),
+            func.count(modelo.id).filter(vencido),
+            func.count(modelo.id).filter(_condicao_limpeza(modelo, acao, vencido)),
+        ).one()
         itens.append({
             "tipo": tipo,
             "total": total,
             "vencidos": vencidos,
+            "pendentes": pendentes,
             "prazo": prazo.isoformat() if prazo else None,
             "dias": politica.get("dias"),
-            "acao": politica.get("acao"),
+            "acao": acao,
             "motivo": politica.get("motivo"),
         })
 
@@ -97,20 +100,22 @@ def retencao(
     sem_tabela = [t for t in plataforma.RETENCAO if t not in FONTES]
 
     total_vencido = sum(i["vencidos"] for i in itens)
-    a_apagar = sum(i["vencidos"] for i in itens if i["acao"] == "apagar")
-    a_anonimizar = sum(i["vencidos"] for i in itens if i["acao"] == "anonimizar")
+    a_apagar = sum(i["pendentes"] for i in itens if i["acao"] == "apagar")
+    a_anonimizar = sum(i["pendentes"] for i in itens if i["acao"] == "anonimizar")
+    pendentes = a_apagar + a_anonimizar
 
     return {
         "itens": itens,
         "sem_tabela": sem_tabela,
         "total_vencido": total_vencido,
+        "pendentes": pendentes,
         "a_apagar": a_apagar,
         "a_anonimizar": a_anonimizar,
         "mensagem": (
             "Nada passou do prazo de retenção."
             if not total_vencido else
-            f"{total_vencido} registro(s) passaram do prazo. "
-            f"{a_apagar} seriam apagados e {a_anonimizar} anonimizados."
+            f"{pendentes} registro(s) aguardam limpeza." if pendentes else
+            "Não há registros pendentes de limpeza."
         ),
     }
 
@@ -160,7 +165,7 @@ def expurgar(
 
         alvos = (
             db.query(modelo)
-            .filter(getattr(modelo, campo_data) < prazo)
+            .filter(_condicao_limpeza(modelo, "apagar", getattr(modelo, campo_data) < prazo))
             .limit(limite)
             .all()
         )
@@ -179,12 +184,11 @@ def expurgar(
 
         alvos = (
             db.query(modelo)
-            .filter(getattr(modelo, campo_data) < prazo)
             # Só o que AINDA tem vínculo. Sem este filtro, uma segunda
             # execução re-selecionaria as linhas já anonimizadas e gastaria o
             # `limite` sem tratar as que faltam — o expurgo nunca terminaria
             # numa base com mais vencidos do que o limite.
-            .filter(modelo.usuario_id.isnot(None))
+            .filter(_condicao_limpeza(modelo, "anonimizar", getattr(modelo, campo_data) < prazo))
             .limit(limite)
             .all()
         )

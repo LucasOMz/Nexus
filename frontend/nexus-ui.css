@@ -91,6 +91,27 @@ table.data td, table.data th { padding: 11px 14px; }
 .admin-busca { margin-bottom: 14px; }
 .admin-busca .busca-abas { width: 100%; max-width: none; margin-bottom: 0; border-radius: 8px; }
 .admin-area, .admin-conteudo { min-width: 0; }
+.lgpd-painel { display: grid; gap: 14px; }
+.lgpd-painel > .card { margin: 0; }
+.lgpd-topo, .lgpd-acoes, .lgpd-situacao { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.lgpd-topo { justify-content: space-between; align-items: flex-start; }
+.lgpd-topo h2, .lgpd-politica h2 { margin: 0; }
+.lgpd-topo p, .lgpd-politica > p { margin: 5px 0 0; }
+.lgpd-situacao { margin-top: 15px; }
+.lgpd-resumo .recado { margin: 14px 0 0; }
+.lgpd-politica > p { margin-bottom: 14px; }
+.lgpd-regra { border-top: 1px solid var(--md-sys-color-outline-variant); }
+.lgpd-regra summary { display: flex; align-items: center; gap: 10px; padding: 12px 4px; cursor: pointer; list-style: none; }
+.lgpd-regra summary::-webkit-details-marker { display: none; }
+.lgpd-regra summary:hover { background: var(--md-sys-color-surface-container); }
+.lgpd-regra-texto { display: grid; flex: 1 1 150px; gap: 3px; min-width: 0; }
+.lgpd-regra summary .badge { white-space: nowrap; }
+.lgpd-seta { margin-left: auto; display: inline-flex; }
+.lgpd-regra[open] .lgpd-seta { transform: rotate(180deg); }
+.lgpd-regra-detalhe { margin: 0; padding: 0 4px 12px; }
+.lgpd-regra-detalhe p { margin: 0 0 5px; }
+.lgpd-aviso { margin-bottom: 0; }
+.lgpd-aviso:empty { display: none; }
 .admin-destinos { padding: 9px; }
 .admin-destinos .categorias-admin { display: grid; gap: 4px; margin: 0; }
 .admin-destinos .categoria-admin { min-height: 41px; display: flex; align-items: center; gap: 9px; border: 0; border-radius: 7px;

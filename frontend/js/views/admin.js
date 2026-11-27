@@ -646,7 +646,7 @@ const SECOES_ADMIN = [
     ["auditoria", "Logs de auditoria", "contagens", "Consulte a trilha de alterações do sistema.", renderAuditoria, "histórico trilha quem fez rastro"],
   ] },
   { chave: "lgpd", rotulo: "Privacidade", icone: "shield", opcoes: [
-    ["lgpd", "Privacidade (LGPD)", "shield", "Consulte os prazos de retenção e execute o expurgo de dados vencidos.", renderLgpd, "dados retenção anonimização"],
+    ["lgpd", "Privacidade (LGPD)", "shield", "Consulte os prazos de guarda e os registros pendentes de limpeza.", renderLgpd, "dados retenção anonimização expurgo"],
   ] },
   { chave: "sistema", rotulo: "Sistema", icone: "settings", opcoes: [
     ["auth", "Autenticação (AD)", "shield", "Configure o acesso com as contas de rede.", renderAuth, "active directory ldap senha domínio login de rede"],

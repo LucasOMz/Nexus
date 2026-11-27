@@ -75,6 +75,26 @@ class TestPolitica:
     def test_exige_admin(self, client):
         assert client.get("/api/v1/admin/lgpd/retencao").status_code == 401
 
+    def test_pendencias_excluem_historico_preservado_e_logs_ja_anonimizados(self, client, auth_headers):
+        db = _db(client)
+        antigo = datetime.now(timezone.utc) - timedelta(days=4000)
+        _log(db, antigo)
+        _log(db, antigo, usuario_id=None, ip="[anonimizado]")
+        db.add(Movimentacao(ativo_id=None, tipo="ajuste", created_at=antigo))
+        db.commit()
+
+        rota = "/api/v1/admin/lgpd/retencao"
+        antes = client.get(rota, headers=auth_headers).json()
+        assert antes["total_vencido"] == 3
+        assert antes["pendentes"] == antes["a_anonimizar"] == 1
+        assert {i["tipo"]: i["pendentes"] for i in antes["itens"]} == {
+            "auditoria": 1, "movimentacoes": 0, "manutencoes": 0,
+        }
+        assert client.post("/api/v1/admin/lgpd/expurgar?confirmo=true", headers=auth_headers).json()["anonimizados"] == 1
+        depois = client.get(rota, headers=auth_headers).json()
+        assert depois["total_vencido"] == 3
+        assert depois["pendentes"] == depois["a_anonimizar"] == 0
+
     def test_diz_qual_o_proximo_expurgo(self, client, auth_headers):
         _db(client)
         r = client.get("/api/v1/admin/lgpd/proximo", headers=auth_headers)

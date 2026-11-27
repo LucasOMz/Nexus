@@ -1,176 +1,150 @@
-/**
- * Administração → Privacidade → Retenção e expurgo (LGPD).
- *
- * ## Por que esta tela existe
- *
- * A política de retenção tem **peso legal**: diz por quanto tempo cada dado
- * pessoal é guardado e com que fundamento. Quem responde por isso precisa
- * **ver** a política e o que está vencido — não descobrir por URL.
- *
- * A tela separa três coisas que costumam ser confundidas:
- *
- * 1. **A política** — os prazos e o motivo de cada um
- * 2. **O que venceu** — o que passou do prazo, contado
- * 3. **O expurgo** — a execução, que não tem volta
- *
- * @module views/admin_lgpd
- */
 import { api } from "../api.js";
-import { el, icon, toast, dialog, mostrarErro, emptyState } from "../ui.js";
+import { dialog, el, icon, skeleton } from "../ui.js";
 
-const ACAO_ROTULO = {
-  apagar: "Apagar",
-  anonimizar: "Anonimizar",
-  manter: "Manter",
-  vincular_ao_ativo: "Vincular ao ativo",
+const numeros = new Intl.NumberFormat("pt-BR");
+const regras = {
+  auditoria: ["Logs de auditoria", "Preserva o histórico de ações. A limpeza desvincula o usuário e oculta o IP."],
+  movimentacoes: ["Movimentações de patrimônio", "Preserva o histórico de entradas, saídas e transferências."],
+  manutencoes: ["Histórico de manutenções", "Preserva o histórico dos serviços realizados nos equipamentos."],
+  reportes: ["Reportes de erro", ""],
+  logs_acesso: ["Logs de acesso", ""],
+  notificacoes: ["Notificações", ""],
+  fotos: ["Fotos de ativos", ""],
 };
 
-const ACAO_EXPLICA = {
-  apagar: "O registro deixa de existir.",
-  // A distinção que mais importa explicar: anonimizar preserva o fato e
-  // remove a pessoa — é o que concilia LGPD com auditoria.
-  anonimizar: "O fato permanece; o vínculo com a pessoa sai.",
-  manter: "Prazo de guarda MINIMA — passado ele, o dado continua.",
-  vincular_ao_ativo: "Vive enquanto o ativo existir.",
-};
+function quantidade(valor, singular, plural) {
+  return numeros.format(valor) + " " + (valor === 1 ? singular : plural);
+}
+
+function descreverPrazo(regra) {
+  if (!regra.dias) return "Enquanto o ativo estiver cadastrado";
+  const prazo = regra.dias % 365 === 0
+    ? quantidade(regra.dias / 365, "ano", "anos")
+    : quantidade(regra.dias, "dia", "dias");
+  if (regra.acao === "manter") return "Guarda mínima de " + prazo;
+  return prazo + (regra.acao === "anonimizar" ? " antes de anonimizar" : " antes de excluir");
+}
+
+function itemPolitica(item) {
+  const [nome, descricao] = regras[item.tipo] || [item.tipo, item.motivo];
+  const badge = item.pendentes
+    ? el("span", { class: "badge aviso" }, quantidade(item.pendentes, "pendente", "pendentes"))
+    : item.acao === "manter" ? el("span", { class: "badge" }, "Preservado") : null;
+  return el("details", { class: "lgpd-regra" },
+    el("summary", {},
+      el("span", { class: "lgpd-regra-texto" }, el("strong", {}, nome), el("small", { class: "muted" }, descreverPrazo(item))),
+      badge, el("span", { class: "lgpd-seta", "aria-hidden": "true", html: icon("chevron", 16) })),
+    el("div", { class: "lgpd-regra-detalhe" },
+      el("p", {}, descricao),
+      el("small", { class: "muted" }, quantidade(item.total, "registro no histórico", "registros no histórico"))));
+}
+
+function explicacaoOutros(tipos) {
+  if (!tipos.length) return null;
+  return el("details", { class: "lgpd-regra" },
+    el("summary", {}, el("strong", { class: "lgpd-regra-texto" }, "Dados fora desta limpeza"),
+      el("span", { class: "lgpd-seta", "aria-hidden": "true", html: icon("chevron", 16) })),
+    el("p", { class: "lgpd-regra-detalhe muted" }, tipos.map(tipo => regras[tipo]?.[0] || tipo).join(" · ")));
+}
+
+function efeitos(apagar, anonimizar) {
+  return [
+    apagar ? quantidade(apagar, "registro para excluir", "registros para excluir") : "",
+    anonimizar ? quantidade(anonimizar, "registro para anonimizar", "registros para anonimizar") : "",
+  ].filter(Boolean).join(" · ");
+}
+
+function confirmarLimpeza(dados, executar) {
+  const limite = el("input", { id: "lgpd-limite", type: "number", min: 1, max: 50000, step: 1,
+    value: 5000, required: true, "aria-describedby": "lgpd-limite-dica" });
+  const aviso = el("p", { class: "lgpd-aviso", role: "status" });
+  const confirmar = el("button", { type: "submit", form: "lgpd-confirmar", class: "btn danger" }, "Confirmar limpeza");
+  const cancelar = el("button", { type: "button", class: "btn text" }, "Cancelar");
+  const form = el("form", { id: "lgpd-confirmar" },
+    el("p", {}, efeitos(dados.a_apagar, dados.a_anonimizar)),
+    el("p", { class: "muted" }, "As alterações são permanentes. A anonimização preserva a ação registrada no histórico."),
+    el("details", { class: "lgpd-regra" },
+      el("summary", {}, "Limite do lote", el("span", { class: "lgpd-seta", "aria-hidden": "true", html: icon("chevron", 16) })),
+      el("div", { class: "field lgpd-regra-detalhe" }, el("label", { for: "lgpd-limite" }, "Máximo por tipo de registro"),
+        limite, el("small", { id: "lgpd-limite-dica", class: "muted" }, "Se houver mais registros, execute a limpeza novamente."))),
+    aviso);
+  const modal = dialog({ title: "Executar limpeza de dados", body: form,
+    actions: [{ elemento: cancelar }, { elemento: confirmar }] });
+  modal.dlg.setAttribute("role", "dialog");
+  modal.dlg.setAttribute("aria-modal", "true");
+  modal.dlg.setAttribute("aria-label", "Executar limpeza de dados");
+  limite.addEventListener("invalid", () => { limite.closest("details").open = true; });
+  cancelar.focus();
+  cancelar.onclick = modal.close;
+  modal.overlay.addEventListener("click", (evento) => {
+    if (evento.target === modal.overlay && confirmar.disabled) evento.stopImmediatePropagation();
+  }, { capture: true });
+  form.onsubmit = async (evento) => {
+    evento.preventDefault();
+    if (confirmar.disabled) return;
+    const maximo = limite.valueAsNumber;
+    confirmar.disabled = cancelar.disabled = limite.disabled = true;
+    aviso.textContent = "Limpando os registros…";
+    try {
+      const resultado = await api.request("POST", "/admin/lgpd/expurgar", {
+        query: { confirmo: true, limite: maximo }, enfileirar: false,
+      });
+      modal.close();
+      await executar(resultado);
+    } catch (erro) {
+      aviso.textContent = erro.message;
+      confirmar.disabled = cancelar.disabled = limite.disabled = false;
+    }
+  };
+}
 
 export async function renderLgpd(root) {
-  root.innerHTML = "";
-  const alvo = el("div", {}, el("p", { class: "muted" }, "Carregando…"));
-  root.append(alvo);
+  const painel = el("div", { class: "lgpd-painel" }, skeleton(3));
+  root.replaceChildren(painel);
 
-  let d;
-  try {
-    d = await api.get("/admin/lgpd/retencao");
-  } catch (e) {
-    alvo.innerHTML = "";
-    alvo.append(el("p", { class: "text-error" }, e.message));
-    return;
+  async function carregar(botaoAtualizar, botaoLimpar, ultimaLimpeza) {
+    if (botaoAtualizar) botaoAtualizar.disabled = true;
+    if (botaoLimpar) botaoLimpar.disabled = true;
+    try {
+      const dados = await api.get("/admin/lgpd/retencao");
+      if (!painel.isConnected) return;
+      const atualizar = el("button", { class: "btn outline", type: "button",
+        onclick: () => carregar(atualizar, limpar) }, el("span", { html: icon("refresh", 17) }), "Atualizar");
+      const limpar = el("button", { type: "button", class: "btn filled", disabled: !dados.pendentes,
+        onclick: () => confirmarLimpeza(dados, resultado => carregar(atualizar, limpar, resultado)) }, "Executar limpeza");
+      const resumo = ultimaLimpeza && el("p", { class: "recado ok", role: "status" },
+        ultimaLimpeza.total
+          ? "Limpeza concluída. " + [
+              quantidade(Object.values(ultimaLimpeza.apagados).reduce((soma, n) => soma + n, 0), "registro excluído", "registros excluídos"),
+              quantidade(ultimaLimpeza.anonimizados, "registro anonimizado", "registros anonimizados"),
+            ].join(" · ")
+          : "Não havia registros pendentes quando a limpeza foi executada.");
+      painel.replaceChildren(
+        el("section", { class: "card lgpd-resumo" },
+          el("div", { class: "lgpd-topo" },
+            el("div", {},
+              el("h2", { class: "section-title" }, "Limpeza de dados"),
+              el("p", { class: "muted" }, "Revise os registros com prazo vencido e inicie a limpeza quando precisar.")),
+            el("div", { class: "lgpd-acoes" }, atualizar, limpar)),
+          el("div", { class: "lgpd-situacao" },
+            el("span", { class: "badge " + (dados.pendentes ? "aviso" : "ok") },
+              dados.pendentes ? quantidade(dados.pendentes, "registro pendente", "registros pendentes") : "Sem limpeza pendente"),
+            dados.pendentes ? el("small", {}, efeitos(dados.a_apagar, dados.a_anonimizar)) : null),
+          resumo),
+        el("section", { class: "card lgpd-politica" },
+          el("h2", { class: "section-title" }, "Prazos de guarda"),
+          el("p", { class: "muted" }, "Abra um item para ver o que fica no histórico."),
+          ...(dados.itens || []).map(itemPolitica),
+          explicacaoOutros(dados.sem_tabela || [])));
+      if (botaoAtualizar) (ultimaLimpeza && !limpar.disabled ? limpar : atualizar).focus();
+    } catch (erro) {
+      if (!painel.isConnected) return;
+      painel.replaceChildren(el("div", { class: "card" },
+        ultimaLimpeza ? el("p", { class: "recado ok" }, ultimaLimpeza.mensagem) : null,
+        el("p", { role: "alert" }, erro.message),
+        el("button", { class: "btn tonal", type: "button", onclick: () => carregar() }, "Tentar novamente")));
+    }
   }
 
-  alvo.innerHTML = "";
-  alvo.append(cabecalho(d), tabela(d), notas(d));
-}
-
-function cabecalho(d) {
-  const vencidos = d.total_vencido ?? 0;
-  return el("div", { class: "card" },
-    el("div", { class: "section-title", style: "margin:0" }, "Retenção e expurgo de dados"),
-    el("p", { class: "muted", style: "font-size:13px;margin:6px 0 0" },
-      "Quanto tempo cada tipo de registro é guardado, e por quê. Os prazos "
-      + "têm fundamento legal — por isso ficam no código, e não num campo "
-      + "editável."),
-
-    vencidos
-      ? el("div", { class: "recado aviso", style: "margin-top:14px" },
-          el("b", {}, `${vencidos} registro(s) passaram do prazo.`),
-          ` ${d.a_apagar} seriam apagados e ${d.a_anonimizar} anonimizados.`)
-      : el("div", { class: "recado ok", style: "margin-top:14px" },
-          "Nada passou do prazo de retenção."),
-
-    vencidos
-      ? el("div", { class: "row", style: "margin-top:14px" },
-          el("button", { class: "btn filled", type: "button",
-            onclick: () => confirmarExpurgo(d) }, "Executar expurgo"))
-      : null,
-  );
-}
-
-function tabela(d) {
-  const linhas = (d.itens || []).map((i) => el("tr", {},
-    el("td", { style: "font-weight:600" }, i.tipo),
-    el("td", {}, i.dias ? `${i.dias} dias` : "sem prazo"),
-    el("td", {}, el("span", {
-      class: `chip ${i.acao === "apagar" ? "erro" : i.acao === "anonimizar" ? "aviso" : ""}`,
-      title: ACAO_EXPLICA[i.acao] || "",
-    }, ACAO_ROTULO[i.acao] || i.acao)),
-    el("td", {}, String(i.total)),
-    el("td", {}, i.vencidos
-      ? el("span", { class: "chip erro" }, String(i.vencidos))
-      : el("span", { class: "muted" }, "—")),
-    el("td", { class: "muted", style: "font-size:12.5px" }, i.motivo || ""),
-  ));
-
-  // O que a política prevê mas o sistema ainda não tem tabela. Aparecer com
-  // zero sugeriria "nada vencido", quando o certo é "não se aplica".
-  for (const tipo of d.sem_tabela || []) {
-    linhas.push(el("tr", { class: "muted" },
-      el("td", {}, tipo),
-      el("td", {}, "—"),
-      el("td", {}, el("span", { class: "chip" }, "não se aplica")),
-      el("td", {}, "—"),
-      el("td", {}, "—"),
-      el("td", { style: "font-size:12.5px" }, "A política prevê; o sistema ainda não tem este registro."),
-    ));
-  }
-
-  return el("div", { class: "card", style: "margin-top:14px" },
-    el("div", { class: "table-wrap" },
-      el("table", {},
-        el("thead", {}, el("tr", {},
-          el("th", {}, "Registro"), el("th", {}, "Prazo"), el("th", {}, "Ação"),
-          el("th", {}, "Total"), el("th", {}, "Vencidos"), el("th", {}, "Fundamento"))),
-        el("tbody", {}, ...linhas))),
-  );
-}
-
-function notas(d) {
-  return el("div", { class: "card", style: "margin-top:14px" },
-    el("p", { class: "dica", style: "margin:0 0 8px" }, "O que cada ação significa"),
-    el("div", { class: "muted", style: "font-size:13px;line-height:1.8" },
-      el("div", {}, el("b", {}, "Apagar"), " — ", ACAO_EXPLICA.apagar),
-      el("div", {}, el("b", {}, "Anonimizar"), " — ", ACAO_EXPLICA.anonimizar),
-      el("div", {}, el("b", {}, "Manter"), " — ", ACAO_EXPLICA.manter),
-      el("div", {}, el("b", {}, "Vincular ao ativo"), " — ", ACAO_EXPLICA.vincular_ao_ativo),
-    ),
-    d.a_anonimizar
-      ? el("div", { class: "recado info", style: "margin-top:12px" },
-          "A auditoria é anonimizada, e não apagada: a linha que registra quem "
-          + "excluiu um ativo é prova. Apagá-la destruiria a prova; mantê-la "
-          + "identificando a pessoa violaria a lei. O que sai é o vínculo.")
-      : null,
-  );
-}
-
-/**
- * Confirmação do expurgo.
- *
- * Duas travas, de propósito: o expurgo **não tem volta**, e a pessoa precisa
- * dizer QUANTOS registros vai tratar para ter noção do alcance.
- */
-function confirmarExpurgo(d) {
-  const limite = el("input", { type: "number", min: "1", max: "50000", value: "5000" });
-  dialog({
-    title: "Executar expurgo",
-    body: el("div", {},
-      el("div", { class: "recado erro" },
-        el("b", {}, "Esta operação não tem volta."),
-        " Os registros que passaram do prazo serão apagados ou anonimizados."),
-      el("div", { class: "grade", style: "margin-top:14px" },
-        el("div", {}, el("div", { class: "dica" }, "A apagar"),
-          el("b", {}, String(d.a_apagar))),
-        el("div", {}, el("div", { class: "dica" }, "A anonimizar"),
-          el("b", {}, String(d.a_anonimizar))),
-      ),
-      el("div", { class: "field", style: "margin-top:14px" },
-        el("label", {}, "Máximo por execução"),
-        limite,
-        el("span", { class: "dica" },
-          "O expurgo roda em transação: um lote grande demais trava o banco. "
-          + "Se ficar registro, rode de novo.")),
-    ),
-    actions: [
-      { label: "Cancelar", variant: "text" },
-      { label: "Executar", variant: "filled", onClick: async (close) => {
-        try {
-          const r = await api.post(
-            `/admin/lgpd/expurgar?confirmo=true&limite=${Number(limite.value) || 5000}`, {});
-          close();
-          toast(r.mensagem || "Expurgo concluído");
-          const view = document.getElementById("view");
-          if (view) renderLgpd(view);
-        } catch (e) { mostrarErro(e); }
-      } },
-    ],
-  });
+  await carregar();
 }
