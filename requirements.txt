@@ -13,6 +13,7 @@ redis>=5.2,<8
 bcrypt>=4.2
 qrcode[pil]>=8.0
 reportlab>=4.2
+pypdfium2>=4.30,<6
 httpx>=0.27
 tzdata
 alembic>=1.14

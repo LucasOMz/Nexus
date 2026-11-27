@@ -197,10 +197,28 @@ CREATE TABLE termos (
     data_assinatura TIMESTAMPTZ NOT NULL DEFAULT now(),
     pdf_path        VARCHAR(500),
     observacoes     TEXT,
+    entrega_elegivel BOOLEAN,
     deleted_at      TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE TABLE modelos_termo_entrega (
+    id SERIAL PRIMARY KEY, nome VARCHAR(120) NOT NULL, url_publica VARCHAR(300) NOT NULL,
+    prazo_horas INTEGER NOT NULL, exigir_agente BOOLEAN NOT NULL, campos JSON NOT NULL, paginas JSON NOT NULL,
+    pdf BYTEA NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE entregas_termo (
+    id SERIAL PRIMARY KEY, termo_id INTEGER NOT NULL REFERENCES termos(id) ON DELETE CASCADE,
+    modelo_id INTEGER NOT NULL REFERENCES modelos_termo_entrega(id), criado_por INTEGER NOT NULL REFERENCES usuarios(id),
+    destinatario VARCHAR(160) NOT NULL, login_ad VARCHAR(120) NOT NULL, colaborador VARCHAR(160) NOT NULL,
+    estado VARCHAR(24) NOT NULL, convite_hash VARCHAR(64) UNIQUE NOT NULL, expira_em TIMESTAMPTZ NOT NULL,
+    sessao_hash VARCHAR(64), sessao_expira_em TIMESTAMPTZ, desafio_hash VARCHAR(64) UNIQUE,
+    desafio_expira_em TIMESTAMPTZ, respostas JSON, imagem_assinatura BYTEA, aceite_em TIMESTAMPTZ,
+    assinado_em TIMESTAMPTZ, comprovante JSON, pdf_assinado BYTEA, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX ix_entregas_termo_termo_id ON entregas_termo(termo_id);
 
 CREATE TABLE anexos (
     id          SERIAL PRIMARY KEY,

@@ -7,6 +7,7 @@ import { api } from "../api.js";
 import { fotoProtegida } from "../fotos.js";
 import { state } from "../state.js";
 import { ctx } from "../context.js";
+import { abrirTermoEntrega } from "../termos_entrega_ativo.js";
 import { el, icon, toast, dialog, confirmSheet, emptyState, skeleton, fmtDate, fmtMoney, statusBadge, mostrarErro } from "../ui.js";
 import { abrirDetalhes, abrirSoftwares } from "./ativo_detalhes.js";
 import { botaoAcoesAgente } from "./ativo_acoes_agente.js";
@@ -555,6 +556,7 @@ function atribuir(ativo, lookups, fecharFicha) {
       fecharFicha();
       toast("Ativo atribuído. Termo gerado.");
       refreshView();
+      if (body.login_ad || lookups.usuarios.some(u => u.id === body.usuario_id && u.login_ad)) abrirTermoEntrega(ativo.id, true);
     } catch (erro) {
       aviso.textContent = erro.message;
     } finally {
@@ -632,6 +634,7 @@ function openDetail(ativo, lookups) {
           : []),
         { label: "Editar", variant: "tonal", onClick: () => openForm(ativo, lookups) },
       ] : []),
+      { label: "Termo de entrega", variant: "outlined", onClick: () => abrirTermoEntrega(ativo.id) },
       ...(state.canDelete ? [{ label: "Excluir", variant: "danger", onClick: () => excluirAtivo(ativo) }] : []),
     ],
   });
@@ -902,7 +905,8 @@ async function renderList(root, lookups) {
           categoria ? el("small", { class: "muted ativos-categoria" }, categoria) : null))),
         el("td", {}, a.hostname || a.ti?.hostname || a.impressora?.hostname || "—"),
         el("td", {}, departamento || "—"),
-        el("td", { html: statusBadge(a.status) }),
+        el("td", {}, el("span", { html: statusBadge(a.status) }),
+          a.termo_entrega_assinado ? el("div", {}, el("span", { class: "badge ok" }, "Termo assinado")) : null),
         el("td", {}, a.planta_sigla
           ? el("span", { class: "chip" }, a.planta_sigla)
           : el("span", { class: "muted" }, "—")),

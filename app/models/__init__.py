@@ -62,6 +62,7 @@ from app.models.notificacao import (
     TemplateNotificacao,
 )
 from app.models.sessao import SessaoUsuario
+from app.models.termo_entrega import EntregaTermo, ModeloTermoEntrega
 from app.models.software import (
     AtribuicaoLicenca,
     Licenca,
@@ -130,6 +131,8 @@ __all__ = [
     "SuprimentoImpressora",
     "TemplateEtiqueta",
     "Termo",
+    "EntregaTermo",
+    "ModeloTermoEntrega",
     "TipoImpressao",
     "TipoItem",
     "TipoMov",

@@ -13,6 +13,7 @@ import { renderTemplates } from "./admin_etiquetas.js";
 import { renderBackups } from "./admin_backups.js";
 import { renderAuth } from "./admin_auth.js";
 import { renderLgpd } from "./admin_lgpd.js";
+import { renderTermoEntrega } from "./admin_termo_entrega.js";
 import { renderChecklist } from "./admin_checklist.js";
 import { renderBanco } from "./admin_banco.js";
 import { renderAuditoria } from "./admin_auditoria.js";
@@ -637,6 +638,7 @@ const SECOES_ADMIN = [
     ["plantas", "Plantas", "plantas", "Unidades e localidades dos equipamentos.", renderPlantas, "localidades unidade filial cnpj site"],
   ] },
   { chave: "patrimonio", rotulo: "Patrimônio", icone: "ativos", opcoes: [
+    ["termo-entrega", "Termo de Entrega", "doc", "Importe o PDF e defina os campos, a validade e a confirmação do termo.", renderTermoEntrega, "entrega aceite assinatura checklist pdf"],
     ["dispositivos", "Impressão", "print", "Configure as impressoras usadas para emitir etiquetas.", abaDispositivos, "impressoras zpl tspl rede térmica"],
     ["etiquetas", "Etiquetas", "qr", "Gerencie os modelos de etiquetas de patrimônio.", renderTemplates, "template layout design qr"],
     ["checklist", "Checklist de empréstimo", "contagens", "Defina os itens de conferência na retirada e na devolução.", renderChecklist, "inventário vistoria"],

@@ -25,6 +25,8 @@ _ROTAS = (
     (re.compile(r"/api/v1/reportes"), MAX_PRINT),
     (re.compile(r"/api/v1/mapas/[^/]+/imagem"), MAX_PLANTA),
     (re.compile(r"/api/v1/manutencoes/[^/]+/anexos"), MAX_ANEXO),
+    (re.compile(r"/api/v1/admin/termo-entrega(?:/previa)?"), 8 * MIB),
+    (re.compile(r"/api/v1/termo-entrega/assinar"), MIB),
 )
 MIME_IMAGENS = {
     "PNG": ("image/png", ".png"),
@@ -45,7 +47,7 @@ class LimiteDeUpload:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or scope["method"] != "POST":
+        if scope["type"] != "http" or scope["method"] not in {"POST", "PUT"}:
             await self.app(scope, receive, send)
             return
         caminho = scope["path"]

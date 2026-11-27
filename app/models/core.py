@@ -648,6 +648,7 @@ class Termo(BaseModel, Base):
     data_assinatura: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     pdf_path: Mapped[str | None] = mapped_column(String(500))
     observacoes: Mapped[str | None] = mapped_column(Text)
+    entrega_elegivel: Mapped[bool | None] = mapped_column(Boolean)
 
     ativo: Mapped[Ativo] = relationship()
     usuario: Mapped[Usuario] = relationship()

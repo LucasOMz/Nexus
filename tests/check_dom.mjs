@@ -297,7 +297,7 @@ verificar("o menu mobile abre a gaveta de modulos",
 const fonteAdmin = fs.readFileSync(new URL("../frontend/js/views/admin.js", import.meta.url), "utf8");
 
 // 25) Cada opção existente tem um destino próprio.
-const ORDEM_ABAS = ["usuarios", "plantas", "dispositivos", "etiquetas", "checklist", "fotos", "auditoria", "backups", "auth", "notificacoes", "lgpd", "manutencao", "agente", "agente-ia", "sessao", "banco"];
+const ORDEM_ABAS = ["usuarios", "plantas", "termo-entrega", "dispositivos", "etiquetas", "checklist", "fotos", "auditoria", "backups", "auth", "notificacoes", "lgpd", "manutencao", "agente", "agente-ia", "sessao", "banco"];
 const blocoSecoes = /const SECOES_ADMIN = \[([\s\S]*?)\n\];/.exec(fonteAdmin);
 const destinosAdmin = [...(blocoSecoes?.[1] || "").matchAll(/^    \["([\w-]+)",/gm)].map(m => m[1]);
 verificar("todas as opcoes da administracao continuam acessiveis",

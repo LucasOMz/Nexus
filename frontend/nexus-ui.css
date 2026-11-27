@@ -91,6 +91,43 @@ table.data td, table.data th { padding: 11px 14px; }
 .admin-busca { margin-bottom: 14px; }
 .admin-busca .busca-abas { width: 100%; max-width: none; margin-bottom: 0; border-radius: 8px; }
 .admin-area, .admin-conteudo { min-width: 0; }
+.termo-editor { display: grid; grid-template-columns: minmax(245px, .75fr) minmax(0, 1.25fr); gap: 14px; align-items: start; }
+.termo-editor > .card { min-width: 0; margin: 0; }
+.termo-editor select { max-width: 100%; }
+.termo-editor .termo-adicionar { margin-bottom: 12px; }
+.termo-coordenadas { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.termo-coordenadas input { width: 100%; }
+.termo-opcao { flex-wrap: nowrap; align-items: flex-start; gap: 9px; margin: 10px 0; }
+.termo-opcao input { margin-top: 3px; flex: none; }
+.termo-folha { position: relative; margin: 10px auto 0; background: #fff; border: 1px solid var(--md-sys-color-outline-variant); }
+.termo-folha img { display: block; width: 100%; }
+.termo-folha[hidden], .termo-folha img[hidden] { display: none; }
+.termo-marcadores { position: absolute; inset: 0; pointer-events: none; }
+.termo-marca { position: absolute; pointer-events: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  border: 1px dashed #236b58; background: #d0eae2d9; color: #133c32; font: 600 clamp(.55rem, 1vw, .8rem)/1 system-ui; padding: 0 2px; }
+.termo-marca.ativa { border: 2px solid #08664c; background: #b9f0dfdc; }
+.termo-publico { min-height: 100vh; background: var(--md-sys-color-surface-container-low); color: var(--md-sys-color-on-surface); }
+.termo-conteudo { width: min(calc(100% - 28px), 1200px); margin: 0 auto; padding: 22px 0; }
+.termo-conteudo h1 { margin: 0 0 8px; font-size: clamp(1.5rem, 4vw, 2.2rem); }
+.termo-conteudo > header { margin-bottom: 18px; }
+.termo-mensagem { max-width: 560px; margin: 32px auto; padding: clamp(16px, 5vw, 32px); }
+.termo-marca-nexus { display: flex; align-items: center; gap: 8px; font-weight: 750; margin-bottom: 20px; }
+.termo-form-publico h2 { margin-top: 0; }
+.termo-leitura { grid-template-columns: minmax(0, 1.3fr) minmax(270px, .7fr); }
+.termo-ampliar { color: var(--md-sys-color-primary); margin-inline-start: auto; }
+.termo-assinatura { min-height: 55px; border-bottom: 1px solid var(--md-sys-color-outline-variant); display: grid;
+  align-items: center; padding: 8px 0; font: italic 1.6rem Georgia, serif; overflow-wrap: anywhere; }
+.termo-assinatura[data-fonte="inclinada"] { font-family: Arial, sans-serif; }
+.termo-assinatura[data-fonte="manuscrita"] { font-family: "Courier New", monospace; }
+.termo-assinatura img { max-width: 100%; max-height: 85px; }
+.termo-form-publico select { margin: 8px 0 14px; }
+.termo-codigo { display: block; font-family: monospace; font-size: clamp(1.25rem, 5vw, 2rem); letter-spacing: .12em; }
+.termo-historico details { border-top: 1px solid var(--md-sys-color-outline-variant); padding: 10px 0; }
+.termo-historico summary { cursor: pointer; }
+.termo-historico dd { margin: 3px 0 10px; overflow-wrap: anywhere; }
+@media (max-width: 900px) {
+  .termo-editor { grid-template-columns: minmax(0, 1fr); }
+}
 .lgpd-painel { display: grid; gap: 14px; }
 .lgpd-painel > .card { margin: 0; }
 .lgpd-topo, .lgpd-acoes, .lgpd-situacao { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }

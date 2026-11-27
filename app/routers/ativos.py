@@ -7,7 +7,7 @@ from datetime import date, datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import or_
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.config import settings
@@ -26,6 +26,7 @@ from app.models.core import Ativo, ConfiguracaoSistema, Movimentacao, Termo, Usu
 from app.models.enums import Dominio, FormaAquisicao, StatusAtivo, TipoMov
 from app.models.impressora import AtivoImpressora, LeituraContador, SuprimentoImpressora
 from app.models.ti import AtivoTI
+from app.models.termo_entrega import EntregaTermo
 from app.routers.dashboard import dashboard_stats
 from app.schemas.ativos import (
     AtivoCreate,
@@ -70,6 +71,19 @@ def _get_ativo(db: Session, ativo_id: int, planta_id: int | None) -> Ativo:
     if obj is None:
         raise HTTPException(404, "Ativo não encontrado")
     return obj
+
+
+def _marcar_termos_assinados(db: Session, ativos: list[Ativo]) -> None:
+    if not ativos:
+        return
+    ultimos = select(func.max(Termo.id)).where(
+        Termo.ativo_id.in_([ativo.id for ativo in ativos]),
+        Termo.entrega_elegivel.is_(True), Termo.deleted_at.is_(None),
+    ).group_by(Termo.ativo_id)
+    assinados = set(db.scalars(select(Termo.ativo_id).join(EntregaTermo, EntregaTermo.termo_id == Termo.id)
+                               .where(Termo.id.in_(ultimos), EntregaTermo.estado == "assinado")).all())
+    for ativo in ativos:
+        ativo.termo_entrega_assinado = ativo.id in assinados
 
 
 def _apply_extension(
@@ -170,6 +184,7 @@ def list_ativos(
     # Eager load evita N+1 ao serializar extensões.
     q = q.options(selectinload(Ativo.ti), selectinload(Ativo.impressora))
     result = paginate(q, page, size)
+    _marcar_termos_assinados(db, result["items"])
     return Page[AtivoOut](**result)
 
 
@@ -205,6 +220,7 @@ def get_ativo(
     obj = q.first()
     if obj is None:
         raise HTTPException(404, "Ativo não encontrado")
+    _marcar_termos_assinados(db, [obj])
     return obj
 
 
@@ -554,7 +570,7 @@ def atribuir(
         colaborador_email=dados_ad.email if dados_ad else colaborador.email,
         departamento=colaborador.departamento.nome if colaborador.departamento else "",
     )
-    termo = Termo(ativo_id=ativo.id, usuario_id=colaborador.id, hash_sha256=hash_sha)
+    termo = Termo(ativo_id=ativo.id, usuario_id=colaborador.id, hash_sha256=hash_sha, entrega_elegivel=True)
     db.add(termo)
     db.flush()
     os.makedirs(os.path.join(settings.media_dir, "termos"), exist_ok=True)

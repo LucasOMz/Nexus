@@ -181,6 +181,7 @@ class AtivoOut(AtivoBase, DatasComFuso):
     # a empresa entregando o equipamento, este é quem fez login na máquina.
     ultimo_usuario: str | None = None
     ultimo_usuario_em: datetime | None = None
+    termo_entrega_assinado: bool = False
     emprestimo_atrasado: bool = False
     dominio: Dominio
     tipo_item: TipoItem
