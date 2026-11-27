@@ -35,6 +35,41 @@ function resumoTexto(resumo) {
   return Object.entries(resumo).map(([k, v]) => `${v} ${k}`).join(" · ");
 }
 
+function confirmarExclusao(item, root) {
+  const aviso = el("p", { role: "status", class: "muted" });
+  const excluir = el("button", { type: "button", class: "btn danger" }, "Excluir definitivamente");
+  const cancelar = el("button", { type: "button", class: "btn text" }, "Cancelar");
+  const modal = dialog({
+    title: "Excluir backup",
+    body: el("div", {}, el("p", {}, el("strong", {}, item.arquivo)),
+      el("p", { class: "muted" }, "O servidor removerá esta cópia e os dados da sua listagem. A exclusão é permanente."),
+      aviso),
+    actions: [{ elemento: cancelar }, { elemento: excluir }],
+  });
+  modal.dlg.setAttribute("role", "dialog");
+  modal.dlg.setAttribute("aria-modal", "true");
+  modal.dlg.setAttribute("aria-label", "Excluir backup");
+  cancelar.onclick = modal.close;
+  cancelar.focus();
+  modal.overlay.addEventListener("click", (evento) => {
+    if (evento.target === modal.overlay && excluir.disabled) evento.stopImmediatePropagation();
+  }, { capture: true });
+  excluir.onclick = async () => {
+    if (excluir.disabled) return;
+    cancelar.disabled = excluir.disabled = true;
+    aviso.textContent = "Excluindo backup…";
+    try {
+      await api.request("DELETE", `/admin/backups/${encodeURIComponent(item.arquivo)}`, { enfileirar: false });
+      modal.close();
+      toast("Backup excluído");
+      if (root.isConnected) await renderBackups(root);
+    } catch (erro) {
+      aviso.textContent = erro.message;
+      cancelar.disabled = excluir.disabled = false;
+    }
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Validação + restauração
 // ---------------------------------------------------------------------------
@@ -211,6 +246,9 @@ export async function renderBackups(root) {
         }, html: icon("check", 16) + " Validar" }),
         el("button", { class: "iconbtn", title: "Baixar", onclick: () => baixar(`/api/v1/admin/backups/${encodeURIComponent(b.arquivo)}/download`, b.arquivo), html: icon("download", 20) }),
         el("button", { class: "btn danger small", disabled: backupBloqueado, onclick: () => restaurar(b), html: "Restaurar" }),
+        dados.pode_excluir ? el("button", { type: "button", class: "btn outline small", disabled: backupBloqueado || !b.arquivo,
+          "aria-label": `Excluir backup ${b.arquivo}`, onclick: () => confirmarExclusao(b, root) },
+        el("span", { "aria-hidden": "true", html: icon("trash", 16) }), "Excluir") : null,
       ),
     ));
   });

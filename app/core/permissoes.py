@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.config import settings
+
 # Módulos disponíveis no sistema (chave -> rótulo exibido no admin).
 # O antigo "dashboard" foi incorporado a "relatorios".
 MODULOS: dict[str, str] = {
@@ -129,3 +131,11 @@ def pode_inventario(usuario: Any, dominio: str) -> bool:
 
 def eh_admin(usuario: Any) -> bool:
     return _papel(usuario) == "admin"
+
+
+def email_da_conta_root(email: str | None) -> bool:
+    return bool(email and email.strip().casefold() == settings.seed_admin_email.strip().casefold())
+
+
+def eh_conta_root(usuario: Any) -> bool:
+    return eh_admin(usuario) and getattr(usuario, "origem", None) == "local" and email_da_conta_root(usuario.email)

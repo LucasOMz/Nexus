@@ -40,6 +40,7 @@ ROTULO_ACAO = {
     "atribuir": "Atribuiu ativo",
     "leitura_contador": "Lançou contador",
     "backup": "Gerou backup",
+    "excluir_backup": "Excluiu backup",
     "restaurar_backup": "Restaurou backup",
     "importar_csv": "Importou CSV",
     "provisionar": "Criou usuário (AD)",

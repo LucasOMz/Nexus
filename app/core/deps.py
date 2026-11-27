@@ -14,7 +14,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.core.permissoes import eh_admin, pode_acao, pode_modulo
+from app.core.permissoes import eh_admin, eh_conta_root, pode_acao, pode_modulo
 from app.core.primeiro_acesso import Etapa, credencial_revogada, etapa_pendente
 from app.core.security import decode_token
 from app.database import get_db
@@ -177,6 +177,12 @@ def require_admin(user: Usuario = Depends(get_current_user)) -> Usuario:
     """Somente administradores (área de administração)."""
     if not eh_admin(user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso restrito ao administrador")
+    return user
+
+
+def require_root(user: Usuario = Depends(require_admin)) -> Usuario:
+    if not eh_conta_root(user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Apenas a conta root pode executar esta operação.")
     return user
 
 

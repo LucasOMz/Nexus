@@ -20,8 +20,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import sqlite3
+import stat
 import subprocess
 import tempfile
 from datetime import datetime, timezone
@@ -308,6 +310,41 @@ def _resolver(nome: str) -> tuple[Path, dict[str, Any]]:
     meta_path = arquivo.with_suffix(".json")
     meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
     return arquivo, meta
+
+
+def excluir_backup(nome: str) -> None:
+    """Remove o dump e os metadados da cópia selecionada na pasta de backups."""
+    if not re.fullmatch(r"backup_[^/\\:\x00]+\.(?:db|dump)", nome):
+        raise FileNotFoundError("Backup não encontrado.")
+    arquivo = pasta_backups() / nome
+    metadados = arquivo.with_suffix(".json")
+    encontrados = []
+    for caminho in (arquivo, metadados):
+        try:
+            modo = caminho.lstat().st_mode
+        except FileNotFoundError:
+            continue
+        if not stat.S_ISREG(modo):
+            raise FileNotFoundError("Backup não encontrado.")
+        encontrados.append(caminho)
+
+    if metadados in encontrados:
+        try:
+            dados = json.loads(metadados.read_text(encoding="utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise FileNotFoundError("Os metadados do backup são inválidos.") from exc
+        if not isinstance(dados, dict) or dados.get("arquivo") != nome:
+            raise FileNotFoundError("Os metadados não correspondem ao backup selecionado.")
+
+    removidos = False
+    for caminho in encontrados:
+        try:
+            caminho.unlink()
+            removidos = True
+        except FileNotFoundError:
+            continue
+    if not removidos:
+        raise FileNotFoundError("Backup não encontrado.")
 
 
 # ---------------------------------------------------------------------------

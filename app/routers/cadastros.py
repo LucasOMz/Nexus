@@ -13,6 +13,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, require_admin, require_escrita, require_exclusao
+from app.core.permissoes import eh_conta_root, email_da_conta_root
 from app.core.planta import planta_ativa
 from app.core.primeiro_acesso import limpar_mfa
 from app.core.security import hash_password
@@ -323,6 +324,8 @@ def create_usuario(
     """
     if db.query(Usuario).filter(Usuario.email == body.email, Usuario.deleted_at.is_(None)).first():
         raise HTTPException(409, "E-mail já cadastrado")
+    if email_da_conta_root(body.email):
+        raise HTTPException(403, "O e-mail da conta root é reservado pelo sistema.")
 
     login_ad = (body.login_ad or "").strip() or None
     if login_ad:
@@ -378,6 +381,14 @@ def update_usuario(
     if obj is None or obj.deleted_at is not None:
         raise HTTPException(404, "Usuário não encontrado")
     data = body.model_dump(exclude_unset=True)
+    if not eh_conta_root(user):
+        if email_da_conta_root(data.get("email")) and not email_da_conta_root(obj.email):
+            raise HTTPException(403, "O e-mail da conta root é reservado pelo sistema.")
+        if email_da_conta_root(obj.email) and (
+            "senha" in data or any(chave in data and data[chave] != getattr(obj, chave)
+                                   for chave in ("email", "login_ad", "papel", "ativo"))
+        ):
+            raise HTTPException(403, "Apenas a conta root pode alterar suas credenciais e acesso.")
     if "senha" in data:
         data["senha_hash"] = hash_password(data.pop("senha"))
     if "senha_hash" in data or data.get("ativo") is False or data.get("email", obj.email) != obj.email:
@@ -420,6 +431,8 @@ def delete_usuario(
         raise HTTPException(404, "Usuário não encontrado")
     if obj.id == user.id:
         raise HTTPException(400, "Você não pode excluir a si mesmo")
+    if email_da_conta_root(obj.email):
+        raise HTTPException(403, "A conta root é reservada pelo sistema.")
     obj.deleted_at = datetime.now(timezone.utc)
     sessoes.revogar_do_usuario(db, obj)
     audit(db, user, "delete", "usuario", obj.id, ip=_ip(request))

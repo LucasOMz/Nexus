@@ -20,6 +20,7 @@ from typing import Any, Callable
 from sqlalchemy.orm import Session
 
 from app import __version__
+from app.core.permissoes import email_da_conta_root
 from app.models.core import (
     Ativo,
     Categoria,
@@ -275,6 +276,9 @@ def importar_zip(db: Session, conteudo: bytes, dry_run: bool = True, atualizar: 
                 continue
             if email in users:
                 contar("usuarios", "duplicados")
+                continue
+            if email_da_conta_root(email):
+                contar("usuarios", "ignorados")
                 continue
             contar("usuarios", "novos")
             if not dry_run:

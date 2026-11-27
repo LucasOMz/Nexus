@@ -116,6 +116,63 @@ def test_pasta_sem_gravacao_mostra_o_historico_e_bloqueia_novo_backup(client, au
     assert (tmp_path / nome).read_bytes() == b"backup existente"
 
 
+def test_so_root_exclui_backup_e_a_operacao_fica_na_auditoria(client, auth_headers, tmp_path, monkeypatch):
+    from app.config import settings
+    from app.core.security import create_access_token
+    from app.models.core import LogAuditoria
+    from tests.conftest import TestingSession
+
+    monkeypatch.setattr(settings, "backup_dir", str(tmp_path))
+    monkeypatch.setattr(settings, "seed_admin_email", "admin@teste.com")
+    with TestingSession() as db:
+        db.add(Usuario(id=2, nome="Outro admin", email="outro@teste.com", senha_hash="x", papel="admin", origem="local"))
+        db.commit()
+    secundario = {"Authorization": f"Bearer {create_access_token(2, 'admin')}"}
+    nome = "backup_2026-11-20_120000_manual.dump"
+    dump = tmp_path / nome
+    meta = dump.with_suffix(".json")
+    dump.write_bytes(b"backup de teste")
+    meta.write_text(json.dumps({"arquivo": nome}), encoding="utf-8")
+    (tmp_path / "outro-arquivo.txt").write_text("preservado", encoding="utf-8")
+    base = "/api/v1/admin/backups"
+
+    assert client.get(base, headers=secundario).json()["pode_excluir"] is False
+    assert client.get(base, headers=auth_headers).json()["pode_excluir"] is True
+    assert client.delete(f"{base}/{nome}", headers=secundario).status_code == 403
+    assert client.delete(f"{base}/{nome}").status_code == 401
+    assert client.delete(f"{base}/{meta.name}", headers=auth_headers).status_code == 404
+    assert dump.exists() and meta.exists()
+    assert client.delete(f"{base}/{nome}", headers=auth_headers).status_code == 204
+    assert client.delete(f"{base}/{nome}", headers=auth_headers).status_code == 404
+    assert {p.name for p in tmp_path.iterdir()} == {"outro-arquivo.txt"}
+    with TestingSession() as db:
+        evento = db.query(LogAuditoria).filter_by(acao="excluir_backup").one()
+        assert evento.usuario_id == 1 and evento.diff == {"arquivo": nome}
+
+    with TestingSession() as db:
+        db.get(Usuario, 1).origem = "ad"
+        db.commit()
+    assert not client.get(base, headers=auth_headers).json()["pode_excluir"]
+    assert client.delete(f"{base}/{nome}", headers=auth_headers).status_code == 403
+
+
+def test_admin_nao_consegue_assumir_o_email_ou_a_senha_do_root(client, monkeypatch):
+    from app.config import settings
+    from app.core.security import create_access_token
+    from tests.conftest import TestingSession
+
+    monkeypatch.setattr(settings, "seed_admin_email", "admin@teste.com")
+    with TestingSession() as db:
+        db.add(Usuario(id=2, nome="Outro admin", email="outro@teste.com", senha_hash="x", papel="admin", origem="local"))
+        db.commit()
+    secundario = {"Authorization": f"Bearer {create_access_token(2, 'admin')}"}
+    rota = "/api/v1/usuarios"
+    assert client.put(f"{rota}/1", headers=secundario, json={"senha": "senha-nova"}).status_code == 403
+    assert client.put(f"{rota}/2", headers=secundario, json={"email": "ADMIN@teste.com"}).status_code == 403
+    assert client.delete(f"{rota}/1", headers=secundario).status_code == 403
+    assert client.put(f"{rota}/1", headers=secundario, json={"nome": "Administrador atualizado"}).status_code == 200
+
+
 def test_restauracao_sqlite_remove_sessoes_da_copia(tmp_path, monkeypatch):
     from datetime import timedelta
 

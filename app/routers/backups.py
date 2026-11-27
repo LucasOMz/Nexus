@@ -8,7 +8,8 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from app.core.deps import require_admin
+from app.core.deps import require_admin, require_root
+from app.core.permissoes import eh_conta_root
 from app.core.security import verify_password
 from app.database import get_db
 from app.models.core import Usuario
@@ -42,9 +43,9 @@ class BackupRequest(BaseModel):
 # Backups
 # ---------------------------------------------------------------------------
 @router.get("/backups")
-def listar_backups(_: Usuario = Depends(require_admin)) -> dict:
+def listar_backups(user: Usuario = Depends(require_admin)) -> dict:
     """Status + lista dos backups encontrados na pasta configurada."""
-    return backup_service.painel_backups()
+    return {**backup_service.painel_backups(), "pode_excluir": eh_conta_root(user)}
 
 
 @router.post("/backups")
@@ -69,6 +70,20 @@ def baixar_backup(nome: str, _: Usuario = Depends(require_admin)) -> FileRespons
     except FileNotFoundError as exc:
         raise HTTPException(404, str(exc))
     return FileResponse(str(arquivo), media_type="application/octet-stream", filename=arquivo.name)
+
+
+@router.delete("/backups/{nome}", status_code=204)
+def excluir_backup(
+    nome: str, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_root),
+) -> None:
+    try:
+        backup_service.excluir_backup(nome)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(500, "Não foi possível concluir a exclusão. Confira a pasta de backups.") from exc
+    audit(db, user, "excluir_backup", "sistema", ip=request.client.host if request.client else None, diff={"arquivo": nome})
+    db.commit()
 
 
 @router.post("/backups/validar")
