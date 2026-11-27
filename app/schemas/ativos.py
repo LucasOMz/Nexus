@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Annotated
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, StringConstraints, model_validator
 
 from app.models.enums import (
     Conectividade,
@@ -197,12 +198,28 @@ class StatusChange(SemVazios):
     status: StatusAtivo
 
 
+LoginAD = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
+
+
+class BuscarColaboradorAD(SemVazios):
+    model_config = ConfigDict(extra="forbid")
+
+    login_ad: LoginAD
+
+
 class AtribuirRequest(SemVazios):
     model_config = ConfigDict(extra="forbid")
 
-    usuario_id: int
+    usuario_id: int | None = None
+    login_ad: LoginAD | None = None
     localizacao_id: int | None = None
     observacoes: str | None = None
+
+    @model_validator(mode="after")
+    def validar_colaborador(self) -> AtribuirRequest:
+        if (self.usuario_id is None) == (self.login_ad is None):
+            raise ValueError("Escolha um colaborador cadastrado ou informe um login de rede.")
+        return self
 
 
 class SuprimentoBase(SemVazios):

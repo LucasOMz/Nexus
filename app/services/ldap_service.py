@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 
 from ldap3 import SUBTREE, Connection, Server, Tls
 from ldap3.core.exceptions import LDAPException
+from ldap3.utils.conv import escape_filter_chars
 
 from app.config import settings
 from app.core.cripto import decifrar
@@ -198,7 +199,7 @@ def autenticar(cfg: ConfiguracaoSistema, usuario: str, senha: str) -> ResultadoL
             return ResultadoLDAP(False, f"Falha na conta de serviço: {_descricao_erro(conn)}")
 
         # 1) Localiza o usuário.
-        filtro = cfg.ldap_filtro_usuario.replace("{usuario}", usuario)
+        filtro = cfg.ldap_filtro_usuario.replace("{usuario}", escape_filter_chars(usuario))
         atributos = ["distinguishedName", "sAMAccountName", "userPrincipalName", "mail", "displayName", "cn", "memberOf"]
         if not conn.search(cfg.ldap_base_dn, filtro, search_scope=SUBTREE, attributes=atributos, size_limit=2):
             return ResultadoLDAP(False, "Usuário não encontrado no diretório.")
@@ -270,7 +271,7 @@ def buscar_usuario(cfg: ConfiguracaoSistema, login: str) -> tuple[bool, str, dic
         if conn is None or not conn.bind():
             return False, f"Falha na conta de serviço: {_descricao_erro(conn)}", {}
 
-        filtro = cfg.ldap_filtro_usuario.replace("{usuario}", termo)
+        filtro = cfg.ldap_filtro_usuario.replace("{usuario}", escape_filter_chars(termo))
         atributos = [
             "distinguishedName", "sAMAccountName", "userPrincipalName", "mail",
             "displayName", "cn", "department", "title", "physicalDeliveryOfficeName",
@@ -280,6 +281,8 @@ def buscar_usuario(cfg: ConfiguracaoSistema, login: str) -> tuple[bool, str, dic
             return False, f"'{termo}' não foi encontrado no diretório.", {}
         if not conn.entries:
             return False, f"'{termo}' não foi encontrado no diretório.", {}
+        if len(conn.entries) != 1:
+            return False, "O diretório retornou mais de uma conta. Informe o login exato.", {}
 
         entrada = conn.entries[0]
         nome_login = _atributo(entrada, "sAMAccountName") or termo

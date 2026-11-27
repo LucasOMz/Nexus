@@ -485,20 +485,87 @@ async function abrirEmprestimo(ativo) {
   setTimeout(() => chamado.focus(), 50);
 }
 
-async function atribuir(ativo, lookups) {
-  const sel = el("select", { html: optionsOf(lookups.usuarios, { label: "nome" }) });
-  dialog({
-    title: "Atribuir a colaborador",
-    body: el("div", { class: "field" }, el("label", {}, "Colaborador"), sel),
-    actions: [
-      { label: "Cancelar", variant: "text" },
-      { label: "Atribuir e gerar Termo", variant: "filled", onClick: async (close) => {
-        if (!sel.value) { toast("Selecione um colaborador"); return; }
-        try { await api.post(`/ativos/${ativo.id}/atribuir`, { usuario_id: Number(sel.value) }); close(); toast("Atribuído — Termo gerado"); refreshView(); }
-        catch (e) { mostrarErro(e); }
-      } },
-    ],
-  });
+function atribuir(ativo, lookups, fecharFicha) {
+  const base = `/ativos/${ativo.id}`;
+  const sel = el("select", { id: "atribuir-colaborador", html: optionsOf(lookups.usuarios, { label: "nome" }) });
+  const login = el("input", { id: "atribuir-login-ad", type: "text", required: true, maxlength: 120,
+    placeholder: "Ex.: joao.silva", autocomplete: "off", spellcheck: "false" });
+  const retorno = el("p", { class: "muted", role: "status" });
+  const buscar = el("button", { type: "submit", class: "btn tonal" }, "Buscar no AD");
+  const busca = el("form", { class: "field" },
+    el("label", { for: login.id }, "Login de rede"), login,
+    el("div", { class: "row" }, buscar), retorno);
+  const ad = el("details", { hidden: true },
+    el("summary", {}, "Usar um colaborador do AD"),
+    el("p", { class: "muted" }, "Busque pelo login de rede. A atribuição não libera acesso ao Nexus."),
+    busca);
+  const existente = el("div", { class: "field" }, el("label", { for: sel.id }, "Colaborador cadastrado"), sel);
+  const cancelar = el("button", { type: "button", class: "btn text" }, "Cancelar");
+  const confirmar = el("button", { type: "button", class: "btn filled", disabled: true }, "Atribuir e gerar Termo");
+  const aviso = el("p", { class: "muted", role: "status" });
+  const modal = dialog({ title: "Atribuir a colaborador", body: el("div", {}, existente, ad, aviso),
+    actions: [{ elemento: cancelar }, { elemento: confirmar }] });
+  modal.dlg.setAttribute("role", "dialog");
+  modal.dlg.setAttribute("aria-modal", "true");
+  modal.dlg.setAttribute("aria-label", "Atribuir a colaborador");
+  let logonConfirmado = "";
+  let consultando = false;
+  let salvando = false;
+
+  function atualizar() {
+    existente.classList.toggle("oculto", ad.open);
+    confirmar.disabled = salvando || (ad.open ? !logonConfirmado : !sel.value);
+    buscar.disabled = login.disabled = salvando || consultando;
+    cancelar.disabled = sel.disabled = salvando;
+  }
+
+  cancelar.onclick = modal.close;
+  ad.addEventListener("toggle", () => { aviso.textContent = ""; atualizar(); });
+  sel.onchange = atualizar;
+  login.oninput = () => { logonConfirmado = ""; retorno.textContent = ""; atualizar(); };
+  busca.onsubmit = async (evento) => {
+    evento.preventDefault();
+    if (buscar.disabled || !login.value.trim()) return;
+    const termo = login.value.trim();
+    logonConfirmado = "";
+    consultando = true;
+    atualizar();
+    retorno.textContent = "Buscando no Active Directory…";
+    try {
+      const pessoa = await api.request("POST", base + "/atribuicao-ad", { body: { login_ad: termo }, enfileirar: false });
+      logonConfirmado = termo;
+      retorno.replaceChildren(el("strong", {}, pessoa.nome), ` · ${pessoa.login} · ${pessoa.email}`);
+    } catch (erro) {
+      retorno.textContent = erro.message;
+    } finally {
+      consultando = false;
+      atualizar();
+    }
+  };
+
+  confirmar.onclick = async () => {
+    if (confirmar.disabled) return;
+    const body = ad.open ? { login_ad: logonConfirmado } : { usuario_id: Number(sel.value) };
+    salvando = true;
+    atualizar();
+    aviso.textContent = "Registrando a atribuição e gerando o termo…";
+    try {
+      await api.request("POST", base + "/atribuir", { body, enfileirar: false });
+      modal.close();
+      fecharFicha();
+      toast("Ativo atribuído. Termo gerado.");
+      refreshView();
+    } catch (erro) {
+      aviso.textContent = erro.message;
+    } finally {
+      salvando = false;
+      atualizar();
+    }
+  };
+  modal.overlay.addEventListener("click", (evento) => {
+    if (salvando && evento.target === modal.overlay) evento.stopImmediatePropagation();
+  }, { capture: true });
+  api.get(base + "/atribuicao-ad").then(dados => { ad.hidden = !dados.disponivel; }).catch(() => {});
 }
 
 function openDetail(ativo, lookups) {
@@ -556,7 +623,7 @@ function openDetail(ativo, lookups) {
         { label: "QR", variant: "outlined", onClick: () => acaoQR(ativo) },
         { label: "Imprimir", variant: "outlined", onClick: () => escolherDispositivo([ativo]) },
         { label: "Status", variant: "outlined", onClick: () => alterarStatus(ativo) },
-        { label: "Atribuir", variant: "outlined", onClick: () => atribuir(ativo, lookups) },
+        { label: "Atribuir", variant: "outlined", onClick: (fechar) => atribuir(ativo, lookups, fechar) },
         { label: "Detalhes", variant: "outlined", onClick: () => abrirDetalhes(ativo) },
         // A lista de programas só existe para computador: impressora não tem
         // software instalado, e o botão abriria uma janela sempre vazia.

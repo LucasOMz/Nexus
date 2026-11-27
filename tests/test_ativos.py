@@ -1,6 +1,15 @@
 """Testes de ativos e extensões (TI/Impressora), status e atribuição."""
 from __future__ import annotations
 
+from sqlalchemy import select
+
+from app.config import settings
+from app.core.security import create_access_token
+from app.models.core import ConfiguracaoSistema, Movimentacao, Usuario
+from app.routers import auth
+from app.services import ldap_service
+from tests.conftest import TestingSession
+
 
 def test_create_ativo_ti(client, auth_headers):
     payload = {
@@ -63,3 +72,61 @@ def test_atribuir_gera_termo(client, auth_headers):
     termos = client.get(f"/api/v1/ativos/{ativo_id}/termos", headers=auth_headers).json()
     assert len(termos) == 1
     assert len(termos[0]["hash_sha256"]) == 64
+
+
+def test_atribuir_colaborador_ad_sem_cadastro_e_sem_liberar_login(client, auth_headers, monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "media_dir", str(tmp_path))
+    identidades = {"login": "joao.silva", "nome": "João da Silva", "email": "joao@empresa.com", "dn": "CN=João"}
+    buscas = []
+
+    def localizar(_, login):
+        buscas.append(login)
+        return True, "Encontrado.", identidades
+
+    monkeypatch.setattr(ldap_service, "buscar_usuario", localizar)
+    with TestingSession() as db:
+        cfg = db.get(ConfiguracaoSistema, 1) or ConfiguracaoSistema(id=1)
+        cfg.ldap_ativo = True
+        cfg.ldap_servidor = "dc.empresa.local"
+        cfg.ldap_base_dn = "DC=empresa,DC=local"
+        db.add(cfg)
+        db.add(Usuario(id=50, nome="Leitor", email="leitor@empresa.com", senha_hash="x",
+                       papel="leitor", planta_id=1, permissoes={"modulos": ["ativos"], "inventarios": ["ti"]}))
+        db.commit()
+    ativo = client.post("/api/v1/ativos", json={
+        "dominio": "ti", "patrimonio": "TI-AD", "numero_serie": "NS-AD",
+    }, headers=auth_headers).json()
+    rota = f"/api/v1/ativos/{ativo['id']}"
+    leitor = {"Authorization": f"Bearer {create_access_token(50, 'leitor')}"}
+    pedido = {"login_ad": "joao.silva"}
+    assert client.get(rota + "/atribuicao-ad", headers=auth_headers).json() == {"disponivel": True}
+    assert client.post(rota + "/atribuicao-ad", json=pedido, headers=leitor).status_code == 403
+    assert buscas == []
+    consulta = client.post(rota + "/atribuicao-ad", json=pedido, headers=auth_headers)
+    assert consulta.json() == {campo: identidades[campo] for campo in ("login", "nome", "email")}
+    with TestingSession() as db:
+        assert db.scalar(select(Usuario).where(Usuario.login_ad == "joao.silva")) is None
+    assert client.post(rota + "/atribuir", json={**pedido, "usuario_id": 1}, headers=auth_headers).status_code == 422
+    for _ in range(2):
+        atribuicao = client.post(rota + "/atribuir", json=pedido, headers=auth_headers)
+        assert atribuicao.status_code == 200, atribuicao.text
+    with TestingSession() as db:
+        pessoa, = db.scalars(select(Usuario).where(Usuario.login_ad == "joao.silva")).all()
+        assert pessoa.origem == "ad" and not pessoa.ativo and pessoa.papel == "leitor"
+        assert db.scalars(select(Movimentacao.destino_usuario_id).where(
+            Movimentacao.ativo_id == ativo["id"], Movimentacao.tipo == "atribuicao",
+        )).all() == [pessoa.id, pessoa.id]
+    termos = client.get(rota + "/termos", headers=auth_headers).json()
+    assert len(termos) == 2 and len(list(tmp_path.glob("termos/*.pdf"))) == 2
+    monkeypatch.setattr(auth, "autenticar", lambda *_: ldap_service.ResultadoLDAP(True, "Autenticado"))
+    login = client.post("/api/v1/auth/login", data={"username": "joao.silva", "password": "senha-de-rede"})
+    assert login.status_code == 403 and login.json()["detail"] == "Usuário inativo"
+
+
+def test_ad_desligado_preserva_a_atribuicao_a_colaborador_local(client, auth_headers):
+    ativo = client.post("/api/v1/ativos", json={
+        "dominio": "ti", "patrimonio": "TI-OFF", "numero_serie": "NS-OFF",
+    }, headers=auth_headers).json()
+    rota = f"/api/v1/ativos/{ativo['id']}"
+    assert client.get(rota + "/atribuicao-ad", headers=auth_headers).json() == {"disponivel": False}
+    assert client.post(rota + "/atribuir", json={"login_ad": "joao.silva"}, headers=auth_headers).status_code == 409

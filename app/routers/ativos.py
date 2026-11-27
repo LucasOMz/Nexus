@@ -22,7 +22,7 @@ from app.core.pagination import paginate
 from app.core.permissoes import permissoes_efetivas, pode_inventario
 from app.core.planta import aplicar_filtro, exigir_planta, planta_ativa_obrigatoria
 from app.database import get_db
-from app.models.core import Ativo, Movimentacao, Termo, Usuario
+from app.models.core import Ativo, ConfiguracaoSistema, Movimentacao, Termo, Usuario
 from app.models.enums import Dominio, FormaAquisicao, StatusAtivo, TipoMov
 from app.models.impressora import AtivoImpressora, LeituraContador, SuprimentoImpressora
 from app.models.ti import AtivoTI
@@ -34,6 +34,7 @@ from app.schemas.ativos import (
     AtivoTIBase,
     AtivoUpdate,
     AtribuirRequest,
+    BuscarColaboradorAD,
     LeituraContadorCreate,
     LeituraContadorOut,
     StatusChange,
@@ -41,7 +42,7 @@ from app.schemas.ativos import (
     SuprimentoOut,
 )
 from app.schemas.common import Page
-from app.services import unicidade, zerado_service
+from app.services import atribuicao_ad, unicidade, zerado_service
 from app.services.audit_service import audit
 from app.services.counter_service import register_leitura
 from app.services.pdf_service import build_termo_pdf
@@ -485,6 +486,31 @@ def registrar_devolucao(
     return ativo
 
 
+def _exigir_atribuicao_ad(ativo: Ativo, user: Usuario) -> None:
+    if not pode_inventario(user, ativo.dominio.value):
+        raise HTTPException(403, "Seu usuário não tem acesso a este inventário.")
+    if ativo.status == StatusAtivo.DESCARTADO:
+        raise HTTPException(400, "Ativo descartado não pode ser atribuído")
+
+
+@router.get("/{ativo_id}/atribuicao-ad")
+def disponibilidade_atribuicao_ad(
+    ativo_id: int, db: Session = Depends(get_db), user: Usuario = Depends(require_write),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
+) -> dict:
+    _exigir_atribuicao_ad(_get_ativo(db, ativo_id, planta_id), user)
+    return {"disponivel": atribuicao_ad.ad_disponivel(db.get(ConfiguracaoSistema, 1))}
+
+
+@router.post("/{ativo_id}/atribuicao-ad", response_model=atribuicao_ad.ColaboradorAD)
+def buscar_colaborador_ad(
+    ativo_id: int, body: BuscarColaboradorAD, db: Session = Depends(get_db), user: Usuario = Depends(require_write),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
+) -> atribuicao_ad.ColaboradorAD:
+    _exigir_atribuicao_ad(_get_ativo(db, ativo_id, planta_id), user)
+    return atribuicao_ad.buscar_colaborador(db, body.login_ad)
+
+
 @router.post("/{ativo_id}/atribuir", response_model=AtivoOut)
 def atribuir(
     ativo_id: int, body: AtribuirRequest, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_write),
@@ -493,12 +519,19 @@ def atribuir(
     ativo = _get_ativo(db, ativo_id, planta_id)
     if ativo.status == StatusAtivo.DESCARTADO:
         raise HTTPException(400, "Ativo descartado não pode ser atribuído")
-    colaborador = db.get(Usuario, body.usuario_id)
+    dados_ad = None
+    if body.login_ad is not None:
+        _exigir_atribuicao_ad(ativo, user)
+        dados_ad = atribuicao_ad.buscar_colaborador(db, body.login_ad)
+        colaborador = atribuicao_ad.vincular_colaborador(db, dados_ad, ativo.planta_id)
+    else:
+        colaborador = db.get(Usuario, body.usuario_id)
     if colaborador is None or colaborador.deleted_at is not None:
         raise HTTPException(404, "Colaborador não encontrado")
 
     ativo.status = StatusAtivo.EM_USO
-    if colaborador.departamento_id:
+    departamento = colaborador.departamento
+    if departamento and (dados_ad is None or departamento.planta_id in (None, ativo.planta_id)):
         ativo.departamento_id = colaborador.departamento_id
     if body.localizacao_id:
         ativo.localizacao_id = body.localizacao_id
@@ -517,8 +550,8 @@ def atribuir(
         patrimonio=ativo.patrimonio,
         modelo=ativo.modelo or "",
         dominio=ativo.dominio.value,
-        colaborador_nome=colaborador.nome,
-        colaborador_email=colaborador.email,
+        colaborador_nome=dados_ad.nome if dados_ad else colaborador.nome,
+        colaborador_email=dados_ad.email if dados_ad else colaborador.email,
         departamento=colaborador.departamento.nome if colaborador.departamento else "",
     )
     termo = Termo(ativo_id=ativo.id, usuario_id=colaborador.id, hash_sha256=hash_sha)
