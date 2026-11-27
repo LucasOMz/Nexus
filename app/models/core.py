@@ -828,6 +828,7 @@ class ConfiguracaoSistema(BaseModel, Base):
     ldap_servidor: Mapped[str | None] = mapped_column(String(300))
     ldap_porta: Mapped[int] = mapped_column(Integer, default=636, nullable=False)
     ldap_tls: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    ldap_permitir_sem_tls: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     ldap_base_dn: Mapped[str | None] = mapped_column(String(300))
     ldap_bind_dn: Mapped[str | None] = mapped_column(String(300))
     ldap_bind_senha: Mapped[str | None] = mapped_column(String(500))  # cifrada

@@ -462,6 +462,7 @@ CREATE TABLE configuracoes (
     ldap_servidor            VARCHAR(300),
     ldap_porta               INTEGER NOT NULL DEFAULT 636,
     ldap_tls                 BOOLEAN NOT NULL DEFAULT TRUE,
+    ldap_permitir_sem_tls    BOOLEAN NOT NULL DEFAULT FALSE,
     ldap_base_dn             VARCHAR(300),
     ldap_bind_dn             VARCHAR(300),
     ldap_bind_senha          VARCHAR(500),

@@ -33,6 +33,7 @@ function opcao(nome, titulo, dica, marcado) {
 
 export async function renderAuth(root) {
   const cfg = await api.get("/admin/config").catch((e) => { mostrarErro(e); return {}; });
+  const semTls = cfg.ldap_tls === false && cfg.ldap_permitir_sem_tls === true;
 
   root.innerHTML = "";
   root.append(el("div", { class: "card" },
@@ -63,15 +64,25 @@ export async function renderAuth(root) {
     <div class="form-section"><h4>Conexão com o servidor</h4>
       <div class="form-grid">
         <div class="field"><label>Servidor *</label><input name="ldap_servidor" value="${esc(cfg.ldap_servidor)}" placeholder="dc01.empresa.local"></div>
-        <div class="field"><label>Porta</label><input type="number" name="ldap_porta" value="${cfg.ldap_porta ?? 636}">
-          <span class="hint">A porta padrão do LDAPS é 636.</span></div>
+        <div class="field"><label for="ad-porta">Porta</label>
+          <input id="ad-porta" type="number" name="ldap_porta" min="1" max="65535" value="${cfg.ldap_porta ?? (semTls ? 389 : 636)}">
+        </div>
+        <div class="field span-2">
+          <label for="ad-transporte">Segurança da conexão</label>
+          <select id="ad-transporte" name="ldap_transporte" aria-describedby="ad-dica-tls ad-dica-sem-tls">
+            <option value="ldaps" ${semTls ? "" : "selected"}>LDAPS (com TLS)</option>
+            <option value="ldap" ${semTls ? "selected" : ""}>LDAP sem TLS</option>
+          </select>
+          <span id="ad-dica-tls" class="hint" ${semTls ? "hidden" : ""}>
+            Porta padrão 636. Use o nome DNS que consta no certificado do AD. Para uma CA interna, configure o PEM no servidor do Nexus.
+          </span>
+          <span id="ad-dica-sem-tls" class="hint text-error" ${semTls ? "" : "hidden"}>
+            Porta padrão 389. Neste modo, a senha da conta de serviço e a senha de rede digitada no login trafegam sem criptografia até o AD.
+          </span>
+        </div>
       </div>
-      <h5 class="sub-titulo">Segurança da conexão</h5>
-      <p class="muted">LDAPS com validação do certificado é obrigatório. Use o nome DNS do
-        controlador que consta no certificado. Para uma CA interna, configure o arquivo PEM
-        no servidor do Nexus.</p>
-      ${cfg.ldap_tls === false || cfg.ldap_ignorar_certificado || /^ldap:\/\//i.test(cfg.ldap_servidor || "")
-        ? '<p class="muted">A configuração anterior não atende ao LDAPS obrigatório. Confira o servidor e a porta, salve e teste a conexão.</p>'
+      ${(cfg.ldap_tls === false && !semTls) || cfg.ldap_ignorar_certificado
+        ? '<p class="muted">A configuração anterior precisa ser atualizada. Selecione o modo de conexão, confira o servidor e a porta e teste.</p>'
         : ""}
     </div>
 
@@ -132,6 +143,24 @@ export async function renderAuth(root) {
     </div>`;
 
   const resultadoBox = el("div");
+  const transporte = form.elements.ldap_transporte;
+  const porta = form.elements.ldap_porta;
+  const dicaTls = form.querySelector("#ad-dica-tls");
+  const dicaSemTls = form.querySelector("#ad-dica-sem-tls");
+  const transporteSalvo = el("span");
+  transporte.addEventListener("change", () => {
+    const tls = transporte.value === "ldaps";
+    if (!porta.value || Number(porta.value) === (tls ? 389 : 636)) porta.value = tls ? 636 : 389;
+    dicaTls.hidden = !tls;
+    dicaSemTls.hidden = tls;
+  });
+
+  function atualizarDiagnostico(tls, permitido, ignorarCertificado, caPrivada) {
+    transporteSalvo.textContent = ignorarCertificado || (!tls && !permitido) ? "Configuração pendente"
+      : tls ? (caPrivada ? "LDAPS · CA privada configurada" : "LDAPS · CAs do sistema")
+        : "LDAP sem TLS";
+  }
+  let caPrivada = false;
 
   // O distintivo de situação acompanha o interruptor enquanto se edita — assim
   // dá para ver o efeito antes mesmo de salvar.
@@ -148,8 +177,9 @@ export async function renderAuth(root) {
     const payload = {
       ldap_ativo: Boolean(fd.get("ldap_ativo")),
       ldap_servidor: fd.get("ldap_servidor") || null,
-      ldap_porta: Number(fd.get("ldap_porta")) || 636,
-      ldap_tls: true,
+      ldap_porta: Number(fd.get("ldap_porta")) || (transporte.value === "ldaps" ? 636 : 389),
+      ldap_tls: transporte.value === "ldaps",
+      ldap_permitir_sem_tls: transporte.value === "ldap",
       ldap_ignorar_certificado: false,
       ldap_base_dn: fd.get("ldap_base_dn") || null,
       ldap_bind_dn: fd.get("ldap_bind_dn") || null,
@@ -157,7 +187,8 @@ export async function renderAuth(root) {
     };
     const senha = fd.get("ldap_bind_senha");
     if (senha) payload.ldap_bind_senha = senha;
-    await api.put("/admin/config", payload);
+    const salva = await api.put("/admin/config", payload);
+    atualizarDiagnostico(salva.ldap_tls, salva.ldap_permitir_sem_tls, salva.ldap_ignorar_certificado, caPrivada);
     toast("Configuração salva");
   }
 
@@ -182,11 +213,13 @@ export async function renderAuth(root) {
   // Diagnóstico
   const diag = await api.get("/admin/config/diagnostico").catch(() => null);
   if (diag) {
+    caPrivada = diag.ca_privada_configurada;
+    atualizarDiagnostico(diag.tls, diag.permitir_sem_tls, diag.ignorar_certificado, caPrivada);
     root.append(el("div", { class: "card" },
       el("div", { class: "section-title", style: "margin:0 0 10px" }, "Diagnóstico"),
       ...[
         ["Login via AD", diag.ldap_ativo ? "ativado" : "desativado"],
-        ["Confiança do certificado AD", diag.ca_privada_configurada ? "CA privada configurada" : "CAs do sistema"],
+        ["Conexão com o AD", transporteSalvo],
         ["Administrador local (não depende do AD)", diag.admin_local],
         ["Senha da conta de serviço guardada", diag.senha_servico_guardada ? (diag.senha_servico_decifravel ? "sim (cifrada)" : "sim, mas não foi possível decifrar") : "não"],
         ["Quem libera o acesso", "o cadastro de usuário (o AD não libera)"],
@@ -194,7 +227,7 @@ export async function renderAuth(root) {
         ["Segredos de QR aceitos", String(diag.segredos_qr_aceitos)],
         ["Pasta de backups", diag.pasta_backups],
       ].map(([k, v]) => el("div", { class: "row between", style: "border-bottom:1px solid var(--md-sys-color-outline-variant);padding:9px 0" },
-        el("span", { class: "muted" }, k), el("span", {}, String(v)))),
+        el("span", { class: "muted" }, k), v)),
     ));
   }
 }

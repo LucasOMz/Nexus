@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from ldap3.core.exceptions import LDAPException
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -17,7 +18,7 @@ from app.services import sessoes
 from app.services.audit_service import audit
 from app.services.config_service import obter_config
 from app.services.ia_externa import DestinoExterno, ProvedorExterno, testar_destino
-from app.services.ldap_service import autenticar, testar_conexao
+from app.services.ldap_service import autenticar, testar_conexao, validar_transporte_ldap
 from app.services.ollama import config_efetiva, listar_modelos, normalizar_url
 from app.services.retencao_chat import limpar_expirados
 
@@ -28,9 +29,12 @@ router = APIRouter(prefix="/admin/config", tags=["configuracao"])
 _CAMPOS_SIMPLES = ("intervalo_software_horas",)
 
 _CAMPOS_LOGRADOS = (
-    "ldap_ativo", "ldap_servidor", "ldap_porta", "ldap_tls", "ldap_base_dn",
+    "ldap_ativo", "ldap_servidor", "ldap_porta", "ldap_tls", "ldap_permitir_sem_tls", "ldap_base_dn",
     "ldap_bind_dn", "ldap_filtro_usuario", "ldap_grupo_acesso", "ldap_grupo_admin",
     "ldap_provisionar", "ldap_grupos_aninhados", "ldap_ignorar_certificado", "ldap_admin_por_cargo",
+)
+_CAMPOS_TRANSPORTE_LDAP = (
+    "ldap_ativo", "ldap_servidor", "ldap_porta", "ldap_tls", "ldap_permitir_sem_tls", "ldap_ignorar_certificado",
 )
 
 
@@ -41,6 +45,7 @@ class ConfigUpdate(BaseModel):
     ldap_servidor: str | None = None
     ldap_porta: int = Field(default=636, ge=1, le=65535)
     ldap_tls: bool = True
+    ldap_permitir_sem_tls: bool = False
     ldap_base_dn: str | None = None
     ldap_bind_dn: str | None = None
     # Se enviado, substitui a senha guardada. Vazio/NULL = mantém a atual.
@@ -58,12 +63,8 @@ class ConfigUpdate(BaseModel):
 
     @field_validator("ldap_servidor")
     @classmethod
-    def validar_endereco_ldaps(cls, valor: str | None) -> str | None:
-        if valor:
-            valor = valor.strip()
-            if "://" in valor and not valor.lower().startswith("ldaps://"):
-                raise ValueError("Informe o nome DNS do servidor ou use ldaps://.")
-        return valor
+    def limpar_endereco_ldap(cls, valor: str | None) -> str | None:
+        return (valor or "").strip() or None
 
 
 class TesteLogin(BaseModel):
@@ -316,8 +317,22 @@ def salvar_config(
 ) -> dict:
     cfg = obter_config(db)
     dados = body.model_dump(exclude_unset=True)
-    if not body.ldap_tls or body.ldap_ignorar_certificado:
-        raise HTTPException(422, "O Active Directory exige LDAPS com validação do certificado.")
+    if any(campo in dados for campo in _CAMPOS_TRANSPORTE_LDAP) and dados != {"ldap_ativo": False}:
+        db.refresh(cfg, attribute_names=_CAMPOS_TRANSPORTE_LDAP, with_for_update=True)
+        tls = dados.get("ldap_tls", cfg.ldap_tls)
+        if tls and ("ldap_tls" in dados or "ldap_permitir_sem_tls" in dados):
+            dados["ldap_permitir_sem_tls"] = False
+        try:
+            validar_transporte_ldap(
+                dados.get("ldap_servidor", cfg.ldap_servidor),
+                tls,
+                dados.get("ldap_permitir_sem_tls", cfg.ldap_permitir_sem_tls),
+                dados.get("ldap_ignorar_certificado", cfg.ldap_ignorar_certificado),
+            )
+        except LDAPException as exc:
+            raise HTTPException(422, str(exc)) from exc
+        if tls != cfg.ldap_tls and cfg.ldap_porta == (636 if cfg.ldap_tls else 389):
+            dados.setdefault("ldap_porta", 636 if tls else 389)
 
     if "ldap_bind_senha" in dados:
         senha = dados.pop("ldap_bind_senha")
@@ -388,6 +403,7 @@ def diagnostico(db: Session = Depends(get_db), _: Usuario = Depends(require_admi
         "servidor": cfg.ldap_servidor,
         "porta": cfg.ldap_porta,
         "tls": cfg.ldap_tls,
+        "permitir_sem_tls": cfg.ldap_permitir_sem_tls,
         "base_dn": cfg.ldap_base_dn,
         "conta_servico": cfg.ldap_bind_dn,
         "senha_servico_guardada": bool(cfg.ldap_bind_senha),

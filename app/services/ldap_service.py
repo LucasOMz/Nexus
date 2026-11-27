@@ -48,21 +48,31 @@ def _normalizar(valor: str | None) -> str:
     return (valor or "").strip().lower()
 
 
-def _server(cfg: ConfiguracaoSistema) -> Server:
-    if not cfg.ldap_tls or cfg.ldap_ignorar_certificado:
-        raise LDAPException("Salve a configuração com LDAPS e validação do certificado antes de conectar.")
+def validar_transporte_ldap(
+    servidor: str | None, tls: bool, permitir_sem_tls: bool, ignorar_certificado: bool,
+) -> None:
+    if ignorar_certificado:
+        raise LDAPException("O LDAPS exige a validação do certificado.")
+    if not tls and not permitir_sem_tls:
+        raise LDAPException("Selecione e salve a opção LDAP sem TLS para usar uma conexão sem criptografia.")
+    if servidor and "://" in servidor:
+        esquema = "ldaps" if tls else "ldap"
+        if not servidor.strip().lower().startswith(f"{esquema}://"):
+            raise LDAPException(f"Informe o nome DNS do servidor ou use {esquema}:// para o modo selecionado.")
 
-    servidor = Server(
+
+def _server(cfg: ConfiguracaoSistema) -> Server:
+    validar_transporte_ldap(
+        cfg.ldap_servidor, cfg.ldap_tls, cfg.ldap_permitir_sem_tls, cfg.ldap_ignorar_certificado,
+    )
+    tls = Tls(validate=ssl.CERT_REQUIRED, ca_certs_file=settings.ldap_ca_file or None) if cfg.ldap_tls else None
+    return Server(
         cfg.ldap_servidor,
         port=cfg.ldap_porta,
-        use_ssl=True,
-        tls=Tls(validate=ssl.CERT_REQUIRED, ca_certs_file=settings.ldap_ca_file or None),
+        use_ssl=cfg.ldap_tls,
+        tls=tls,
         connect_timeout=8,
     )
-    # O esquema presente no endereço pode sobrescrever use_ssl no ldap3.
-    if not servidor.ssl:
-        raise LDAPException("Use o nome DNS do controlador de domínio ou um endereço ldaps://.")
-    return servidor
 
 
 def _conectar(cfg: ConfiguracaoSistema) -> Connection:
