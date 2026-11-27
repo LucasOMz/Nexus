@@ -276,6 +276,7 @@ body:has(.ativos-novo) > .fab { display: none; }
   padding: 15px; background: var(--md-sys-color-surface); border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--nexus-radius); }
 .ativos-filtros label, .monitor-filtros label { display: grid; gap: 5px; min-width: 0; font-size: .83rem; font-weight: 650; }
 .ativos-filtros input, .ativos-filtros select, .monitor-filtros input, .monitor-filtros select { box-sizing: border-box; width: 100%; min-height: 42px; font-weight: 400; }
+.ativos-filtros + .toolbar { margin-top: 12px; }
 .ativos-topo-acoes { gap: 8px; }
 .nexus-pagina-titulo { display: flex; align-items: center; gap: 12px; }
 .nexus-pagina-icone { display: grid; flex: 0 0 auto; place-items: center; width: 49px; height: 49px; border-radius: 12px; background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); }

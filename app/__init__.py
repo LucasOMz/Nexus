@@ -1,2 +1,2 @@
 ﻿"""Nexus — pacote da aplicação."""
-__version__ = "5.1.38"
+__version__ = "5.1.39"
