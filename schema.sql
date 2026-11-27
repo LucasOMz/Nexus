@@ -808,6 +808,18 @@ CREATE TABLE IF NOT EXISTS tokens_agente (
 	FOREIGN KEY(ativo_id) REFERENCES ativos (id)
 );
 
+CREATE TABLE IF NOT EXISTS coletas_agente_lote (
+	id SERIAL PRIMARY KEY,
+	planta_id INTEGER REFERENCES plantas (id),
+	solicitante_nome VARCHAR(160) NOT NULL,
+	solicitada_em TIMESTAMP WITH TIME ZONE NOT NULL,
+	total INTEGER NOT NULL,
+	sem_agente INTEGER NOT NULL,
+	ja_solicitados INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ix_coletas_agente_lote_planta_id ON coletas_agente_lote (planta_id);
+
 CREATE TABLE IF NOT EXISTS acoes_agente (
 	id SERIAL PRIMARY KEY,
 	token_id INTEGER NOT NULL REFERENCES tokens_agente (id),
@@ -820,11 +832,16 @@ CREATE TABLE IF NOT EXISTS acoes_agente (
 	solicitada_em TIMESTAMP WITH TIME ZONE NOT NULL,
 	expira_em TIMESTAMP WITH TIME ZONE NOT NULL,
 	encerrada_em TIMESTAMP WITH TIME ZONE,
-	resultado VARCHAR(32)
+	resultado VARCHAR(32),
+	lote_id INTEGER REFERENCES coletas_agente_lote (id),
+	lote_alvo VARCHAR(160),
+	lote_entregue_em TIMESTAMP WITH TIME ZONE
 );
 
 CREATE INDEX IF NOT EXISTS ix_acoes_agente_fila ON acoes_agente (token_id, estado, id);
 CREATE INDEX IF NOT EXISTS ix_acoes_agente_historico ON acoes_agente (ativo_id, planta_id, id);
+CREATE INDEX IF NOT EXISTS ix_acoes_agente_lote_entrega ON acoes_agente (lote_entregue_em);
+CREATE INDEX IF NOT EXISTS ix_acoes_agente_lote_itens ON acoes_agente (lote_id, id);
 
 CREATE TABLE IF NOT EXISTS equipamentos_pendentes (
 	id SERIAL NOT NULL, 

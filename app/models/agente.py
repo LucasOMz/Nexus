@@ -138,11 +138,25 @@ class TokenAgente(BaseModel, Base):
     revogado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class ColetaAgenteLote(Base):
+    __tablename__ = "coletas_agente_lote"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    planta_id: Mapped[int | None] = mapped_column(ForeignKey("plantas.id"), index=True)
+    solicitante_nome: Mapped[str] = mapped_column(String(160))
+    solicitada_em: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    total: Mapped[int] = mapped_column(Integer)
+    sem_agente: Mapped[int] = mapped_column(Integer)
+    ja_solicitados: Mapped[int] = mapped_column(Integer)
+
+
 class AcaoAgente(Base):
     __tablename__ = "acoes_agente"
     __table_args__ = (
         Index("ix_acoes_agente_fila", "token_id", "estado", "id"),
         Index("ix_acoes_agente_historico", "ativo_id", "planta_id", "id"),
+        Index("ix_acoes_agente_lote_entrega", "lote_entregue_em"),
+        Index("ix_acoes_agente_lote_itens", "lote_id", "id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -157,6 +171,9 @@ class AcaoAgente(Base):
     expira_em: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     encerrada_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     resultado: Mapped[str | None] = mapped_column(String(32))
+    lote_id: Mapped[int | None] = mapped_column(ForeignKey("coletas_agente_lote.id"))
+    lote_alvo: Mapped[str | None] = mapped_column(String(160))
+    lote_entregue_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class EquipamentoPendente(BaseModel, Base):

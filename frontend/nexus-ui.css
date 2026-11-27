@@ -29,6 +29,7 @@
 }
 
 .nexus-lateral { display: none; }
+.topbar .nexus-menu-desktop { display: none; }
 .nexus-busca { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; font: inherit;
   padding: 0 12px; min-width: 0; border: 1px solid var(--md-sys-color-outline-variant);
   border-radius: 8px; background: var(--md-sys-color-surface-container-low);
@@ -193,6 +194,11 @@ body:has(.ativos-novo) > .fab { display: none; }
 .nexus-drawer-dica { margin: 0; color: var(--nexus-side-muted); font-size: .9rem; }
 .nexus-drawer-retorno { margin: 0; padding: 8px; border-radius: 6px; color: #ffe4b4; background: #553921; font-size: .86rem; }
 .nexus-drawer-lista { overflow: auto; scrollbar-width: thin; flex: 1; padding: 4px; }
+.nexus-lateral .nav-item, .nexus-drawer .drawer-item { display: flex; align-items: center; justify-content: flex-start; gap: 10px;
+  min-height: 44px; padding: 8px 12px; border: 0; border-radius: 9px; width: 100%; color: inherit;
+  background: transparent; text-align: left; font: inherit; font-size: .96rem; cursor: pointer; }
+.nexus-drawer .drawer-item + .drawer-item { margin-top: 3px; }
+.nexus-drawer .drawer-item .nexus-nav-icone { flex: none; }
 .nexus-drawer .drawer-item, .nexus-drawer .btn.outline, .nexus-drawer .iconbtn, .nexus-drawer .favorito, .nexus-mover { color: inherit; }
 .nexus-drawer .btn.outline { border: 1px solid #ffffff54; background: transparent; }
 .nexus-drawer .btn.outline:hover { background: #ffffff1b; }
@@ -232,6 +238,22 @@ dialog.ativo-acoes-agente { width: min(570px, calc(100% - 24px)); max-height: mi
 .ativo-acoes-contato { gap: 8px; font-size: .8rem; }
 .ativo-acoes-historico { list-style: none; margin: 3px 0 0; padding: 0; }
 .ativo-acoes-historico li { padding: 7px 3px; border-top: 1px solid var(--md-sys-color-outline-variant); }
+dialog.coleta-agente-lote { width: min(590px, calc(100% - 24px)); max-height: 86dvh; margin: auto;
+  padding: clamp(15px, 4vw, 24px); border: 1px solid var(--md-sys-color-outline-variant); border-radius: 16px; color: var(--md-sys-color-on-surface); }
+.coleta-agente-lote::backdrop { background: #07181275; }
+.coleta-agente-lote [hidden] { display: none; }
+.coleta-lote-topo h2 { margin: 0; }
+.coleta-lote-selecao { display: grid; gap: 5px; margin: 16px 0 10px; font-weight: 600; }
+.coleta-lote-selecao select, .coleta-lote-progresso progress { width: 100%; }
+.coleta-lote-progresso progress { accent-color: var(--md-sys-color-primary); }
+.coleta-lote-contagem { margin: 0 0 4px; font-weight: 650; }
+.coleta-lote-metricas { display: grid; grid-template-columns: repeat(auto-fit, minmax(105px, 1fr)); gap: 8px; margin: 10px 0; }
+.coleta-lote-metricas > div { padding: 9px; border-radius: 8px; background: var(--md-sys-color-surface-container); }
+.coleta-lote-metricas dd { margin: 1px 0 0; font-size: 1.25rem; font-weight: 700; }
+.coleta-lote-falhas h3 { margin: 15px 0 6px; }
+.coleta-lote-falhas ul { list-style: none; padding: 0; margin: 0; }
+.coleta-lote-falhas li { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 7px 0; border-top: 1px solid var(--md-sys-color-outline-variant); }
+.coleta-lote-paginas { gap: 8px; }
 .ativos-equipamento { display: flex; align-items: center; gap: 10px; min-width: 132px; }
 .ativos-equipamento .ativos-miniatura { width: 44px; height: 44px; flex: 0 0 44px; object-fit: contain; }
 .monitor-item, .monitor-lista-colunas { grid-template-columns: 22px minmax(80px, 1fr) minmax(92px, 1.3fr) minmax(80px, 1fr) minmax(76px, .9fr); }
@@ -258,6 +280,9 @@ dialog.ativo-acoes-agente { width: min(570px, calc(100% - 24px)); max-height: mi
 .mapa-workspace .mapa-modos-consulta .mapa-button[aria-pressed="true"] { background: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); }
 
 @media (min-width: 769px) {
+  .topbar .nexus-menu-mobile { display: none; }
+  .topbar .nexus-menu-desktop { display: inline-flex; }
+  .topbar .nexus-menu-desktop[aria-expanded="true"] { background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); }
   #app:has(> .shell) { display: grid; grid-template-columns: var(--nexus-rail-width) minmax(0, 1fr); grid-template-rows: auto 1fr; align-items: start; }
   #app > .shell { display: contents; }
   #app > .topbar { grid-column: 2; grid-row: 1; min-width: 0; min-height: 72px; gap: clamp(5px, 1vw, 14px); padding-inline: clamp(12px, 2vw, 30px); }
@@ -276,9 +301,7 @@ dialog.ativo-acoes-agente { width: min(570px, calc(100% - 24px)); max-height: mi
   .nexus-nav { display: flex; flex-direction: column; gap: 4px; }
   .nexus-lateral > #rail { overflow: auto; min-height: 0; flex: 1 1 auto; scrollbar-width: thin; }
   .nexus-lateral .nav-item, .nexus-marca { flex: 0 0 auto; }
-  .nexus-lateral .nav-item { display: flex; align-items: center; flex-direction: row; justify-content: flex-start; gap: 10px;
-    min-height: 47px; padding: 8px 12px; border: 0; border-radius: 9px; width: 100%; color: inherit;
-    background: transparent; text-align: left; font: inherit; font-size: .96rem; cursor: pointer; }
+  .nexus-lateral .nav-item { min-height: 47px; }
   .nexus-lateral .nexus-personalizar { color: var(--nexus-side-muted); font-size: .83rem; }
   .nexus-lateral .nav-item:hover { background: #ffffff1b; }
   .nexus-lateral .nav-item.active { background: var(--nexus-side-active); color: #fff; font-weight: 690; }

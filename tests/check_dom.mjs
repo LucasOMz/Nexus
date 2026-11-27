@@ -282,8 +282,12 @@ verificar("nao existe lista de modulos excluidos da barra",
 verificar("a gaveta lista TODOS os modulos permitidos",
   /function modulosPermitidos\(\) \{\s*return Object\.keys\(MODULOS\)\.filter\(chave => state\.podeModulo\(chave\)\)/.test(fonteApp));
 verificar("a barra usa a MESMA fonte da gaveta",
-  /barraLateral\.atalhos\(modulosPermitidos\(\), NAVEGACAO_PRINCIPAL\)/.test(fonteApp)
-  && /const permitidos = modulosPermitidos\(\);/.test(fonteApp));
+  /mostrarTodosModulos \? ordemCompleta\(permitidos\) : atalhos/.test(fonteApp)
+  && /const ordem = ordemCompleta\(permitidos\);/.test(fonteApp));
+verificar("o menu desktop alterna a propria barra lateral",
+  /mostrarTodosModulos = !mostrarTodosModulos;\s*updateNav\(currentPath\)/.test(fonteApp));
+verificar("o menu mobile abre a gaveta de modulos",
+  /class: "iconbtn nexus-menu-mobile"[\s\S]{0,220}onclick: \(\) => openDrawer\(\)/.test(fonteApp));
 
 // 24) O acesso aos inventários é UM campo no cadastro do usuário.
 //     Antes eram dois checkboxes soltos, que permitiam salvar sem nenhum
@@ -441,13 +445,13 @@ verificar("favoritar salva preferencias sem navegar",
 verificar("a gaveta continua aberta e repinta ao favoritar",
   /if \(painel\.open\) \{\s*pintarLista\(\)/.test(fonteApp));
 verificar("o Menu inicial nao e favoritavel",
-  /\["home", \.\.\.atalhos\.filter/.test(fonteApp) && !/^  home: \{ rotulo:/m.test(fonteApp));
+  /\["home", \.\.\.modulos\.filter/.test(fonteApp) && !/^  home: \{ rotulo:/m.test(fonteApp));
 verificar("o atalho para personalizar fica disponivel mesmo sem favoritos",
   /class: "nav-item nexus-personalizar"[^\n]+openDrawer\(true\)/.test(fonteApp));
 verificar("a estrela marcada fica amarela",
   /\.favorito\.marcado \{[\s\S]{0,120}#f5b301/.test(fonteCss));
 verificar("o easter egg continua na barra",
-  /getElementById\("rail"\)\?\.replaceChildren\([\s\S]{0,200}botaoEasterEgg\(\)/.test(fonteApp));
+  /rail\?\.replaceChildren\([\s\S]{0,200}botaoEasterEgg\(\)/.test(fonteApp));
 
 // 29) PADRONIZAÇÃO das abas.
 //     Toda aba nova precisa: (a) estar em MODULOS, (b) ter card no menu
@@ -502,7 +506,7 @@ verificar("o estilo da janelinha flutuante existe",
 //     Sem isso o usuário reordena, sai, volta e encontra tudo embaralhado —
 //     a ordem valia só para a barra, não para a tela onde ele a define.
 verificar("a gaveta abre na ordem salva",
-  /const ordem = barraLateral\.ordenarModulos\(padrao\)/.test(fonteApp)
+  /return barraLateral\.ordenarModulos\(padrao\)/.test(fonteApp)
   && /lista\.replaceChildren\(\.\.\.ordem\.map/.test(fonteApp));
 verificar("a ordem fica em campo SEPARADO dos favoritos",
   /barra_ordem/.test(fonteBarra) && /export function ordem\(\)/.test(fonteBarra)

@@ -4,6 +4,7 @@ import pytest
 
 from app.models import Ativo, Planta, Usuario
 from app.models.agente import AcaoAgente, TokenAgente
+from app.routers import acoes_agente
 from app.services.agente_service import hash_segredo
 from tests.conftest import TestingSession, create_access_token
 
@@ -11,6 +12,7 @@ API = "/api/v1"
 PAINEL = API + "/ativos/101/acoes-agente"
 CONSULTA = API + "/agente/acoes/consultar"
 RESULTADO = API + "/agente/acoes/resultado"
+LOTES = API + "/acoes-agente/lotes"
 
 
 def _headers(token):
@@ -126,3 +128,108 @@ def test_troca_de_token_cancela_pedido_antigo(client, auth_headers, parque):
     novo = client.post(PAINEL, headers=auth_headers, json=acao)
     assert novo.status_code == 201
     assert client.post(CONSULTA, headers=_headers("novo-token")).json()["acao"]["id"] != anterior
+
+
+def test_lote_respeita_planta_permissao_e_coletas_ja_solicitadas(client, parque):
+    tecnico = parque["tecnico"]
+    assert client.post(LOTES, headers=parque["padrao"]).status_code == 403
+    criado = client.post(LOTES, headers=tecnico)
+    assert criado.status_code == 201, criado.text
+    lote = criado.json()
+    assert (lote["total"], lote["sem_agente"], lote["ja_solicitados"]) == (1, 1, 0)
+    assert client.post(LOTES, headers=tecnico).status_code == 409
+    assert client.post(PAINEL, headers=tecnico, json={"tipo": "coletar"}).status_code == 409
+    assert client.get(LOTES, headers=tecnico).json()["coletas_por_minuto"] == 50
+    assert client.post(CONSULTA, headers=parque["outro"]).json()["acao"] is None
+
+    rota = f"{LOTES}/{lote['id']}"
+    assert client.get(rota, headers=parque["padrao"]).status_code == 403
+    assert client.get(rota, headers=tecnico).json()["aguardando"] == 1
+    pedido = client.post(CONSULTA, headers=parque["agente"]).json()["acao"]
+    assert pedido["tipo"] == "coletar"
+    assert client.get(rota, headers=tecnico).json()["em_execucao"] == 1
+    assert client.post(RESULTADO, headers=parque["agente"],
+                       json={"id": pedido["id"], "resultado": "falha_coleta"}).status_code == 200
+    final = client.get(rota, headers=tecnico).json()
+    assert (final["aguardando"], final["em_execucao"], final["concluidas"], final["total_falhas"]) == (0, 0, 0, 1)
+    assert final["falhas"] == [{"ativo": "PC-1", "estado": "falhou", "resultado": "falha_coleta"}]
+
+
+def test_lotes_distintos_compartilham_intervalo_global(client, auth_headers, parque, monkeypatch):
+    class Relogio(datetime):
+        instante = datetime.now(timezone.utc)
+
+        @classmethod
+        def now(cls, tz=None):
+            return cls.instante
+
+    monkeypatch.setattr(acoes_agente, "datetime", Relogio)
+    for planta in (1, 2):
+        resposta = client.post(LOTES, headers={**auth_headers, "X-Planta-Id": str(planta)})
+        assert resposta.status_code == 201, resposta.text
+    assert client.post(CONSULTA, headers=parque["agente"]).json()["acao"]
+    assert client.post(CONSULTA, headers=parque["outro"]).json()["acao"] is None
+    Relogio.instante += timedelta(milliseconds=1199)
+    assert client.post(CONSULTA, headers=parque["outro"]).json()["acao"] is None
+    Relogio.instante += timedelta(milliseconds=1)
+    assert client.post(CONSULTA, headers=parque["outro"]).json()["acao"]
+
+
+def test_parque_de_3000_mantem_o_limite_por_minuto(client, auth_headers, monkeypatch):
+    from starlette.requests import Request
+
+    inicio = datetime.now(timezone.utc)
+
+    class Relogio(datetime):
+        instante = inicio
+
+        @classmethod
+        def now(cls, tz=None):
+            return cls.instante
+
+    monkeypatch.setattr(acoes_agente, "datetime", Relogio)
+    with TestingSession() as db:
+        db.bulk_insert_mappings(Ativo, [
+            {"id": i, "dominio": "ti", "planta_id": 1, "patrimonio": f"PARQUE-{i}", "numero_serie": f"SERIE-{i}"}
+            for i in range(1, 3001)
+        ])
+        db.bulk_insert_mappings(TokenAgente, [
+            {"ativo_id": i, "prefixo": f"ag{i}", "token_hash": hash_segredo(f"parque-{i}")}
+            for i in range(1, 3001)
+        ])
+        db.commit()
+
+    resposta = client.post(LOTES, headers=auth_headers)
+    assert resposta.status_code == 201, resposta.text
+    assert resposta.json()["total"] == 3000
+
+    def consultar(db, i):
+        pedido = Request({"type": "http", "headers": [(b"authorization", f"Bearer parque-{i}".encode())]})
+        return acoes_agente.consultar(pedido, db)["acao"]
+
+    with TestingSession() as db:
+        primeira_entrega = consultar(db, 1)
+        assert primeira_entrega["tipo"] == "coletar"
+        assert client.post(RESULTADO, headers=_headers("parque-1"),
+                           json={"id": primeira_entrega["id"], "resultado": "coleta_enviada"}).status_code == 200
+        assert client.post(LOTES, headers=auth_headers).status_code == 409
+        assert consultar(db, 2) is None
+        for i in range(2, 3001):
+            Relogio.instante = inicio + timedelta(milliseconds=1200 * (i - 1))
+            assert consultar(db, i)["tipo"] == "coletar", i
+        assert db.query(AcaoAgente).filter(AcaoAgente.lote_entregue_em < inicio + timedelta(minutes=1)).count() == 50
+        assert db.query(AcaoAgente).filter(AcaoAgente.lote_entregue_em.is_not(None)).count() == 3000
+        assert Relogio.instante == inicio + timedelta(seconds=3598.8)
+
+
+def test_lote_expirado_aparece_nas_falhas(client, parque):
+    tecnico = parque["tecnico"]
+    lote = client.post(LOTES, headers=tecnico).json()
+    with TestingSession() as db:
+        item = db.query(AcaoAgente).filter_by(lote_id=lote["id"]).one()
+        item.expira_em = datetime.now(timezone.utc) - timedelta(seconds=1)
+        db.commit()
+    dados = client.get(f"{LOTES}/{lote['id']}", headers=tecnico).json()
+    assert dados["aguardando"] == 0 and dados["total_falhas"] == 1
+    assert dados["falhas"][0]["estado"] == "expirada"
+    assert client.post(LOTES, headers=tecnico).status_code == 201

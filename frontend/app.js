@@ -105,6 +105,7 @@ let consultaChat = 0;
 let timerChat;
 let currentPath = "home";
 let revisaoTela = 0;
+let mostrarTodosModulos = false;
 
 const currentRoute = () => (location.hash || "#/home").replace(/^#\/?/, "").split("?")[0] || "home";
 
@@ -115,7 +116,15 @@ function buildShell() {
   const root = document.getElementById("app");
   root.innerHTML = "";
 
-  const menuBtn = el("button", { class: "iconbtn", title: "Todos os módulos", "aria-label": "Todos os módulos", onclick: () => openDrawer(), html: icon("menu") });
+  const menuMobile = el("button", { class: "iconbtn nexus-menu-mobile", type: "button",
+    title: "Todos os módulos", "aria-label": "Todos os módulos", "aria-haspopup": "dialog",
+    onclick: () => openDrawer(), html: icon("menu") });
+  const menuDesktop = el("button", { class: "iconbtn nexus-menu-desktop", type: "button", "aria-controls": "rail",
+    onclick: () => {
+      mostrarTodosModulos = !mostrarTodosModulos;
+      updateNav(currentPath);
+      document.getElementById("rail")?.scrollTo(0, 0);
+    }, html: icon("menu") });
   const homeBtn = el("button", { class: "iconbtn nexus-home-mobile", title: "Menu inicial do inventário", onclick: () => router.go("home"), html: icon("home") });
 
 /**
@@ -178,7 +187,10 @@ function seletorDePlanta() {
       el("strong", {}, nome),
       el("button", { class: "btn outline", title: TITULO_TEMA, onclick: () => { conta.open = false; abrirSeletorDeTema(); } },
         el("span", { class: "nexus-conta-tema", html: iconeDoModo() }), "Aparência"),
-      el("button", { class: "btn outline", onclick: logout }, el("span", { html: icon("logout", 18) }), "Sair")));
+      el("button", { class: "btn outline", onclick: atualizarAplicativo },
+        el("span", { html: icon("download", 18) }), "Atualizar aplicativo"),
+      el("button", { class: "btn outline", onclick: logout }, el("span", { html: icon("logout", 18) }), "Sair"),
+      el("small", { class: "muted" }, `Versão ${APP_VERSION}`)));
   conta.addEventListener("focusout", ev => {
     if (ev.relatedTarget && !conta.contains(ev.relatedTarget)) conta.open = false;
   });
@@ -190,10 +202,9 @@ function seletorDePlanta() {
   });
 
   const topbar = el("header", { class: "topbar" },
-    menuBtn,
+    menuDesktop,
+    menuMobile,
     homeBtn,
-    // A versão saiu daqui de propósito: na barra superior ela competia com o
-    // nome sem ajudar. Fica na gaveta, onde há espaço e quem procura vai.
     el("div", { class: "brand", html: '<span class="long">Nexus</span>' }),
     el("button", { class: "nexus-busca", type: "button", onclick: abrirBusca,
       "aria-label": "Buscar patrimônio, hostname ou série", "aria-keyshortcuts": "Control+K Meta+K" },
@@ -251,6 +262,7 @@ function destroyShell() {
   consultaChat++;
   chatIa?.elemento.remove();
   chatIa = null;
+  mostrarTodosModulos = false;
   shellBuilt = false;
 }
 
@@ -552,10 +564,16 @@ function modulosPermitidos() {
   return Object.keys(MODULOS).filter(chave => state.podeModulo(chave));
 }
 
+function ordemCompleta(permitidos) {
+  const padrao = [...new Set([...NAVEGACAO_PRINCIPAL, ...permitidos])].filter(chave => permitidos.includes(chave));
+  return barraLateral.ordenarModulos(padrao);
+}
+
 function navButton(key, active) {
   const meta = key === "home" ? { rotulo: "Início", icone: "home" } : MODULOS[key];
   return el("button", {
     class: "nav-item" + (key === active ? " active" : ""),
+    type: "button",
     title: meta.rotulo,
     "aria-current": key === active ? "page" : null,
     onclick: () => router.go(key),
@@ -563,10 +581,19 @@ function navButton(key, active) {
 }
 
 function updateNav(active) {
-  const atalhos = barraLateral.atalhos(modulosPermitidos(), NAVEGACAO_PRINCIPAL);
-  const adminNoRodape = atalhos.includes("admin") && !barraLateral.favoritos().length && !barraLateral.ordem().length;
-  document.getElementById("rail")?.replaceChildren(
-    ...["home", ...atalhos.filter(chave => !adminNoRodape || chave !== "admin")].map(chave => navButton(chave, active)),
+  const permitidos = modulosPermitidos();
+  const atalhos = barraLateral.atalhos(permitidos, NAVEGACAO_PRINCIPAL);
+  const modulos = mostrarTodosModulos ? ordemCompleta(permitidos) : atalhos;
+  const adminNoRodape = !mostrarTodosModulos && atalhos.includes("admin") && !barraLateral.favoritos().length && !barraLateral.ordem().length;
+  const menu = document.querySelector(".nexus-menu-desktop");
+  const descricao = mostrarTodosModulos ? "Mostrar atalhos da barra lateral" : "Mostrar todos os módulos";
+  menu?.setAttribute("aria-label", descricao);
+  menu?.setAttribute("title", descricao);
+  menu?.setAttribute("aria-expanded", String(mostrarTodosModulos));
+  const rail = document.getElementById("rail");
+  rail?.setAttribute("aria-label", mostrarTodosModulos ? "Todos os módulos" : "Atalhos da barra lateral");
+  rail?.replaceChildren(
+    ...["home", ...modulos.filter(chave => !adminNoRodape || chave !== "admin")].map(chave => navButton(chave, active)),
     botaoEasterEgg(),
   );
   document.getElementById("nexus-nav-admin")?.replaceChildren(
@@ -579,6 +606,11 @@ function updateNav(active) {
   );
 }
 
+function atualizarAplicativo() {
+  toast("Atualizando…");
+  limparCacheFrontend(false);
+}
+
 function openDrawer(personalizar = false) {
   const focoAnterior = document.activeElement;
   const painel = el("dialog", {
@@ -588,12 +620,21 @@ function openDrawer(personalizar = false) {
   const lista = el("div", { class: "nexus-drawer-lista" });
   const retorno = el("p", { class: "nexus-drawer-retorno", role: "alert", hidden: true });
   const permitidos = modulosPermitidos();
+  const telaAmpla = personalizar ? null : matchMedia("(min-width: 769px)");
   let salvando = false;
 
   function fechar() { painel.close(); }
+  function aoMudarTela(evento) { if (evento.matches) fechar(); }
+  telaAmpla?.addEventListener("change", aoMudarTela);
   painel.addEventListener("close", () => {
+    telaAmpla?.removeEventListener("change", aoMudarTela);
     painel.remove();
-    (focoAnterior?.isConnected ? focoAnterior : document.querySelector(".nexus-personalizar"))?.focus();
+    const origemVisivel = focoAnterior?.isConnected && focoAnterior.getClientRects().length;
+    const controle = matchMedia("(min-width: 769px)").matches
+      ? (personalizar ? ".nexus-personalizar" : ".nexus-menu-desktop")
+      : ".nexus-menu-mobile";
+    const foco = origemVisivel ? focoAnterior : document.querySelector(controle);
+    foco?.focus();
   });
   painel.addEventListener("click", ev => { if (ev.target === painel) fechar(); });
 
@@ -625,8 +666,7 @@ function openDrawer(personalizar = false) {
 
   function pintarLista() {
     const ativos = barraLateral.atalhos(permitidos, NAVEGACAO_PRINCIPAL);
-    const padrao = [...new Set([...NAVEGACAO_PRINCIPAL, ...permitidos])].filter(chave => permitidos.includes(chave));
-    const ordem = barraLateral.ordenarModulos(padrao);
+    const ordem = ordemCompleta(permitidos);
     if (!personalizar) {
       lista.replaceChildren(...["home", ...ordem].map(chave => {
         const item = navButton(chave, currentPath);
@@ -676,7 +716,7 @@ function openDrawer(personalizar = false) {
     el("h2", { id: "nexus-drawer-titulo" }, titulo),
     el("button", { class: "iconbtn", type: "button", title: "Fechar", "aria-label": "Fechar", onclick: fechar, html: icon("close") }),
   );
-  const atualizar = () => { fechar(); toast("Atualizando…"); limparCacheFrontend(false); };
+  const atualizar = () => { fechar(); atualizarAplicativo(); };
   const acaoRodape = (icone, texto, acao) => el("button", { class: "btn outline", type: "button", onclick: acao },
     el("span", { html: icon(icone, 18) }), texto);
 

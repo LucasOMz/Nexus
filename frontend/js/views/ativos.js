@@ -10,6 +10,7 @@ import { ctx } from "../context.js";
 import { el, icon, toast, dialog, confirmSheet, emptyState, skeleton, fmtDate, fmtMoney, statusBadge, mostrarErro } from "../ui.js";
 import { abrirDetalhes, abrirSoftwares } from "./ativo_detalhes.js";
 import { botaoAcoesAgente } from "./ativo_acoes_agente.js";
+import { abrirColetaAgenteLote } from "./coleta_agente_lote.js";
 import { loadLookups, optionsOf } from "../lookups.js";
 import { renderLabelSVG, renderAvisos } from "../label.js";
 import { importarAtivos } from "./importar_ativos.js";
@@ -1007,6 +1008,9 @@ export async function renderAtivos(root) {
         el("div", {}, el("h1", { class: "page-title" }, "Ativos"),
           el("p", { class: "page-sub" }, state.dominioLabel))),
       el("div", { class: "row wrap ativos-topo-acoes" },
+        state.dominio === "ti" && state.perms.pode_acoes_agente
+          ? el("button", { class: "btn outline", type: "button", "aria-haspopup": "dialog",
+            onclick: ev => abrirColetaAgenteLote(ev.currentTarget), html: icon("refresh", 18) + " Coleta em lote" }) : null,
         state.canWrite ? el("button", { class: "btn filled ativos-novo", type: "button", disabled: true,
           onclick: () => openForm(null, lookups), html: icon("add", 18) + " Novo ativo" }) : null,
         state.isAdmin ? el("button", { class: "btn outline", id: "ativos-importar",
