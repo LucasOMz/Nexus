@@ -17,3 +17,4 @@ class SessaoUsuario(Base):
     refresh_hash: Mapped[str | None] = mapped_column(String(64))
     expira_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     revogada_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ultima_atividade_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

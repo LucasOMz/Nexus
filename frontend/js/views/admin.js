@@ -17,7 +17,8 @@ import { renderChecklist } from "./admin_checklist.js";
 import { renderBanco } from "./admin_banco.js";
 import { renderAuditoria } from "./admin_auditoria.js";
 import { renderNotificacoes } from "./admin_notificacoes.js";
-import { renderOllama } from "./admin_ollama.js";
+import { renderAgenteIA } from "./admin_ollama.js";
+import { renderSessao } from "./admin_sessao.js";
 import { renderManutencao } from "./admin_manutencao.js";
 import { renderAgente } from "./admin_agente.js";
 import { renderPlantas } from "./admin_plantas.js";
@@ -635,9 +636,6 @@ const SECOES_ADMIN = [
   { chave: "plantas", rotulo: "Plantas", icone: "plantas", opcoes: [
     ["plantas", "Plantas", "plantas", "Unidades e localidades dos equipamentos.", renderPlantas, "localidades unidade filial cnpj site"],
   ] },
-  { chave: "integracoes", rotulo: "Integrações", icone: "integracoes", opcoes: [
-    ["ollama", "Configuração do Ollama", "chat", "Conexão, modelo e retenção do histórico do assistente.", renderOllama, "chat ia qwen conexão inteligência artificial"],
-  ] },
   { chave: "patrimonio", rotulo: "Patrimônio", icone: "ativos", opcoes: [
     ["dispositivos", "Impressão", "print", "Configure as impressoras usadas para emitir etiquetas.", abaDispositivos, "impressoras zpl tspl rede térmica"],
     ["etiquetas", "Etiquetas", "qr", "Gerencie os modelos de etiquetas de patrimônio.", renderTemplates, "template layout design qr"],
@@ -652,6 +650,8 @@ const SECOES_ADMIN = [
   ] },
   { chave: "sistema", rotulo: "Sistema", icone: "settings", opcoes: [
     ["auth", "Autenticação (AD)", "shield", "Configure o acesso com as contas de rede.", renderAuth, "active directory ldap senha domínio login de rede"],
+    ["sessao", "Tempo de inatividade", "historico", "Defina quando o Nexus deve solicitar um novo login.", renderSessao, "sessão expiração login timeout segurança minutos"],
+    ["agente-ia", "Agente de IA", "chat", "Configure o provedor do chat, o acesso e a retenção do histórico.", renderAgenteIA, "ollama openai openrouter token modelo inteligência artificial"],
     ["notificacoes", "Notificações", "bell", "Gerencie os envios e alertas do sistema.", renderNotificacoes, "email smtp aviso alerta toner devolução"],
     ["backups", "Backups", "arquivo", "Crie, baixe e restaure cópias do banco.", renderBackups, "cópia restaurar segurança dump salvar"],
     ["manutencao", "Modo Manutenção", "manutencoes", "Gerencie o acesso durante manutenções.", renderManutencao, "sessão derrubar logado online bloqueio"],
@@ -707,7 +707,9 @@ export async function renderAdmin(root) {
   }
 
   const params = new URLSearchParams(location.hash.split("?")[1] || "");
-  const abaPedida = params.get("aba");
+  const abaAnterior = params.get("aba");
+  const abaPedida = abaAnterior === "ollama" || (!abaAnterior && params.get("secao") === "integracoes")
+    ? "agente-ia" : abaAnterior;
   const secao = SECOES_ADMIN.find(s => s.opcoes.some(([chave]) => chave === abaPedida))
     || SECOES_ADMIN.find(s => s.chave === params.get("secao")) || SECOES_ADMIN[0];
   const opcao = secao.opcoes.find(([chave]) => chave === abaPedida)

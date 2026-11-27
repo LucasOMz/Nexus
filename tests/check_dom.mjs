@@ -297,13 +297,13 @@ verificar("o menu mobile abre a gaveta de modulos",
 const fonteAdmin = fs.readFileSync(new URL("../frontend/js/views/admin.js", import.meta.url), "utf8");
 
 // 25) Cada opção existente tem um destino próprio.
-const ORDEM_ABAS = ["usuarios", "plantas", "dispositivos", "etiquetas", "checklist", "fotos", "auditoria", "backups", "auth", "notificacoes", "lgpd", "manutencao", "agente", "ollama", "banco"];
+const ORDEM_ABAS = ["usuarios", "plantas", "dispositivos", "etiquetas", "checklist", "fotos", "auditoria", "backups", "auth", "notificacoes", "lgpd", "manutencao", "agente", "agente-ia", "sessao", "banco"];
 const blocoSecoes = /const SECOES_ADMIN = \[([\s\S]*?)\n\];/.exec(fonteAdmin);
-const destinosAdmin = [...(blocoSecoes?.[1] || "").matchAll(/^    \["(\w+)",/gm)].map(m => m[1]);
+const destinosAdmin = [...(blocoSecoes?.[1] || "").matchAll(/^    \["([\w-]+)",/gm)].map(m => m[1]);
 verificar("todas as opcoes da administracao continuam acessiveis",
   JSON.stringify([...destinosAdmin].sort()) === JSON.stringify([...ORDEM_ABAS].sort()));
 verificar("cada destino declara seu renderizador",
-  [...(blocoSecoes?.[1] || "").matchAll(/^    \["\w+",.*?, (?:aba|render)\w+, "/gm)].length === ORDEM_ABAS.length);
+  [...(blocoSecoes?.[1] || "").matchAll(/^    \["[\w-]+",.*?, (?:aba|render)\w+, "/gm)].length === ORDEM_ABAS.length);
 verificar("o painel chama o destino selecionado", /await opcao\[4\]\(alvo\)/.test(fonteAdmin));
 verificar("o destino inicial e usuarios e permissoes", /const SECOES_ADMIN = \[\s*\{ chave: "usuarios"/.test(fonteAdmin));
 
@@ -636,9 +636,9 @@ verificar("as configuracoes continuam aceitando links diretos",
   /params\.get\("aba"\)/.test(fonteAdmin) && /#\/admin\?aba=\$\{chave\}/.test(fonteAdmin));
 verificar("a configuracao indica o caminho de volta a secao",
   /class: "admin-caminho"[\s\S]{0,220}href: rotaSecao\(secao\)/.test(fonteAdmin));
-verificar("ollama pertence a integracoes e backups pertence a sistema",
-  /chave: "integracoes"[\s\S]{0,150}\["ollama",/.test(blocoSecoes?.[1] || "")
-  && /chave: "sistema"[\s\S]{0,750}\["backups",/.test(blocoSecoes?.[1] || ""));
+verificar("agente de IA, inatividade e backups pertencem a Sistema",
+  /chave: "sistema"[\s\S]*\["sessao",[\s\S]*\["agente-ia",[\s\S]*\["backups",/.test(blocoSecoes?.[1] || "")
+  && !/chave: "integracoes"/.test(blocoSecoes?.[1] || ""));
 verificar("usuarios fica sem atalhos de outros assuntos",
   !/admin-atalhos/.test(fonteAdmin));
 verificar("a busca filtra por secao, rotulo, descricao e palavras-chave",

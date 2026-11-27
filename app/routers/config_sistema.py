@@ -1,19 +1,22 @@
 """Configuração do sistema (Administração → Autenticação AD/LDAP)."""
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.cripto import cifrar, decifrar, esta_cifrado
 from app.core.deps import require_admin
 from app.database import get_db
-from app.models.core import Usuario
+from app.models.core import ConfiguracaoSistema, Usuario
+from app.schemas.auth import PoliticaSessao
+from app.services import sessoes
 from app.services.audit_service import audit
 from app.services.config_service import obter_config
+from app.services.ia_externa import DestinoExterno, ProvedorExterno, testar_destino
 from app.services.ldap_service import autenticar, testar_conexao
 from app.services.ollama import config_efetiva, listar_modelos, normalizar_url
 from app.services.retencao_chat import limpar_expirados
@@ -91,6 +94,23 @@ class PoliticaChat(BaseModel):
     historico_dias: int | None = Field(ge=1, le=3650)
 
 
+@router.put("/politica-sessao", response_model=PoliticaSessao)
+def salvar_politica_sessao(
+    body: PoliticaSessao, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_admin),
+) -> PoliticaSessao:
+    cfg = obter_config(db)
+    db.refresh(cfg, attribute_names=["sessao_inatividade_minutos"], with_for_update=True)
+    anterior = cfg.sessao_inatividade_minutos or sessoes.INATIVIDADE_PADRAO_MINUTOS
+    if anterior != body.inatividade_minutos:
+        # Uma ampliação do limite não pode reativar tokens já vencidos.
+        sessoes.revogar_inativas(db, min(anterior, body.inatividade_minutos))
+        cfg.sessao_inatividade_minutos = body.inatividade_minutos
+        audit(db, user, "update", "configuracao", cfg.id, ip=request.client.host if request.client else None,
+              diff={"sessao_inatividade_minutos": body.inatividade_minutos})
+        db.commit()
+    return body
+
+
 @router.get("/ollama/politica", response_model=PoliticaChat)
 def ler_politica_chat(db: Session = Depends(get_db), _: Usuario = Depends(require_admin)) -> PoliticaChat:
     config = config_efetiva(db)
@@ -143,6 +163,92 @@ def salvar_ollama(
           diff={"ollama_url": url, "ollama_modelo": body.modelo})
     db.commit()
     return {"url": url, "modelo": body.modelo, "origem": "administracao"}
+
+
+class ConfigIAExterna(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    provedor: ProvedorExterno
+    modelo: str = Field(min_length=1, max_length=250)
+    token: SecretStr | None = None
+
+
+class ConfigAgenteIA(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    provedor: Literal["ollama"]
+
+
+def _estado_agente_ia(cfg: ConfiguracaoSistema | None) -> dict:
+    return {
+        "provedor": cfg.ia_provedor_externo if cfg and cfg.ia_externa_ativa else "ollama",
+        "provedor_externo": cfg.ia_provedor_externo if cfg else None,
+        "modelo_externo": cfg.ia_modelo_externo if cfg else None,
+        "token_salvo": bool(cfg and decifrar(cfg.ia_token_externo)),
+    }
+
+
+@router.get("/agente-ia")
+def ler_agente_ia(db: Session = Depends(get_db), _: Usuario = Depends(require_admin)) -> dict:
+    return _estado_agente_ia(db.get(ConfiguracaoSistema, 1))
+
+
+@router.put("/agente-ia")
+def selecionar_ollama(
+    body: ConfigAgenteIA, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_admin),
+) -> dict:
+    cfg = obter_config(db)
+    if cfg.ia_externa_ativa:
+        cfg.ia_externa_ativa = False
+        audit(db, user, "update", "configuracao", cfg.id, ip=request.client.host if request.client else None,
+              diff={"provedor_ia": body.provedor})
+        db.commit()
+    return _estado_agente_ia(cfg)
+
+
+def _destino_para_teste(db: Session, body: ConfigIAExterna) -> DestinoExterno:
+    token = body.token.get_secret_value().strip() if body.token else ""
+    cfg = db.get(ConfiguracaoSistema, 1)
+    if not token and cfg and cfg.ia_provedor_externo == body.provedor:
+        token = decifrar(cfg.ia_token_externo) or ""
+    if not token or len(token) > 512 or any(not 33 <= ord(c) <= 126 for c in token):
+        raise HTTPException(422, "Informe uma chave de API válida do provedor selecionado.")
+    db.rollback()
+    return DestinoExterno(body.provedor, body.modelo, token)
+
+
+@router.post("/agente-ia/externa/testar")
+def testar_ia_externa(body: ConfigIAExterna, db: Session = Depends(get_db), _: Usuario = Depends(require_admin)) -> dict:
+    testar_destino(_destino_para_teste(db, body))
+    return {"ok": True}
+
+
+@router.put("/agente-ia/externa")
+def salvar_ia_externa(
+    body: ConfigIAExterna, request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_admin),
+) -> dict:
+    destino = _destino_para_teste(db, body)
+    testar_destino(destino)
+    cfg = obter_config(db)
+    cfg.ia_provedor_externo = destino.provedor
+    cfg.ia_modelo_externo = destino.modelo
+    cfg.ia_token_externo = cifrar(destino.token)
+    cfg.ia_externa_ativa = True
+    audit(db, user, "update", "configuracao", cfg.id, ip=request.client.host if request.client else None,
+          diff={"provedor_ia": destino.provedor, "modelo_ia": destino.modelo})
+    db.commit()
+    return _estado_agente_ia(cfg)
+
+
+@router.delete("/agente-ia/externa")
+def remover_ia_externa(
+    request: Request, db: Session = Depends(get_db), user: Usuario = Depends(require_admin),
+) -> dict:
+    cfg = obter_config(db)
+    cfg.ia_externa_ativa = False
+    cfg.ia_provedor_externo = cfg.ia_modelo_externo = cfg.ia_token_externo = None
+    audit(db, user, "update", "configuracao", cfg.id, ip=request.client.host if request.client else None,
+          diff={"provedor_ia": "ollama", "chave_externa_removida": True})
+    db.commit()
+    return _estado_agente_ia(cfg)
 
 
 @router.post("/buscar-ad")

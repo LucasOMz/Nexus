@@ -29,6 +29,7 @@ from app.services.dados_ia import (
 )
 from app.services.inventario_ia import ConsultaInventario, FUSO_INVENTARIO, executar_consulta, resposta_ficha
 from app.services.ollama import ConfigOllama, DestinoOllama, config_efetiva, destino_ollama
+from app.services.ia_externa import DestinoExterno, destino_externo
 from app.services.retencao_chat import limite_historico
 
 router = APIRouter(prefix="/ia", tags=["ia"])
@@ -82,11 +83,15 @@ class EntradaChat(BaseModel):
 
 
 def _perguntar(
-    client: httpx.Client, destino: DestinoOllama, mensagens: list[dict], prazo: float, *, modelo: str, ferramentas: bool,
+    client: httpx.Client, destino: DestinoOllama | DestinoExterno, mensagens: list[dict], prazo: float, *,
+    modelo: str, ferramentas: bool,
 ) -> dict:
     restante = prazo - monotonic()
     if restante <= 0:
-        raise HTTPException(504, "O Ollama demorou demais para responder. Tente novamente.")
+        raise HTTPException(504, "O modelo de IA demorou demais para responder. Tente novamente.")
+    if isinstance(destino, DestinoExterno):
+        return destino.perguntar(client, mensagens, httpx.Timeout(restante, connect=min(5, restante)),
+                                 ferramentas=_ESQUEMAS if ferramentas else None)
     payload = {
         "model": modelo, "messages": mensagens,
         "stream": False, "think": False,
@@ -245,8 +250,9 @@ def chat(
     planta_id: int | None = Depends(planta_ativa_obrigatoria),
     db: Session = Depends(get_db),
 ) -> dict:
-    if not config.url:
-        raise HTTPException(503, "O chat ainda não está configurado. Peça à TI para conectar o Ollama em Administração.")
+    externo = destino_externo(db)
+    if externo is None and not config.url:
+        raise HTTPException(503, "O chat ainda não está configurado. Peça à TI para conferir o Agente de IA em Administração.")
     usuario_id = user.id
     if not _limite_chat.is_allowed(str(usuario_id)):
         raise HTTPException(429, "Muitas perguntas em pouco tempo. Aguarde um minuto para tentar novamente.",
@@ -264,8 +270,9 @@ def chat(
         historico = [linha.pergunta for linha in reversed(anteriores)]
     db.rollback()  # Libera a conexão do banco enquanto o modelo processa a pergunta.
 
-    destino = destino_ollama(config.url, rede_local=config.origem == "administracao")
-    dados = _responder(db, destino, config.modelo, entrada.pergunta, historico, planta_id, dominios, user, modulos)
+    destino = externo or destino_ollama(config.url, rede_local=config.origem == "administracao")
+    modelo = externo.modelo if externo else config.modelo
+    dados = _responder(db, destino, modelo, entrada.pergunta, historico, planta_id, dominios, user, modulos)
     permitido = db.scalar(select(Usuario.chat_ia_ativo).where(
         Usuario.id == usuario_id, Usuario.ativo.is_(True), Usuario.deleted_at.is_(None),
     ))
@@ -276,7 +283,7 @@ def chat(
     return {"conversa_id": conversa_id, **dados}
 
 
-def _responder(db: Session, destino: DestinoOllama, modelo: str, pergunta: str, historico: list[str],
+def _responder(db: Session, destino: DestinoOllama | DestinoExterno, modelo: str, pergunta: str, historico: list[str],
                planta_id: int | None, dominios: tuple[str, ...], user: Usuario, modulos: frozenset[str]) -> dict:
     hoje = datetime.now(ZoneInfo(FUSO_INVENTARIO)).date()
     mensagens = [
@@ -290,7 +297,7 @@ def _responder(db: Session, destino: DestinoOllama, modelo: str, pergunta: str, 
         mensagem = _perguntar(client, destino, mensagens, prazo, modelo=modelo, ferramentas=True)
         chamadas = mensagem.get("tool_calls") or []
         if not isinstance(chamadas, list):
-            raise HTTPException(502, "O modelo do Ollama devolveu uma consulta inválida.")
+            raise HTTPException(502, "O modelo de IA devolveu uma consulta inválida.")
         for chamada in chamadas[:3]:
             try:
                 funcao = chamada["function"]

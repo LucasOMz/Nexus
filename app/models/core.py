@@ -816,6 +816,11 @@ class ConfiguracaoSistema(BaseModel, Base):
     ollama_modelo: Mapped[str | None] = mapped_column(String(250))
     ollama_chat_ativo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     ollama_historico_dias: Mapped[int | None] = mapped_column(Integer)
+    ia_provedor_externo: Mapped[str | None] = mapped_column(String(20))
+    ia_externa_ativa: Mapped[bool | None] = mapped_column(Boolean)
+    ia_modelo_externo: Mapped[str | None] = mapped_column(String(250))
+    ia_token_externo: Mapped[str | None] = mapped_column(Text)
+    sessao_inatividade_minutos: Mapped[int | None] = mapped_column(Integer)
 
     # --- Autenticação LDAP/AD ---
     ldap_ativo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

@@ -8,6 +8,7 @@ const LS = {
   access: "gp_access",
   refresh: "gp_refresh",
   user: "gp_user",
+  atividade: "gp_atividade",
   dominio: "gp_dominio",
   theme: "gp_theme",
   paleta: "gp_paleta",
@@ -16,6 +17,16 @@ const LS = {
 
 function readJSON(key) {
   try { return JSON.parse(localStorage.getItem(key) || "null"); } catch { return null; }
+}
+
+function identificarSessao(token) {
+  if (!token) return null;
+  try {
+    const payload = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    return JSON.parse(atob(payload)).sid || null;
+  } catch {
+    return null;
+  }
 }
 
 const ROTULO_INVENTARIO = {
@@ -35,6 +46,7 @@ export const state = {
 
   /** Persiste tokens e usuário após login/refresh. */
   setAuth({ access_token, refresh_token, user, acao_requerida }) {
+    const novaSessao = Boolean(refresh_token) && this.sessaoId !== identificarSessao(access_token);
     this.access = access_token;
     this.refresh = refresh_token || null;
     this.user = user;
@@ -55,6 +67,7 @@ export const state = {
     if (this.acaoRequerida) localStorage.setItem("nexus.primeiroAcesso", this.acaoRequerida);
     else localStorage.removeItem("nexus.primeiroAcesso");
     localStorage.setItem(LS.user, JSON.stringify(user));
+    if (novaSessao) this.marcarAtividade(Date.now());
     // O tema vem na conta: aplicar aqui faz a tela abrir no tema da pessoa,
     // inclusive num computador onde ela nunca entrou.
     //
@@ -75,11 +88,32 @@ export const state = {
     const user = readJSON(LS.user);
     const refresh = localStorage.getItem(LS.refresh);
     const access = localStorage.getItem(LS.access);
-    if (!user || user.id !== this.user?.id || !access || !refresh || refresh === this.refresh) return false;
+    if (!user || user.id !== this.user?.id || !access || !refresh || refresh === this.refresh
+        || identificarSessao(access) !== this.sessaoId) return false;
     this.user = user;
     this.access = access;
     this.refresh = refresh;
     return true;
+  },
+
+  get sessaoId() { return identificarSessao(this.access); },
+
+  mesmaSessao(access) {
+    return Boolean(this.access && access) && (this.access === access
+      || Boolean(this.sessaoId && identificarSessao(access) === this.sessaoId));
+  },
+
+  get sessaoCompartilhada() {
+    return this.mesmaSessao(localStorage.getItem(LS.access));
+  },
+
+  get ultimaAtividade() {
+    const atividade = readJSON(LS.atividade);
+    return atividade?.sid === this.sessaoId && Number.isFinite(atividade?.momento) ? atividade.momento : 0;
+  },
+
+  marcarAtividade(momento) {
+    if (this.sessaoId) localStorage.setItem(LS.atividade, JSON.stringify({ sid: this.sessaoId, momento }));
   },
 
   /** Define o inventário ativo (sem reload). */
@@ -158,14 +192,18 @@ export const state = {
   },
 
   logout() {
+    const limparCompartilhada = this.sessaoCompartilhada;
     this.access = null;
     this.refresh = null;
     this.user = null;
     this.acaoRequerida = null;
-    localStorage.removeItem(LS.access);
-    localStorage.removeItem(LS.refresh);
-    localStorage.removeItem(LS.user);
-    localStorage.removeItem("nexus.primeiroAcesso");
+    if (limparCompartilhada) {
+      localStorage.removeItem(LS.atividade);
+      localStorage.removeItem(LS.access);
+      localStorage.removeItem(LS.refresh);
+      localStorage.removeItem(LS.user);
+      localStorage.removeItem("nexus.primeiroAcesso");
+    }
   },
 
   // ------------------------------------------------------------------

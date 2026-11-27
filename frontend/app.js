@@ -7,6 +7,7 @@
  */
 import { state, ROTULO_INVENTARIO } from "./js/state.js";
 import { api, encerrarSessao, replayOfflineQueue } from "./js/api.js";
+import { monitorarSessao } from "./js/sessao.js";
 import { criarChatIa } from "./js/chat_ia.js";
 import { Router } from "./js/router.js";
 import { ctx } from "./js/context.js";
@@ -723,7 +724,10 @@ function openDrawer(personalizar = false) {
   painel.showModal();
 }
 
+let verificarSessao = () => state.isAuthed;
+
 function renderRoute(path) {
+  if (!verificarSessao()) return;
   const revisao = ++revisaoTela;
   ctx.limpar();
   ctx.limpar = () => {};
@@ -822,12 +826,25 @@ function boot() {
   }
 
   if (!state.isAuthed) {
+    history.replaceState(null, "", "#/login");
     const root = document.getElementById("app");
     root.innerHTML = "";
     root.append(el("div", { class: "login-wrap", id: "login-root" }));
-    renderLogin(document.getElementById("login-root"));
+    const expirou = sessionStorage.getItem("nexus.sessaoExpirada");
+    sessionStorage.removeItem("nexus.sessaoExpirada");
+    renderLogin(document.getElementById("login-root"), expirou ? "Sua sessão expirou. Entre novamente." : undefined);
     return;
   }
+
+  window.addEventListener("nexus:sessao-expirada", () => {
+    sessionStorage.setItem("nexus.sessaoExpirada", "1");
+    history.replaceState(null, "", "#/login");
+    document.getElementById("app").replaceChildren();
+    document.querySelectorAll("dialog[open], .overlay").forEach((item) => item.remove());
+    location.reload();
+  }, { once: true });
+  verificarSessao = monitorarSessao();
+  if (!verificarSessao()) return;
 
   // Injeta as funções de UI no contexto global das views.
   ctx.navigate = (p) => router.go(p);
@@ -856,17 +873,16 @@ function boot() {
   router.onChange = () => {};
 
   // Atualiza permissões a partir do servidor (podem ter mudado).
-  api.get("/auth/me").then((me) => state.setUser(me)).catch((e) => {
-    if (e.status === 401 && !state.refresh) state.logout();
+  api.get("/auth/me").then((me) => {
+    if (state.isAuthed) state.setUser(me);
+  }).catch(() => {
+    // A API sinaliza a expiração. Falhas temporárias não apagam a sessão local.
   }).finally(() => {
-    if (!state.isAuthed) {
-      location.reload();
-      return;
-    }
+    if (!verificarSessao()) return;
     // Se o domínio salvo não for permitido, começa pela seleção.
     if (!state.podeInventario(state.dominio)) {
       router.go("selecao");
-    } else if (!location.hash || location.hash === "#/" || location.hash === "#") {
+    } else if (!location.hash || location.hash === "#/" || location.hash === "#" || location.hash === "#/login") {
       router.go("selecao");
     }
     router.start();

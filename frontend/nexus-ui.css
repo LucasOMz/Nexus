@@ -53,7 +53,7 @@ table.data td, table.data th { padding: 11px 14px; }
 .chat-ia-toggle { background: var(--nexus-side); color: #fff; }
 .chat-ia-painel { border-radius: 15px; }
 .nexus-marca-icone { display: inline-block; width: 26px; height: 22px; background: #43c88a;
-  clip-path: polygon(0 100%, 0 19%, 24% 0, 73% 51%, 73% 0, 100% 18%, 100% 82%, 74% 100%, 27% 49%, 27% 83%); }
+  mask: url("/icons/marca.svg") center / 100% 100% no-repeat; }
 .login-logo .nexus-marca-icone { width: 40px; height: 34px; background: var(--md-sys-color-primary); }
 .login-logo h2 { margin: 4px 0; font-size: 1.8rem; font-weight: 750; }
 

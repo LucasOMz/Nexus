@@ -1,7 +1,7 @@
 """Schemas de autenticação."""
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.common import UsuarioOut
 
@@ -27,3 +27,8 @@ class TrocaSenhaIn(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str
+
+
+class PoliticaSessao(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    inatividade_minutos: int = Field(strict=True, ge=1, le=1440)

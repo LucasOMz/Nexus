@@ -89,7 +89,8 @@ CREATE TABLE sessoes_usuarios (
     usuario_id      INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
     refresh_hash    VARCHAR(64),
     expira_em       TIMESTAMPTZ NOT NULL,
-    revogada_em     TIMESTAMPTZ
+    revogada_em     TIMESTAMPTZ,
+    ultima_atividade_em TIMESTAMPTZ
 );
 CREATE INDEX ix_sessoes_usuarios_usuario_id ON sessoes_usuarios(usuario_id);
 CREATE INDEX ix_sessoes_usuarios_expira_em ON sessoes_usuarios(expira_em);
@@ -434,6 +435,11 @@ CREATE TABLE configuracoes (
     ollama_modelo            VARCHAR(250),
     ollama_chat_ativo        BOOLEAN NOT NULL DEFAULT TRUE,
     ollama_historico_dias    INTEGER,
+    ia_provedor_externo     VARCHAR(20),
+    ia_externa_ativa        BOOLEAN,
+    ia_modelo_externo       VARCHAR(250),
+    ia_token_externo        TEXT,
+    sessao_inatividade_minutos INTEGER,
     ldap_ativo               BOOLEAN NOT NULL DEFAULT FALSE,
     ldap_servidor            VARCHAR(300),
     ldap_porta               INTEGER NOT NULL DEFAULT 636,

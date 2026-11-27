@@ -22,6 +22,12 @@ function incluirPlanta(headers, planta = state.plantaAtiva) {
 
 let renovacaoEmCurso;
 
+export function expirarSessao() {
+  if (!state.isAuthed) return;
+  state.logout();
+  window.dispatchEvent(new Event("nexus:sessao-expirada"));
+}
+
 function comTravaDeSessao(operacao) {
   return globalThis.navigator?.locks?.request("nexus-sessao", operacao) ?? operacao();
 }
@@ -31,6 +37,10 @@ function refreshTokens(acessoQueFalhou) {
   renovacaoEmCurso ??= comTravaDeSessao(async () => {
     if (state.access !== acessoQueFalhou) return Boolean(state.access);
     if (state.sincronizarSessao()) return true;
+    if (!state.sessaoCompartilhada) {
+      expirarSessao();
+      return false;
+    }
     const refresh = state.refresh;
     if (!refresh) return false;
     let res;
@@ -46,13 +56,28 @@ function refreshTokens(acessoQueFalhou) {
     }
     if (state.refresh !== refresh) return Boolean(state.access);
     if (!res.ok) {
-      if (res.status === 401) state.logout();
+      if (res.status === 401) expirarSessao();
       return false;
     }
-    state.setAuth(await res.json());
+    const dados = await res.json();
+    if (state.refresh !== refresh) return Boolean(state.access);
+    if (!state.sessaoCompartilhada) {
+      expirarSessao();
+      return false;
+    }
+    state.setAuth(dados);
     return true;
   }).catch(() => false).finally(() => { renovacaoEmCurso = null; });
   return renovacaoEmCurso;
+}
+
+async function tratarCredencial(res, acesso, renovar) {
+  // Outras respostas 401 (como senha incorreta) pertencem à tela que fez a chamada.
+  if (res.status !== 401 || !acesso || !/^Bearer\b/i.test(res.headers.get("WWW-Authenticate") || "")) return false;
+  if (acesso !== state.access) return renovar && state.mesmaSessao(acesso);
+  if (renovar && state.refresh) return refreshTokens(acesso);
+  expirarSessao();
+  return false;
 }
 
 export async function encerrarSessao() {
@@ -80,7 +105,7 @@ export async function encerrarSessao() {
 export const api = {
   base: BASE,
 
-  async request(method, path, { body, query, planta, renovar = true, enfileirar = true, prazoMs = 30000 } = {}) {
+  async request(method, path, { body, query, planta, renovar = true, enfileirar = true, prazoMs = 30000, keepalive = false } = {}) {
     let url = this.base + path;
     if (query) {
       const qs = new URLSearchParams();
@@ -121,6 +146,7 @@ export const api = {
         headers,
         body: body !== undefined ? JSON.stringify(body) : undefined,
         signal: controle.signal,
+        keepalive,
       });
     } catch (e) {
       // Abortado pelo prazo é diferente de rede caindo: o servidor pode ter
@@ -143,10 +169,8 @@ export const api = {
     }
 
     // 401 → tenta refresh uma vez e repete a requisição.
-    if (renovar && res.status === 401 && state.refresh && (!path.startsWith("/auth/") || path === "/auth/me")) {
-      if (await refreshTokens(acesso)) {
-        return this.request(method, path, { body, query, planta, enfileirar, prazoMs, renovar: false });
-      }
+    if (res.status === 401 && await tratarCredencial(res, acesso, renovar)) {
+      return this.request(method, path, { body, query, planta, enfileirar, prazoMs, keepalive, renovar: false });
     }
 
     let data = null;
@@ -199,8 +223,8 @@ export const api = {
       throw new ApiError(0, "Sem conexão com o servidor");
     }
 
-    if (renovar && res.status === 401 && state.refresh && !path.startsWith("/auth/")) {
-      if (await refreshTokens(acesso)) return this.form(method, path, dados, false);
+    if (res.status === 401 && await tratarCredencial(res, acesso, renovar)) {
+      return this.form(method, path, dados, false);
     }
 
     let data = null;
@@ -241,8 +265,8 @@ export const api = {
     } catch {
       throw new ApiError(0, "Sem conexão com o servidor");
     }
-    if (renovar && res.status === 401 && state.refresh && !path.startsWith("/auth/")) {
-      if (await refreshTokens(acesso)) return this.blob(path, false);
+    if (res.status === 401 && await tratarCredencial(res, acesso, renovar)) {
+      return this.blob(path, false);
     }
     if (!res.ok) {
       let detalhe = null;

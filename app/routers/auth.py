@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.core import cripto
-from app.core.deps import get_current_user, usuario_para_troca_de_senha
+from app.core.deps import get_current_user, oauth2_scheme, usuario_para_troca_de_senha
 from app.core.primeiro_acesso import (
     Etapa,
     etapa_pendente,
@@ -42,7 +42,7 @@ from app.core.segredos_instalacao import SENHAS_ADMIN_PADRAO_ANTIGAS
 from app.database import get_db
 from app.models.core import Usuario
 from app.models.enums import PapelUsuario
-from app.schemas.auth import RefreshRequest, Token, TrocaSenhaIn
+from app.schemas.auth import PoliticaSessao, RefreshRequest, Token, TrocaSenhaIn
 from app.schemas.common import UsuarioOut
 from app.services import sessoes
 from app.services.audit_service import audit
@@ -462,3 +462,22 @@ def logout(payload: RefreshRequest, db: Session = Depends(get_db)) -> dict:
 def me(user: Usuario = Depends(get_current_user)) -> Usuario:
     """Retorna o perfil do usuário autenticado."""
     return user
+
+
+@router.get("/politica-sessao", response_model=PoliticaSessao)
+def ler_politica_sessao(db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)) -> PoliticaSessao:
+    return PoliticaSessao(inatividade_minutos=sessoes.inatividade_minutos(db))
+
+
+@router.post("/atividade", status_code=204)
+def registrar_atividade(
+    atraso_ms: Annotated[int, Query(ge=0, le=30000)] = 0,
+    user: Usuario = Depends(get_current_user),
+    token: str | None = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+) -> None:
+    """Registra uma interação explícita, independente das consultas em segundo plano."""
+    sid = (decode_token(token or "") or {}).get("sid")
+    if not isinstance(sid, str) or not sessoes.registrar_atividade(db, sid, user.id, atraso_ms):
+        raise HTTPException(401, "Sessão encerrada. Entre novamente.", headers={"WWW-Authenticate": "Bearer"})
+    db.commit()

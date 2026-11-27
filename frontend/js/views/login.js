@@ -19,7 +19,7 @@ import { api } from "../api.js";
 import { el, icon, toast, mostrarErro } from "../ui.js";
 import { erroDeResposta } from "../erros.js";
 
-export function renderLogin(root) {
+export function renderLogin(root, avisoInicial) {
   document.title = "Entrar — Nexus";
   root.innerHTML = "";
 
@@ -196,5 +196,5 @@ export function renderLogin(root) {
     location.reload();
   }
 
-  mostrarSenha();
+  mostrarSenha(avisoInicial);
 }

@@ -43,19 +43,7 @@ function formularioPolitica(politica) {
     aviso, salvar);
 }
 
-export async function renderOllama(root) {
-  root.replaceChildren(skeleton(3));
-  let cfg;
-  let politica;
-  try {
-    [cfg, politica] = await Promise.all([api.get(caminho), api.get(caminhoPolitica)]);
-  } catch (erro) {
-    root.replaceChildren(el("div", { class: "card" },
-      el("p", {}, erro.message),
-      el("button", { type: "button", class: "btn tonal", onclick: () => renderOllama(root) }, "Tentar novamente")));
-    return;
-  }
-
+function formularioOllama(cfg, ativar) {
   const origem = el("span", { class: "badge" }, origens[cfg.origem]);
   const url = el("input", { id: "ollama-url", type: "url", required: true, maxlength: 500,
     value: cfg.url, placeholder: "http://192.168.7.50:11434", "aria-describedby": "ollama-url-dica" });
@@ -136,11 +124,12 @@ export async function renderOllama(root) {
       cfg = await api.request("PUT", caminho, { body: { url: url.value, modelo: modelo.value }, enfileirar: false });
       url.value = cfg.url;
       origem.textContent = origens[cfg.origem];
+      await ativar();
       status.textContent = "Configuração salva. O chat já pode usar o modelo selecionado.";
-      if (root.isConnected) toast("Configuração do Ollama salva");
+      if (form.isConnected) toast("Configuração do Ollama salva");
     } catch (erro) {
       status.textContent = erro.message;
-      if (root.isConnected && erro.campos?.length) mostrarErro(erro);
+      if (form.isConnected && erro.campos?.length) mostrarErro(erro);
     } finally {
       trabalhando = false;
       atualizarBotoes();
@@ -148,5 +137,114 @@ export async function renderOllama(root) {
   });
 
   exibirModeloAtual();
-  root.replaceChildren(formularioPolitica(politica), form);
+  return form;
+}
+
+const caminhoAgente = "/admin/config/agente-ia";
+const provedores = { ollama: "Ollama", openai: "OpenAI", openrouter: "OpenRouter" };
+
+function formularioExterno(provedor, config, salvarConfig) {
+  const configurado = config.provedor_externo === provedor && config.token_salvo;
+  const modelo = el("input", { id: "ia-modelo-externo", required: true, maxlength: 250,
+    value: config.provedor_externo === provedor ? config.modelo_externo || "" : "" });
+  const token = el("input", { id: "ia-token-externo", type: "password", maxlength: 512,
+    required: !configurado, autocomplete: "new-password", placeholder: configurado ? "Chave salva" : "Cole a chave de API" });
+  const status = el("p", { class: "muted", role: "status" });
+  const testar = el("button", { type: "button", class: "btn tonal" }, "Testar conexão");
+  const salvar = el("button", { type: "submit", class: "btn filled" }, "Salvar e ativar");
+  const form = el("form", { class: "card" },
+    el("h2", { class: "section-title" }, provedores[provedor]),
+    el("p", { class: "muted" }, "Neste modo, as perguntas e os trechos de resultados usados para compor as respostas são enviados ao provedor externo."),
+    el("div", { class: "form-grid" },
+      el("div", { class: "field" }, el("label", { for: modelo.id }, "Identificador do modelo"), modelo,
+        el("span", { class: "hint" }, "Informe o identificador de um modelo com suporte a chamadas de ferramentas.")),
+      el("div", { class: "field" }, el("label", { for: token.id }, "Chave de API"), token,
+        configurado ? el("span", { class: "hint" }, "Deixe vazio para continuar usando a chave salva.") : null)),
+    status, el("div", { class: "row", style: "flex-wrap:wrap" }, testar, salvar));
+
+  async function executar(ativar) {
+    if (!form.reportValidity() || testar.disabled) return;
+    const body = { provedor, modelo: modelo.value.trim(), token: token.value.trim() || null };
+    modelo.disabled = token.disabled = testar.disabled = salvar.disabled = true;
+    status.textContent = ativar ? "Validando e salvando…" : "Testando modelo e chave a partir do servidor Nexus…";
+    try {
+      const dados = await api.request(ativar ? "PUT" : "POST", caminhoAgente + (ativar ? "/externa" : "/externa/testar"),
+        { body, enfileirar: false });
+      if (ativar) salvarConfig(dados, "Provedor externo ativado");
+      else status.textContent = "Conexão confirmada. O modelo respondeu à chamada de ferramenta.";
+    } catch (erro) {
+      status.textContent = erro.message;
+    } finally {
+      modelo.disabled = token.disabled = testar.disabled = salvar.disabled = false;
+    }
+  }
+  testar.onclick = () => executar(false);
+  form.onsubmit = (evento) => { evento.preventDefault(); executar(true); };
+  return form;
+}
+
+export async function renderAgenteIA(root) {
+  root.replaceChildren(skeleton(3));
+  let ollama;
+  let politica;
+  let config;
+  try {
+    [ollama, politica, config] = await Promise.all([api.get(caminho), api.get(caminhoPolitica), api.get(caminhoAgente)]);
+  } catch (erro) {
+    root.replaceChildren(el("div", { class: "card" }, el("p", {}, erro.message),
+      el("button", { type: "button", class: "btn tonal", onclick: () => renderAgenteIA(root) }, "Tentar novamente")));
+    return;
+  }
+  const provedor = el("select", { id: "ia-provedor" },
+    ...Object.entries(provedores).map(([chave, nome]) => el("option", { value: chave }, nome)));
+  provedor.value = config.provedor;
+  const ativo = el("span", { class: "badge", role: "status" });
+  const recado = el("p", { class: "muted", role: "status" });
+  const painel = el("div");
+  const usarOllama = el("button", { type: "button", class: "btn tonal" }, "Usar configuração atual do Ollama");
+  const remover = el("button", { type: "button", class: "btn outline" }, "Remover chave externa");
+  const local = formularioOllama(ollama, async () => {
+    if (config.provedor !== "ollama") await selecionarLocal();
+  });
+
+  function mostrar() {
+    ativo.textContent = "Em uso: " + provedores[config.provedor];
+    remover.hidden = !config.provedor_externo;
+    usarOllama.hidden = provedor.value !== "ollama" || config.provedor === "ollama";
+    if (provedor.value === "ollama" && painel.firstChild === local) return;
+    painel.replaceChildren(provedor.value === "ollama" ? local : formularioExterno(provedor.value, config, concluir));
+  }
+  function concluir(dados, mensagem) {
+    config = dados;
+    provedor.value = config.provedor;
+    mostrar();
+    ctx.atualizarChat();
+    if (root.isConnected) toast(mensagem);
+  }
+  async function selecionarLocal() {
+    concluir(await api.request("PUT", caminhoAgente, { body: { provedor: "ollama" }, enfileirar: false }), "Ollama ativado");
+  }
+  async function acaoDoProvedor(botao, operacao) {
+    botao.disabled = true;
+    recado.textContent = "";
+    try { await operacao(); }
+    catch (erro) { recado.textContent = erro.message; }
+    finally { botao.disabled = false; }
+  }
+  usarOllama.onclick = () => acaoDoProvedor(usarOllama, selecionarLocal);
+  remover.onclick = () => {
+    if (window.confirm("Remover a chave externa e voltar a usar o Ollama?")) {
+      acaoDoProvedor(remover, async () => {
+        concluir(await api.request("DELETE", caminhoAgente + "/externa", { enfileirar: false }), "Chave externa removida");
+      });
+    }
+  };
+  provedor.onchange = () => { recado.textContent = ""; mostrar(); };
+  mostrar();
+  root.replaceChildren(
+    el("section", { class: "card" },
+      el("div", { class: "row between" }, el("h2", { class: "section-title" }, "Provedor do chat"), ativo),
+      el("div", { class: "field" }, el("label", { for: provedor.id }, "Provedor"), provedor),
+      el("div", { class: "row", style: "flex-wrap:wrap" }, usarOllama, remover), recado),
+    painel, formularioPolitica(politica));
 }

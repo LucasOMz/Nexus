@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from threading import Barrier
 
@@ -29,6 +29,52 @@ def _me(client, sessao):
 
 def _refresh(client, sessao):
     return client.post("/api/v1/auth/refresh", json={"refresh_token": sessao["refresh_token"]})
+
+
+def _controlar_relogio(monkeypatch):
+    class Relogio(datetime):
+        agora = datetime.now(timezone.utc)
+
+        @classmethod
+        def now(cls, tz):
+            return cls.agora.astimezone(tz)
+
+    monkeypatch.setattr(sessoes, "datetime", Relogio)
+    return Relogio
+
+
+def test_inatividade_expira_access_e_refresh_mesmo_com_consultas_automaticas(client, monkeypatch):
+    relogio = _controlar_relogio(monkeypatch)
+    inicio = relogio.agora
+    sessao = _login(client)
+    atividade = "/api/v1/auth/atividade"
+    relogio.agora = inicio + timedelta(minutes=9, seconds=59)
+    assert _me(client, sessao).status_code == 200
+    renovada = _refresh(client, sessao)
+    assert renovada.status_code == 200
+    sessao = renovada.json()
+    headers = {"Authorization": f"Bearer {sessao['access_token']}"}
+    relogio.agora = inicio + timedelta(minutes=10)
+    perfil = _me(client, sessao)
+    assert perfil.status_code == 401
+    assert perfil.headers["WWW-Authenticate"] == "Bearer"
+    assert client.post(atividade, headers=headers).status_code == 401
+    assert _refresh(client, sessao).status_code == 401
+
+
+def test_atividade_prorroga_a_sessao_pelo_momento_da_interacao(client, monkeypatch):
+    relogio = _controlar_relogio(monkeypatch)
+    inicio = relogio.agora
+    sessao = _login(client)
+    headers = {"Authorization": f"Bearer {sessao['access_token']}"}
+    relogio.agora = inicio + timedelta(minutes=5)
+    assert client.post("/api/v1/auth/atividade?atraso_ms=5000", headers=headers).status_code == 204
+    # Evento atrasado de outra aba, anterior ao último já registrado.
+    assert client.post("/api/v1/auth/atividade?atraso_ms=15000", headers=headers).status_code == 204
+    relogio.agora = inicio + timedelta(minutes=14, seconds=54)
+    assert _me(client, sessao).status_code == 200
+    relogio.agora += timedelta(seconds=1)
+    assert _me(client, sessao).status_code == 401
 
 
 def test_login_success(client):
@@ -89,6 +135,36 @@ def test_logout_revoga_apenas_a_sessao_informada(client):
 def test_refresh_anterior_ao_registro_persistente_prescreve(client):
     token = create_refresh_token(1, "admin", "admin@teste.com")
     assert _refresh(client, {"refresh_token": token}).status_code == 401
+
+
+def test_sessao_da_versao_anterior_exige_novo_login(client):
+    anterior = _login(client)
+    sid = decode_token(anterior["access_token"])["sid"]
+    with TestingSession() as db:
+        db.get(SessaoUsuario, sid).ultima_atividade_em = None
+        db.commit()
+    assert _me(client, anterior).status_code == 401
+    assert _refresh(client, anterior).status_code == 401
+    assert _me(client, _login(client)).status_code == 200
+
+
+def test_politica_de_inatividade_pode_ser_alterada_sem_reativar_sessoes(client, monkeypatch):
+    relogio = _controlar_relogio(monkeypatch)
+    anterior = _login(client)
+    relogio.agora += timedelta(minutes=10)
+    admin = _login(client)
+    headers = {"Authorization": f"Bearer {admin['access_token']}"}
+    politica = "/api/v1/auth/politica-sessao"
+    configurar = "/api/v1/admin/config/politica-sessao"
+    assert client.get(politica, headers=headers).json() == {"inatividade_minutos": 10}
+    assert client.put(configurar, headers=headers, json={"inatividade_minutos": 0}).status_code == 422
+    assert client.put(configurar, headers=headers, json={"inatividade_minutos": 20}).status_code == 200
+    assert _refresh(client, anterior).status_code == 401
+    assert client.get(politica, headers=headers).json() == {"inatividade_minutos": 20}
+    relogio.agora += timedelta(minutes=11)
+    assert _me(client, admin).status_code == 200
+    assert client.put(configurar, headers=headers, json={"inatividade_minutos": 5}).status_code == 200
+    assert _me(client, admin).status_code == 401
 
 
 def test_banco_restaurado_descarta_sessoes_anteriores(client):
