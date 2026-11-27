@@ -282,10 +282,12 @@ verificar("nao existe lista de modulos excluidos da barra",
 verificar("a gaveta lista TODOS os modulos permitidos",
   /function modulosPermitidos\(\) \{\s*return Object\.keys\(MODULOS\)\.filter\(chave => state\.podeModulo\(chave\)\)/.test(fonteApp));
 verificar("a barra usa a MESMA fonte da gaveta",
-  /mostrarTodosModulos \? ordemCompleta\(permitidos\) : atalhos/.test(fonteApp)
-  && /const ordem = ordemCompleta\(permitidos\);/.test(fonteApp));
-verificar("o menu desktop alterna a propria barra lateral",
-  /mostrarTodosModulos = !mostrarTodosModulos;\s*updateNav\(currentPath\)/.test(fonteApp));
+  /barraLateral\.atalhos\(permitidos, NAVEGACAO_PRINCIPAL\)/.test(fonteApp)
+  && (fonteApp.match(/const permitidos = modulosPermitidos\(\);/g) || []).length === 2);
+verificar("o desktop mostra os atalhos com o acesso a personalizacao",
+  /\["home", \.\.\.atalhos\.filter/.test(fonteApp)
+  && /class: "nav-item nexus-personalizar"[^\n]+openDrawer\(true\)/.test(fonteApp)
+  && !/nexus-menu-desktop/.test(fonteApp));
 verificar("o menu mobile abre a gaveta de modulos",
   /class: "iconbtn nexus-menu-mobile"[\s\S]{0,220}onclick: \(\) => openDrawer\(\)/.test(fonteApp));
 
@@ -445,7 +447,7 @@ verificar("favoritar salva preferencias sem navegar",
 verificar("a gaveta continua aberta e repinta ao favoritar",
   /if \(painel\.open\) \{\s*pintarLista\(\)/.test(fonteApp));
 verificar("o Menu inicial nao e favoritavel",
-  /\["home", \.\.\.modulos\.filter/.test(fonteApp) && !/^  home: \{ rotulo:/m.test(fonteApp));
+  /\["home", \.\.\.atalhos\.filter/.test(fonteApp) && !/^  home: \{ rotulo:/m.test(fonteApp));
 verificar("o atalho para personalizar fica disponivel mesmo sem favoritos",
   /class: "nav-item nexus-personalizar"[^\n]+openDrawer\(true\)/.test(fonteApp));
 verificar("a estrela marcada fica amarela",
@@ -506,7 +508,7 @@ verificar("o estilo da janelinha flutuante existe",
 //     Sem isso o usuário reordena, sai, volta e encontra tudo embaralhado —
 //     a ordem valia só para a barra, não para a tela onde ele a define.
 verificar("a gaveta abre na ordem salva",
-  /return barraLateral\.ordenarModulos\(padrao\)/.test(fonteApp)
+  /const ordem = barraLateral\.ordenarModulos\(padrao\);/.test(fonteApp)
   && /lista\.replaceChildren\(\.\.\.ordem\.map/.test(fonteApp));
 verificar("a ordem fica em campo SEPARADO dos favoritos",
   /barra_ordem/.test(fonteBarra) && /export function ordem\(\)/.test(fonteBarra)
