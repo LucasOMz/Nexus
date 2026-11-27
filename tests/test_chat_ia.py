@@ -5,7 +5,7 @@ import pytest
 from app.config import settings
 from app.core.rate_limit import SlidingWindowLimiter
 from app.core.security import create_access_token
-from app.models import Ativo, ChatInventarioMensagem, Departamento, Planta, PlantaLocalidade, Usuario
+from app.models import Ativo, ChatInventarioMensagem, Departamento, Planta, PlantaLocalidade, SoftwareInstalado, Usuario
 from app.models.ti import AtivoTI
 from app.routers import ia
 from tests.conftest import TestingSession
@@ -52,6 +52,88 @@ def _modelo(monkeypatch, consultas):
 
     monkeypatch.setattr(ia, "_perguntar", perguntar)
     return recebidas
+
+
+def test_software_por_versao_com_lista_paginada_e_exportacao_completa(client, auth_headers, inventario_ia, monkeypatch):
+    with TestingSession() as db:
+        for id_ in range(10, 55):
+            db.add(Ativo(id=id_, planta_id=1, departamento_id=1, numero_serie=f"SW-{id_}", dominio="ti"))
+            db.add(AtivoTI(ativo_id=id_, hostname=f"PC-{id_}", ram_gb=32, so="Windows 11"))
+            db.add(SoftwareInstalado(ativo_id=id_, nome="Google Chrome", versao="120.0.1"))
+            db.add(SoftwareInstalado(ativo_id=id_, nome="7-Zip", versao="25.0"))
+        db.add(SoftwareInstalado(ativo_id=10, nome="Google Chrome", versao="120.0.1"))
+        db.add(SoftwareInstalado(ativo_id=1, nome="Google Chrome", versao="1200.0"))
+        db.add(SoftwareInstalado(ativo_id=2, nome="Google Chrome", versao="120.0.1"))
+        db.add(SoftwareInstalado(ativo_id=3, nome="Google Chrome", versao="120.0.1"))
+        db.commit()
+    _modelo(monkeypatch, [{
+        "operacao": "contar", "filtros": [_filtro("ram_gb", "no_minimo", "16"), _filtro("so", "contém", "Windows")],
+        "softwares": [{"nome": "Chrome", "versao": "120", "comparacao_versao": "prefixo"}, {"nome": "7-Zip"}],
+        "agrupar_por": ["departamento"],
+    }])
+    headers = {**auth_headers, "X-Planta-Id": "1"}
+    chat = client.post("/api/v1/ia/chat", headers=headers, json={"pergunta": "Quantos PCs com Chrome 120.x e 7-Zip por setor?"})
+    assert chat.status_code == 200, chat.text
+    dados = chat.json()
+    resultado = dados["resultados"][0]
+    assert resultado["total"] == 45 and resultado["grupos"][0]["valores"] == ["Operações"]
+    amostra = resultado["amostra_equipamentos"]
+    assert [a["id"] for a in amostra["equipamentos"]] == list(range(10, 15))
+    rota = f"/api/v1/ia/mensagens/{dados['id']}"
+    pagina = client.get(rota + "/resultados/0", headers=headers, params={"inicio": amostra["proximo"]}).json()
+    assert pagina["proximo"] == 35 and len(pagina["equipamentos"]) == 30
+    exportado = client.get(rota + "/exportacao", headers=headers).json()["resultados"][0]
+    ativos = exportado["equipamentos_exibidos"]
+    assert len(ativos) == 45 and ativos[-1]["numero_serie"] == "SW-54"
+    assert ativos[0]["softwares"] == [{"nome": "7-Zip", "versao": "25.0"}, {"nome": "Google Chrome", "versao": "120.0.1"}]
+    assert client.get(rota + "/exportacao", headers={**headers, "X-Planta-Id": "2"}).status_code == 404
+    leitor = {"Authorization": f"Bearer {create_access_token(2, 'leitor')}", "X-Planta-Id": "1"}
+    assert client.get(rota + "/exportacao", headers=leitor).status_code == 404
+    assert client.post("/api/v1/ia/equipamentos", headers=leitor, json=resultado["consulta"]).status_code == 403
+    consulta_restrita = client.post("/api/v1/ia/chat", headers=leitor, json={"pergunta": "Quantos ativos com Chrome?"})
+    assert "não tem acesso ao inventário de software" in consulta_restrita.json()["resposta"]
+
+
+def test_percentual_e_ausencia_de_software_usam_a_coleta_existente(client, auth_headers, inventario_ia, monkeypatch):
+    with TestingSession() as db:
+        db.add_all([
+            SoftwareInstalado(ativo_id=1, nome="Chrome", versao="120"),
+            SoftwareInstalado(ativo_id=2, nome="7-Zip", versao="25"),
+        ])
+        db.commit()
+    _modelo(monkeypatch, [{
+        "operacao": "percentual",
+        "filtros": [_filtro("dominio", "igual", "ti")],
+        "softwares_numerador": [{"nome": "Chrome", "versao": "120", "situacao": "ausente"}],
+    }])
+    resposta = client.post("/api/v1/ia/chat", headers=auth_headers, json={"pergunta": "Qual percentual sem Chrome 120?"})
+    assert resposta.status_code == 200, resposta.text
+    resultado = resposta.json()["resultados"][0]
+    assert resultado["total"] == 3 and resultado["correspondentes"] == 1
+    assert [a["id"] for a in resultado["amostra_equipamentos"]["equipamentos"]] == [2]
+    with TestingSession() as db:
+        db.add(SoftwareInstalado(ativo_id=2, nome="Chrome"))
+        db.commit()
+    indefinida = client.post("/api/v1/ia/chat", headers=auth_headers, json={"pergunta": "Qual percentual sem Chrome 120?"})
+    assert indefinida.json()["resultados"][0]["correspondentes"] == 0
+
+
+def test_exportacao_de_ficha_traz_software_acima_do_limite_da_previa(client, auth_headers, inventario_ia, monkeypatch):
+    with TestingSession() as db:
+        db.add_all([SoftwareInstalado(ativo_id=1, nome=f"Aplicativo {i:02d}", versao="1.0") for i in range(25)])
+        db.commit()
+
+    def modelo(*args, **kwargs):
+        return {"tool_calls": [{"function": {"name": "consultar_ficha_ativo",
+                              "arguments": {"identificador": "DTAT0001", "assunto": "software"}}}]}
+
+    monkeypatch.setattr(ia, "_perguntar", modelo)
+    chat = client.post("/api/v1/ia/chat", headers=auth_headers, json={"pergunta": "Quais softwares tem no DTAT0001?"}).json()
+    assert ["Aplicativo 24", "1.0"] not in chat["resultados"][0]["blocos"][0]["linhas"]
+    resposta = client.get(f"/api/v1/ia/mensagens/{chat['id']}/exportacao", headers=auth_headers)
+    assert resposta.status_code == 200, resposta.text
+    linhas = resposta.json()["resultados"][0]["blocos"][0]["linhas"]
+    assert len(linhas) == 25 and linhas[-1] == ["Aplicativo 24", "1.0"]
 
 
 def test_chat_percentual_por_departamento_e_detalhes(client, auth_headers, inventario_ia, monkeypatch):

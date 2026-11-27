@@ -27,7 +27,7 @@ from app.services.dados_ia import (
     ConsultaConsumiveis, ConsultaFicha, ConsultaIndicadores, consultar_consumiveis,
     consultar_ficha, consultar_indicador, informacoes,
 )
-from app.services.inventario_ia import ConsultaInventario, FUSO_INVENTARIO, executar_consulta, resposta_ficha
+from app.services.inventario_ia import ATRIBUTOS_TI, ConsultaInventario, FUSO_INVENTARIO, detalhar_consulta, executar_consulta, resposta_ficha
 from app.services.ollama import ConfigOllama, DestinoOllama, config_efetiva, destino_ollama
 from app.services.ia_externa import DestinoExterno, destino_externo
 from app.services.retencao_chat import limite_historico
@@ -37,7 +37,7 @@ _usuario_inventario = require_module("ativos")
 _limite_chat = SlidingWindowLimiter(8, 60, redis=redis_contadores, grupo="ia_chat")
 _NOME_FERRAMENTA = "consultar_inventario"
 _FERRAMENTAS = {
-    _NOME_FERRAMENTA: (ConsultaInventario, "Conte, liste, agrupe ou calcule percentuais no inventário de equipamentos."),
+    _NOME_FERRAMENTA: (ConsultaInventario, "Conte, liste, agrupe ou calcule percentuais de equipamentos, inclusive por software instalado, versão e hardware."),
     "consultar_ficha_ativo": (ConsultaFicha, "Leia a ficha de um computador ou impressora com patrimônio, série ou hostname exato."),
     "consultar_consumiveis": (ConsultaConsumiveis, "Consulte o catálogo de consumíveis pelo SKU/nome, contagem, estoque ou mínimo."),
     "consultar_indicador": (ConsultaIndicadores, "Leia quantidades ou resumos de manutenção, empréstimos, contratos, contagens, garantias ou financeiro."),
@@ -55,6 +55,13 @@ Para impressora identificada: contador para páginas, suprimentos para estoque d
 comunicacao para online, SNMP, nível ou percentual de toner. Para computador: hardware, rede, software ou uso.
 Use consultar_inventario para contagens de equipamentos, listagens, agrupamentos e percentuais. Formule os filtros a partir do pedido e do
 histórico de perguntas. Cada conjunto de filtros é combinado por E. Você pode pedir até três consultas para comparar.
+Para software instalado em equipamentos use softwares, com nome e versao (opcional). Use versao exata, ou comparacao_versao
+prefixo para famílias como 120.x (envie "120"). Use situacao ausente se pediram máquinas sem um programa ou sem aquela versão.
+Duas entradas em softwares exigem os dois programas na mesma máquina. Para comparar versões, faça consultas separadas.
+Combine softwares com filtros de planta, departamento, so, ram_gb ou armazenamento_gb. Para ao menos 16 GB, filtre ram_gb
+com no_minimo e valor "16". Para percentual com software, ponha o critério em softwares_numerador e os filtros gerais em filtros.
+Exemplo: "quantos ativos hoje têm Chrome na versão 120.0?" usa contar e softwares [{ "nome": "Chrome", "versao": "120.0" }].
+Nesse exemplo, "hoje" quer dizer o inventário atual, sem filtro de data ou status. Filtre data só se a pergunta pedir um período de coleta.
 Use o histórico para referências e continuações. Uma nova pergunta completa deve usar os próprios filtros.
 Se a pergunta citar uma planta ou um departamento, use os campos planta e departamento com operador igual
 e o nome ou a sigla que aparece na pergunta. Para contar ativos em geral, não filtre tipo_equipamento.
@@ -95,7 +102,7 @@ def _perguntar(
     payload = {
         "model": modelo, "messages": mensagens,
         "stream": False, "think": False,
-        "options": {"temperature": 0, "num_predict": 420 if ferramentas else 220, "num_ctx": 6144},
+        "options": {"temperature": 0, "num_predict": 900 if ferramentas else 220, "num_ctx": 6144},
     }
     if ferramentas:
         payload["tools"] = _ESQUEMAS
@@ -130,13 +137,14 @@ def _mensagem_historico(linha: MensagemChat, modulos: frozenset[str]) -> dict:
     autorizado = all(
         set(resultado.get("modulos_dados", ["ativos"])) <= modulos for resultado in linha.resultados
     )
-    return {"pergunta": linha.pergunta,
+    return {"id": linha.id, "pergunta": linha.pergunta,
             "resposta": linha.resposta if autorizado else "Sua conta não tem mais acesso aos dados desta resposta.",
             "resultados": linha.resultados if autorizado else [], "criada_em": _data_utc(linha.created_at)}
 
 
 def _resumo_para_modelo(dados: dict) -> dict:
-    resumo = {campo: valor for campo, valor in dados.items() if campo not in {"equipamentos", "blocos", "links", "modulos_dados"}}
+    resumo = {campo: valor for campo, valor in dados.items()
+              if campo not in {"equipamentos", "blocos", "links", "modulos_dados", "detalhe"}}
     if "grupos" in resumo:
         resumo["truncado"] = resumo["truncado"] or len(resumo["grupos"]) > 5
         resumo["grupos"] = resumo["grupos"][:5]
@@ -146,7 +154,9 @@ def _resumo_para_modelo(dados: dict) -> dict:
             for ativo in dados["equipamentos"][:5]
         ]
     if dados.get("blocos"):
-        resumo["blocos"] = [{"titulo": bloco["titulo"], "linhas": bloco["linhas"][:8]} for bloco in dados["blocos"][:4]
+        resumo["blocos"] = [{"titulo": bloco["titulo"], "linhas": [
+            [campo, valor[:350] if isinstance(valor, str) else valor] for campo, valor in bloco["linhas"][:8]
+        ]} for bloco in dados["blocos"][:4]
                             if bloco["titulo"] not in {"Rede", "Interfaces de rede", "Uso do equipamento"}]
     return resumo
 
@@ -277,10 +287,37 @@ def chat(
         Usuario.id == usuario_id, Usuario.ativo.is_(True), Usuario.deleted_at.is_(None),
     ))
     _exigir_chat(permitido, config_efetiva(db))
-    db.add(MensagemChat(conversa_id=conversa_id, usuario_id=usuario_id, planta_id=planta_id, inventarios=",".join(dominios),
-                        pergunta=entrada.pergunta, resposta=dados["resposta"], resultados=dados["resultados"]))
+    for item in dados["resultados"]:
+        if "consulta" in item and item["operacao"] != "listar" and (item.get("correspondentes", item.get("total", 0)) > 0):
+            lista = detalhar_consulta(ConsultaInventario.model_validate(item["consulta"]))
+            item["amostra_equipamentos"] = executar_consulta(db, lista, planta_id, dominios, tamanho=5)
+    registro = MensagemChat(conversa_id=conversa_id, usuario_id=usuario_id, planta_id=planta_id, inventarios=",".join(dominios),
+                            pergunta=entrada.pergunta, resposta=dados["resposta"], resultados=dados["resultados"])
+    db.add(registro)
+    db.flush()
+    mensagem_id = registro.id
     db.commit()
-    return {"conversa_id": conversa_id, **dados}
+    return {"id": mensagem_id, "conversa_id": conversa_id, **dados}
+
+
+def _executar_ferramenta(db: Session, consulta, planta_id: int | None, dominios: tuple[str, ...],
+                         user: Usuario, modulos: frozenset[str], *, completo: bool = False) -> dict:
+    if isinstance(consulta, ConsultaTelas):
+        return orientar(consulta, modulos)
+    if isinstance(consulta, ConsultaIndicadores):
+        return consultar_indicador(db, consulta, planta_id, dominios, modulos, completo=completo)
+    if isinstance(consulta, ConsultaConsumiveis):
+        return (consultar_consumiveis(db, consulta, planta_id, dominios, modulos, completo=completo) if "produtos" in modulos
+                else informacoes("Sua conta não tem acesso a Consumíveis."))
+    if "ativos" not in modulos:
+        return informacoes("Sua conta não tem acesso a Ativos.")
+    if isinstance(consulta, ConsultaFicha):
+        return consultar_ficha(db, consulta, planta_id, dominios, user, modulos, completo=completo)
+    usa_software = bool(consulta.softwares or consulta.softwares_numerador)
+    if usa_software and "software" not in modulos:
+        return informacoes("Sua conta não tem acesso ao inventário de software instalado.")
+    return {"consulta": consulta.model_dump(mode="json"), **executar_consulta(db, consulta, planta_id, dominios, completo=completo),
+            "modulos_dados": ["ativos", "software"] if usa_software else ["ativos"]}
 
 
 def _responder(db: Session, destino: DestinoOllama | DestinoExterno, modelo: str, pergunta: str, historico: list[str],
@@ -306,19 +343,11 @@ def _responder(db: Session, destino: DestinoOllama | DestinoExterno, modelo: str
                 consulta = schema.model_validate(funcao["arguments"])
             except (ValidationError, TypeError, KeyError):
                 continue
-            if isinstance(consulta, ConsultaTelas):
-                dados = orientar(consulta, modulos)
-            elif isinstance(consulta, ConsultaIndicadores):
-                dados = consultar_indicador(db, consulta, planta_id, dominios, modulos)
-            elif isinstance(consulta, ConsultaConsumiveis):
-                dados = (consultar_consumiveis(db, consulta, planta_id, dominios, modulos) if "produtos" in modulos
-                         else informacoes("Sua conta não tem acesso a Consumíveis."))
-            elif "ativos" not in modulos:
-                dados = informacoes("Sua conta não tem acesso a Ativos.")
-            elif isinstance(consulta, ConsultaFicha):
-                dados = consultar_ficha(db, consulta, planta_id, dominios, user, modulos)
-            else:
-                dados = {"consulta": consulta.model_dump(mode="json"), **executar_consulta(db, consulta, planta_id, dominios)}
+            dados = _executar_ferramenta(db, consulta, planta_id, dominios, user, modulos)
+            if isinstance(consulta, (ConsultaFicha, ConsultaConsumiveis, ConsultaIndicadores)) and dados.get("modulos_dados"):
+                # Contador e comunicação ao vivo descrevem a leitura que foi respondida.
+                if not isinstance(consulta, ConsultaFicha) or consulta.assunto != "comunicacao":
+                    dados["detalhe"] = {"ferramenta": nome, "parametros": consulta.model_dump(mode="json")}
             resultados.append(dados)
             retorno_ferramentas.append({"consulta": consulta.model_dump(mode="json"), **_resumo_para_modelo(dados)})
         db.rollback()
@@ -356,8 +385,70 @@ def equipamentos(
     planta_id: int | None = Depends(planta_ativa_obrigatoria),
     db: Session = Depends(get_db),
 ) -> dict:
-    if not config.url:
-        raise HTTPException(503, "O chat ainda não está configurado.")
-    lista = consulta.model_copy(update={"operacao": "listar", "agrupar_por": [], "limite": 30,
-                                       "filtros": consulta.filtros + consulta.filtros_numerador, "filtros_numerador": []})
-    return executar_consulta(db, lista, planta_id, _dominios(user))
+    if (consulta.softwares or consulta.softwares_numerador) and "software" not in _modulos(user):
+        raise HTTPException(403, "Sua conta não tem acesso ao inventário de software instalado.")
+    return executar_consulta(db, detalhar_consulta(consulta), planta_id, _dominios(user), tamanho=30)
+
+
+def _registro_resultado(db: Session, mensagem_id: int, user: Usuario, planta_id: int | None, config: ConfigOllama):
+    dominios = _dominios(user)
+    modulos = _modulos(user)
+    registro = _historico(db, user.id, planta_id, dominios, config.historico_dias).filter(
+        MensagemChat.id == mensagem_id,
+    ).first()
+    if registro is None:
+        raise HTTPException(404, "Resultado não encontrado neste escopo.")
+    if any(not set(item.get("modulos_dados", ["ativos"])) <= modulos for item in registro.resultados):
+        raise HTTPException(403, "Sua conta não tem mais acesso aos dados desta resposta.")
+    return registro, dominios, modulos
+
+
+@router.get("/mensagens/{mensagem_id}/resultados/{indice}")
+def paginar_resultado(
+    mensagem_id: int, indice: int, response: Response,
+    inicio: Annotated[int, Query(ge=0, le=2147483647)] = 0,
+    user: Usuario = Depends(_usuario_inventario),
+    config: ConfigOllama = Depends(_config_chat),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
+    db: Session = Depends(get_db),
+) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    registro, dominios, modulos = _registro_resultado(db, mensagem_id, user, planta_id, config)
+    if not 0 <= indice < len(registro.resultados) or "consulta" not in registro.resultados[indice]:
+        raise HTTPException(404, "Lista de equipamentos não encontrada.")
+    consulta = ConsultaInventario.model_validate(registro.resultados[indice]["consulta"])
+    if (consulta.softwares or consulta.softwares_numerador) and "software" not in modulos:
+        raise HTTPException(403, "Sua conta não tem acesso ao inventário de software instalado.")
+    return executar_consulta(db, detalhar_consulta(consulta), planta_id, dominios, inicio=inicio, tamanho=30)
+
+
+@router.get("/mensagens/{mensagem_id}/exportacao")
+def exportar_resultado(
+    mensagem_id: int, response: Response,
+    user: Usuario = Depends(get_current_user),
+    config: ConfigOllama = Depends(_config_chat),
+    planta_id: int | None = Depends(planta_ativa_obrigatoria),
+    db: Session = Depends(get_db),
+) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    registro, dominios, modulos = _registro_resultado(db, mensagem_id, user, planta_id, config)
+    resultados = []
+    for item in registro.resultados:
+        if "consulta" in item:
+            consulta = ConsultaInventario.model_validate(item["consulta"])
+            if consulta.operacao == "listar":
+                consulta = consulta.model_copy(update={"atributos": list(ATRIBUTOS_TI)})
+            dados = _executar_ferramenta(db, consulta, planta_id, dominios, user, modulos, completo=True)
+            if dados.get("operacao") != "listar" and not dados.get("aviso") and "consulta" in dados:
+                lista = detalhar_consulta(consulta).model_copy(update={"atributos": list(ATRIBUTOS_TI)})
+                detalhes = executar_consulta(db, lista, planta_id, dominios, completo=True)
+                dados["equipamentos_exibidos"] = detalhes.get("equipamentos", [])
+                dados["total_exibidos"] = detalhes.get("total", 0)
+            resultados.append(dados)
+        elif "detalhe" in item:
+            receita = item["detalhe"]
+            consulta = _FERRAMENTAS[receita["ferramenta"]][0].model_validate(receita["parametros"])
+            resultados.append(_executar_ferramenta(db, consulta, planta_id, dominios, user, modulos, completo=True))
+        else:
+            resultados.append(item)
+    return {"pergunta": registro.pergunta, "resposta": registro.resposta, "resultados": resultados, "exportacao_atual": True}

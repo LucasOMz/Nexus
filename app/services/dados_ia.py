@@ -60,6 +60,10 @@ def informacoes(resumo: str, *, blocos=(), links=(), modulos=()) -> dict:
             "links": list(links), "modulos_dados": sorted(modulos)}
 
 
+def _linhas(consulta, limite: int, completo: bool):
+    return consulta.all() if completo else consulta.limit(limite).all()
+
+
 def _valor(valor):
     if isinstance(valor, datetime):
         instante = valor if valor.tzinfo else valor.replace(tzinfo=timezone.utc)
@@ -72,7 +76,7 @@ def _valor(valor):
         return "Sim" if valor else "Não"
     if isinstance(valor, Decimal):
         return str(valor).replace(".", ",")
-    return valor[:350] if isinstance(valor, str) else valor
+    return valor
 
 
 def _bloco(titulo: str, *dados: tuple) -> dict:
@@ -90,16 +94,16 @@ def _inventario(ficha: AtivoTI | None) -> dict:
     return detalhes if isinstance(detalhes, dict) else {}
 
 
-def _inventario_lista(detalhes: dict, chave: str) -> list[dict]:
+def _inventario_lista(detalhes: dict, chave: str, completo: bool) -> list[dict]:
     itens = detalhes.get(chave)
-    return [item for item in itens[:20] if isinstance(item, dict)] if isinstance(itens, list) else []
+    return [item for item in (itens if completo else itens[:20]) if isinstance(item, dict)] if isinstance(itens, list) else []
 
 
 def _juntar(*valores) -> str:
     return " · ".join(str(v) for v in valores if isinstance(v, (str, int, float)) and v != "")
 
 
-def _hardware(ficha: AtivoTI | None, detalhes: dict) -> list[dict]:
+def _hardware(ficha: AtivoTI | None, detalhes: dict, completo: bool) -> list[dict]:
     if ficha is None:
         return [_bloco("Hardware", ("Ficha", "Sem ficha técnica cadastrada"))]
     basico = _bloco("Hardware",
@@ -109,19 +113,19 @@ def _hardware(ficha: AtivoTI | None, detalhes: dict) -> list[dict]:
         ("Placa-mãe", _juntar(detalhes.get("placa_mae_fabricante"), detalhes.get("placa_mae"))),
         ("Última coleta do agente", ficha.inventario_em))
     blocos = [basico]
-    discos = _inventario_lista(detalhes, "discos")
+    discos = _inventario_lista(detalhes, "discos", completo)
     if discos:
         blocos.append(_bloco("Discos", *[(_juntar(d.get("modelo"), d.get("tipo")) or "Disco",
                                          _juntar(f'{d["gb"]} GB' if isinstance(d.get("gb"), (int, float)) else None,
                                                  d.get("serial"))) for d in discos]))
-    monitores = _inventario_lista(detalhes, "monitores")
+    monitores = _inventario_lista(detalhes, "monitores", completo)
     if monitores:
         blocos.append(_bloco("Monitores", *[(_juntar(m.get("fabricante"), m.get("modelo")) or "Monitor",
                                             _juntar(m.get("serial"))) for m in monitores]))
     return blocos
 
 
-def _impressao(db: Session, ativo: Ativo, assunto: str) -> list[dict]:
+def _impressao(db: Session, ativo: Ativo, assunto: str, completo: bool) -> list[dict]:
     blocos = []
     ficha = ativo.impressora
     if assunto in {"completa", "impressao", "contador"}:
@@ -135,14 +139,14 @@ def _impressao(db: Session, ativo: Ativo, assunto: str) -> list[dict]:
             ("Última leitura de páginas", leitura.contador if leitura else None),
             ("Data da leitura", leitura.data_leitura if leitura else None)))
     if assunto in {"completa", "suprimentos"}:
-        itens = db.query(SuprimentoImpressora).filter(
+        consulta = db.query(SuprimentoImpressora).filter(
             SuprimentoImpressora.ativo_id == ativo.id, SuprimentoImpressora.deleted_at.is_(None),
-        ).order_by(SuprimentoImpressora.id).limit(20).all()
+        ).order_by(SuprimentoImpressora.id)
         blocos.append(_bloco("Suprimentos cadastrados", *[
             (f"{_valor(item.tipo)} · {item.modelo or item.cor or 'sem modelo'}",
              f"Cor {item.cor or 'não cadastrada'} · estoque {item.estoque_atual} · mínimo {item.estoque_minimo}"
              + (f" · rendimento {item.rendimento_paginas} páginas" if item.rendimento_paginas else ""))
-            for item in itens
+            for item in _linhas(consulta, 20, completo)
         ] or [("Cadastro", "Nenhum suprimento registrado")]))
     return blocos
 
@@ -157,12 +161,12 @@ def _bloco_monitor(db: Session, ativo: Ativo, user: Usuario, planta_id: int | No
     }.get(dados["comunicacao"], "Comunicação desconhecida")
     niveis = [(item.get("nome") or item.get("descricao") or "Suprimento",
                f'{item["percentual"]}%' if item.get("percentual") is not None else "Nível indisponível")
-              for item in dados["suprimentos"][:20]]
+              for item in dados["suprimentos"]]
     return _bloco("Monitoramento da impressora", ("Comunicação", estado), ("Verificado em", dados["verificado_em"]), *niveis)
 
 
 def consultar_ficha(db: Session, consulta: ConsultaFicha, planta_id: int | None, dominios: tuple[str, ...],
-                    user: Usuario, modulos: frozenset[str]) -> dict:
+                    user: Usuario, modulos: frozenset[str], *, completo: bool = False) -> dict:
     termo = consulta.identificador.lower()
     consulta_ativo = db.query(Ativo).outerjoin(AtivoTI).outerjoin(AtivoImpressora).filter(
         Ativo.deleted_at.is_(None), Ativo.dominio.in_(dominios),
@@ -172,7 +176,7 @@ def consultar_ficha(db: Session, consulta: ConsultaFicha, planta_id: int | None,
     consulta_ativo = aplicar_filtro(consulta_ativo, Ativo, planta_id)
     if consulta.planta:
         consulta_ativo = consulta_ativo.filter(Ativo.planta_id.in_(_plantas_permitidas(db, consulta.planta, planta_id)))
-    ativos = consulta_ativo.options(selectinload(Ativo.ti), selectinload(Ativo.impressora)).order_by(Ativo.id).limit(6).all()
+    ativos = _linhas(consulta_ativo.options(selectinload(Ativo.ti), selectinload(Ativo.impressora)).order_by(Ativo.id), 6, completo)
     if not ativos:
         return informacoes("Não encontrei esse patrimônio, hostname ou número de série no escopo atual.", modulos={"ativos"})
 
@@ -180,7 +184,8 @@ def consultar_ficha(db: Session, consulta: ConsultaFicha, planta_id: int | None,
                         consulta=f"?busca={quote(a.numero_serie, safe='')}&destaque={a.id}", dominio=a.dominio.value)
              for a in ativos[:5]]
     if len(ativos) > 1:
-        blocos = [_bloco("Equipamentos encontrados", *[(a.numero_serie, a.planta.nome if a.planta else None) for a in ativos[:5]])]
+        blocos = [_bloco("Equipamentos encontrados", *[(a.numero_serie, a.planta.nome if a.planta else None)
+                                                       for a in (ativos if completo else ativos[:5])])]
         return informacoes("Há mais de um equipamento com esse identificador. Informe o número de série ou a planta.",
                            blocos=blocos, links=links, modulos={"ativos"})
 
@@ -212,7 +217,7 @@ def consultar_ficha(db: Session, consulta: ConsultaFicha, planta_id: int | None,
         blocos.append(_bloco("Rede", ("Hostname", ativo.hostname), ("IP", ficha.ip if ficha else None),
                              ("Endereço MAC", ativo.ti.mac_address if ativo.ti else None),
                              ("Domínio de rede", ativo.ti.dominio_ad if ativo.ti else None)))
-        interfaces = _inventario_lista(detalhes, "rede")
+        interfaces = _inventario_lista(detalhes, "rede", completo)
         if interfaces:
             blocos.append(_bloco("Interfaces de rede", *[
                 (_juntar(r.get("adaptador")) or "Adaptador",
@@ -220,9 +225,9 @@ def consultar_ficha(db: Session, consulta: ConsultaFicha, planta_id: int | None,
                 for r in interfaces
             ]))
     if assunto in {"completa", "hardware"} and ativo.dominio == Dominio.TI:
-        blocos.extend(_hardware(ativo.ti, detalhes))
+        blocos.extend(_hardware(ativo.ti, detalhes, completo))
     if ativo.dominio == Dominio.IMPRESSORA:
-        impressao = _impressao(db, ativo, assunto)
+        impressao = _impressao(db, ativo, assunto, completo)
         blocos.extend(impressao)
         if assunto == "contador":
             dados = dict(impressao[0]["linhas"])
@@ -245,21 +250,24 @@ def consultar_ficha(db: Session, consulta: ConsultaFicha, planta_id: int | None,
                     return informacoes(str(exc.detail), links=links, modulos=requeridos)
     if assunto == "software" and "software" in modulos:
         requeridos.add("software")
-        itens = db.query(SoftwareInstalado).filter(
+        instalados = db.query(SoftwareInstalado).filter(
             SoftwareInstalado.ativo_id == ativo.id, SoftwareInstalado.deleted_at.is_(None),
-        ).order_by(SoftwareInstalado.nome, SoftwareInstalado.id).limit(21).all()
-        blocos.append(_bloco("Software instalado", *[(item.nome, item.versao or "Sem versão registrada") for item in itens[:20]]
+        ).order_by(SoftwareInstalado.nome, SoftwareInstalado.id)
+        itens = _linhas(instalados, 21, completo)
+        blocos.append(_bloco("Software instalado", *[(item.nome, item.versao or "Sem versão registrada")
+                                                     for item in (itens if completo else itens[:20])]
                               or [("Coleta", "Nenhum software registrado")]))
-        if len(itens) > 20:
-            blocos[-1]["linhas"].append(["Exibição", "Primeiros 20 itens. Abra Software e licenças para consultar os demais."])
+        if not completo and len(itens) > 20:
+            blocos[-1]["linhas"].append(["Exibição", "Primeiros 20 itens. Exporte o CSV para consultar o restante."])
         links.append(link_nexus("software"))
     if assunto == "manutencao" and "manutencoes" in modulos:
         requeridos.add("manutencoes")
-        itens = db.query(Manutencao).filter(
+        ordens = db.query(Manutencao).filter(
             Manutencao.ativo_id == ativo.id, Manutencao.deleted_at.is_(None),
-        ).order_by(Manutencao.data_abertura.desc(), Manutencao.id.desc()).limit(10).all()
-        blocos.append(_bloco("Manutenções recentes", *[
-            (f"Ordem {item.id} · {_valor(item.status)}", item.descricao or "Sem descrição") for item in itens
+        ).order_by(Manutencao.data_abertura.desc(), Manutencao.id.desc())
+        blocos.append(_bloco("Manutenções", *[
+            (f"Ordem {item.id} · {_valor(item.status)}", item.descricao or "Sem descrição")
+            for item in _linhas(ordens, 10, completo)
         ] or [("Ordens", "Nenhuma manutenção registrada")]))
         links.append(link_nexus("manutencoes"))
     if not blocos:
@@ -269,7 +277,7 @@ def consultar_ficha(db: Session, consulta: ConsultaFicha, planta_id: int | None,
 
 
 def consultar_consumiveis(db: Session, consulta: ConsultaConsumiveis, planta_id: int | None,
-                          dominios: tuple[str, ...], modulos: frozenset[str]) -> dict:
+                          dominios: tuple[str, ...], modulos: frozenset[str], *, completo: bool = False) -> dict:
     mostrar_saldo = consulta.operacao in {"estoque", "abaixo_minimo"}
     mostrar_movimentos = consulta.operacao == "movimentacoes"
     requeridos = {"produtos"}
@@ -290,14 +298,15 @@ def consultar_consumiveis(db: Session, consulta: ConsultaConsumiveis, planta_id:
         termo = consulta.termo.lower()
         base = base.filter(or_(func.lower(Produto.sku).contains(termo, autoescape=True),
                                func.lower(Produto.nome).contains(termo, autoescape=True)))
-    if consulta.operacao == "contar":
+    if consulta.operacao == "contar" and not completo:
         return informacoes(f"Consumíveis encontrados no catálogo: {base.count()}.", links=links, modulos=requeridos)
     if mostrar_movimentos:
         requeridos.add("movimentacoes")
-        itens = db.query(Movimentacao, Produto.nome, Produto.sku).join(Produto, Produto.id == Movimentacao.produto_id).filter(
+        movimentos = db.query(Movimentacao, Produto.nome, Produto.sku).join(Produto, Produto.id == Movimentacao.produto_id).filter(
             Movimentacao.deleted_at.is_(None), Movimentacao.tipo.in_((TipoMov.ENTRADA, TipoMov.SAIDA)),
             Produto.id.in_(base.with_entities(Produto.id).statement),
-        ).order_by(Movimentacao.data_mov.desc(), Movimentacao.id.desc()).limit(20).all()
+        ).order_by(Movimentacao.data_mov.desc(), Movimentacao.id.desc())
+        itens = _linhas(movimentos, 20, completo)
         blocos = [_bloco("Últimas entradas e saídas", *[
             (f"{sku} · {_valor(mov.tipo)}", f"{nome} · quantidade {mov.quantidade} · {_valor(mov.data_mov)}")
             for mov, nome, sku in itens
@@ -316,16 +325,19 @@ def consultar_consumiveis(db: Session, consulta: ConsultaConsumiveis, planta_id:
         consulta_saldo = base.outerjoin(totais, Produto.id == totais.c.produto_id).add_columns(saldo)
         if consulta.operacao == "abaixo_minimo":
             consulta_saldo = consulta_saldo.filter(saldo < Produto.estoque_minimo)
-        itens = consulta_saldo.order_by(Produto.nome, Produto.id).limit(21).all()
+        itens = _linhas(consulta_saldo.order_by(Produto.nome, Produto.id), 21, completo)
         blocos = [_bloco(f"{p.nome} · {p.sku}", ("Saldo consolidado", f"{total} {p.unidade}"),
-                         ("Estoque mínimo", p.estoque_minimo)) for p, total in itens[:20]]
+                         ("Estoque mínimo", p.estoque_minimo)) for p, total in (itens if completo else itens[:20])]
     else:
-        itens = base.order_by(Produto.nome, Produto.id).limit(21).all()
+        itens = _linhas(base.order_by(Produto.nome, Produto.id), 21, completo)
         blocos = [_bloco(f"{p.nome} · {p.sku}", ("Descrição", p.descricao), ("Unidade", p.unidade),
-                         ("Estoque mínimo", p.estoque_minimo), ("Preço unitário (R$)", p.preco_unitario)) for p in itens[:20]]
+                         ("Estoque mínimo", p.estoque_minimo), ("Preço unitário (R$)", p.preco_unitario))
+                  for p in (itens if completo else itens[:20])]
     resumo = ("Veja os consumíveis encontrados." if blocos else "Nenhum consumível encontrado com esses filtros.")
-    if len(itens) > 20:
-        resumo = "Mostrando os primeiros 20 consumíveis. Abra a tela para ver os demais."
+    if consulta.operacao == "contar":
+        resumo = f"Consumíveis encontrados no catálogo: {len(itens)}."
+    elif not completo and len(itens) > 20:
+        resumo = "Mostrando os primeiros 20 consumíveis. Exporte o CSV para consultar os demais."
     if len(itens) == 1:
         produto = itens[0][0] if mostrar_saldo else itens[0]
         links = [link_nexus("produtos", consulta=f"?busca={quote(produto.sku, safe='')}", dominio=produto.dominio.value)]
@@ -341,7 +353,7 @@ _MODULO_INDICADOR = {
 
 
 def consultar_indicador(db: Session, consulta: ConsultaIndicadores, planta_id: int | None,
-                        dominios: tuple[str, ...], modulos: frozenset[str]) -> dict:
+                        dominios: tuple[str, ...], modulos: frozenset[str], *, completo: bool = False) -> dict:
     indicador = consulta.indicador
     modulo = _MODULO_INDICADOR[indicador]
     if modulo not in modulos:
@@ -368,21 +380,33 @@ def consultar_indicador(db: Session, consulta: ConsultaIndicadores, planta_id: i
             Manutencao.deleted_at.is_(None), Ativo.deleted_at.is_(None), Ativo.dominio.in_(dominios),
             Manutencao.status.in_((StatusManut.ABERTA, StatusManut.EM_ANDAMENTO)),
         )
-        total = escopo(base, Ativo).count()
+        base = escopo(base, Ativo)
+        total = base.count()
         texto = f"Ordens de manutenção abertas ou em andamento: {total}."
+        linhas = _linhas(base.with_entities(Manutencao.id, Manutencao.status, Ativo.patrimonio, Ativo.numero_serie)
+                         .order_by(Manutencao.id), 20, completo)
+        if linhas:
+            blocos = [_bloco("Ordens de manutenção", *[(f"Ordem {id_} · {patrimonio or serie}", status)
+                                                       for id_, status, patrimonio, serie in linhas])]
     elif indicador == "emprestimos_atrasados":
         base = db.query(Emprestimo).join(Ativo, Ativo.id == Emprestimo.ativo_id).filter(
             Emprestimo.deleted_at.is_(None), Ativo.deleted_at.is_(None), Ativo.dominio.in_(dominios),
             Emprestimo.situacao == SituacaoEmprestimo.RETIRADO,
             Emprestimo.devolucao_prevista < datetime.now(timezone.utc),
         )
-        total = escopo(base, Emprestimo).count()
+        base = escopo(base, Emprestimo)
+        total = base.count()
         texto = f"Empréstimos com devolução atrasada: {total}."
+        linhas = _linhas(base.with_entities(Emprestimo.id, Emprestimo.devolucao_prevista, Ativo.patrimonio, Ativo.numero_serie)
+                         .order_by(Emprestimo.devolucao_prevista, Emprestimo.id), 20, completo)
+        if linhas:
+            blocos = [_bloco("Empréstimos atrasados", *[(f"Empréstimo {id_} · {patrimonio or serie}", data)
+                                                       for id_, data, patrimonio, serie in linhas])]
     elif indicador == "contratos_a_vencer":
         base = db.query(Contrato).filter(Contrato.deleted_at.is_(None), Contrato.fim.between(hoje, ate))
         base = escopo(base, Contrato, corporativo=True)
         total = base.count()
-        linhas = base.order_by(Contrato.fim, Contrato.id).limit(20).all()
+        linhas = _linhas(base.order_by(Contrato.fim, Contrato.id), 20, completo)
         blocos = [_bloco("Contratos a vencer", *[(item.numero, item.fim) for item in linhas])] if linhas else []
         texto = f"Contratos a vencer nos próximos {consulta.dias} dias: {total}."
     elif indicador == "contagens":
@@ -395,8 +419,13 @@ def consultar_indicador(db: Session, consulta: ConsultaIndicadores, planta_id: i
     else:
         base = escopo(db.query(Ativo).filter(Ativo.deleted_at.is_(None), Ativo.dominio.in_(dominios)), Ativo)
         if indicador == "garantias_a_vencer":
-            total = base.filter(Ativo.data_garantia.between(hoje, ate)).count()
+            base = base.filter(Ativo.data_garantia.between(hoje, ate))
+            total = base.count()
             texto = f"Garantias a vencer nos próximos {consulta.dias} dias: {total}."
+            linhas = _linhas(base.with_entities(Ativo.patrimonio, Ativo.numero_serie, Ativo.data_garantia)
+                             .order_by(Ativo.data_garantia, Ativo.id), 20, completo)
+            if linhas:
+                blocos = [_bloco("Garantias a vencer", *[(patrimonio or serie, data) for patrimonio, serie, data in linhas])]
         else:
             from app.routers.financeiro import _montar
             from app.services.financeiro import resumo_do_parque

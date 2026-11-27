@@ -1,5 +1,5 @@
 import { api } from "./api.js";
-import { baixarCsv } from "./chat_ia_csv.js";
+import { avisoSoftwareAusente, baixarCsv, rotuloSoftware } from "./chat_ia_csv.js";
 import { state } from "./state.js";
 import { el, icon } from "./ui.js";
 
@@ -30,13 +30,17 @@ function listaEquipamentos(dados) {
   const lista = el("ul", { class: "chat-ia-lista" });
   for (const ativo of equipamentos) {
     const nome = ativo.hostname || ativo.modelo || `Equipamento #${ativo.id}`;
-    const detalhes = [ativo.patrimonio ? `Patrimônio ${ativo.patrimonio}` : "Sem patrimônio", ativo.departamento, ativo.planta];
+    const detalhes = [ativo.patrimonio ? `Patrimônio ${ativo.patrimonio}` : "Sem patrimônio",
+      ativo.numero_serie, ativo.departamento, ativo.planta];
     const linha = el("li", {}, el("strong", {}, nome), el("small", {}, detalhes.filter(Boolean).join(" · ")));
     for (const campo of dados.atributos || []) {
       const [rotulo, unidade] = atributosTecnicos[campo];
       const valor = ativo[campo];
       const texto = valor == null || valor === "" ? "Sem informação cadastrada" : `${valor}${unidade}`;
       linha.append(el("small", {}, `${rotulo} · ${texto}`));
+    }
+    for (const software of ativo.softwares || []) {
+      linha.append(el("small", {}, `${software.nome} · ${software.versao || "Sem versão registrada"}`));
     }
     lista.append(linha);
   }
@@ -112,7 +116,7 @@ export function criarChatIa() {
     historico.setAttribute("aria-expanded", String(visivel));
   }
 
-  function resultado(dados, atual, historica) {
+  function resultado(dados, atual, historica, mensagemId, indice) {
     const bloco = el("div", { class: "chat-ia-resultado" });
     if (dados.tipo === "informacoes") {
       for (const secao of dados.blocos || []) {
@@ -138,12 +142,11 @@ export function criarChatIa() {
     }
     const cadastros = dados.cadastros_consultados;
     const escopoConsulta = [...(cadastros?.planta || []), ...(cadastros?.departamento || [])];
+    const filtrosSoftware = [...(dados.consulta?.softwares || []), ...(dados.consulta?.softwares_numerador || [])];
+    escopoConsulta.push(...filtrosSoftware.map(rotuloSoftware));
     if (escopoConsulta.length) bloco.append(el("small", {}, escopoConsulta.join(" · ")));
-    if (dados.operacao === "listar") {
-      bloco.append(listaEquipamentos(dados));
-      return bloco;
-    }
-    bloco.append(el("strong", {}, metricas(dados)), el("small", {}, "Total da consulta"));
+    if (filtrosSoftware.some(filtro => filtro.situacao === "ausente")) bloco.append(el("small", {}, avisoSoftwareAusente));
+    if (dados.operacao !== "listar") bloco.append(el("strong", {}, metricas(dados)), el("small", {}, "Total da consulta"));
     if (dados.grupos?.length) {
       const grupos = el("ul", { class: "chat-ia-lista chat-ia-grupos" });
       for (const grupo of dados.grupos) {
@@ -151,44 +154,70 @@ export function criarChatIa() {
           el("strong", {}, metricas(grupo))));
       }
       bloco.append(grupos);
-      if (dados.truncado) bloco.append(el("small", {}, "Outros grupos ficaram fora do limite de exibição."));
+      if (dados.truncado) bloco.append(el("small", {}, "Todos os grupos estão disponíveis no CSV."));
     }
-    if ((dados.correspondentes ?? dados.total) > 0) {
+    const primeira = dados.operacao === "listar" ? dados : historica ? null : dados.amostra_equipamentos;
+    const detalhe = el("div", {});
+    if (primeira) detalhe.append(listaEquipamentos(primeira));
+    const proximo = primeira?.proximo ?? (primeira?.equipamentos.length < primeira?.total ? primeira.equipamentos.length : null);
+    if ((dados.correspondentes ?? dados.total) > 0 && (!primeira || proximo != null)) {
       const ver = el("button", { type: "button", class: "chat-ia-ver" },
-        historica ? "Ver equipamentos atuais" : "Ver equipamentos");
-      const detalhe = el("div", {});
+        primeira ? "Carregar mais equipamentos" : historica ? "Ver equipamentos atuais" : "Ver equipamentos");
+      const aviso = el("small", { role: "status" });
+      let inicio = proximo ?? 0;
+      let carregados = primeira?.equipamentos || [];
       ver.addEventListener("click", async () => {
         ver.disabled = true;
-        detalhe.textContent = "Carregando equipamentos…";
+        aviso.textContent = "Carregando equipamentos…";
         try {
-          const lista = await api.request("POST", "/ia/equipamentos", { body: dados.consulta, enfileirar: false });
+          const lista = await api.get(`/ia/mensagens/${mensagemId}/resultados/${indice}`, { inicio });
           if (atual !== geracao || !elemento.isConnected) return;
-          detalhe.replaceChildren(listaEquipamentos(lista));
-          if (!lista.aviso) {
-            dados.equipamentos_exibidos = lista.equipamentos;
-            dados.total_exibidos = lista.total;
-            if (historica) detalhe.prepend(el("small", {}, "Dados atuais do inventário"));
-          }
-          ver.remove();
+          carregados = [...carregados, ...(lista.equipamentos || [])];
+          detalhe.replaceChildren(listaEquipamentos({ ...lista, equipamentos: carregados }));
+          if (historica) detalhe.prepend(el("small", {}, "Dados atuais do inventário"));
+          aviso.textContent = "";
+          inicio = lista.proximo;
+          if (inicio == null) ver.remove();
+          else ver.textContent = "Carregar mais equipamentos";
         } catch (erro) {
           if (atual !== geracao || !elemento.isConnected) return;
-          detalhe.textContent = erro.message || "Não foi possível carregar os equipamentos.";
+          aviso.textContent = erro.message || "Não foi possível carregar os equipamentos.";
+        } finally {
           ver.disabled = false;
         }
       });
-      bloco.append(ver, detalhe);
+      bloco.append(detalhe, ver, aviso);
+    } else if (primeira) {
+      bloco.append(detalhe);
     }
     return bloco;
   }
 
   function montarResposta(turno, atual, historica = false) {
     const resposta = el("div", { class: "chat-ia-mensagem" }, turno.resposta);
-    for (const item of turno.resultados) {
-      const conteudo = resultado(item, atual, historica);
+    for (const [indice, item] of turno.resultados.entries()) {
+      const conteudo = resultado(item, atual, historica, turno.id, indice);
       if (conteudo) resposta.append(conteudo);
     }
-    resposta.append(el("button", { type: "button", class: "chat-ia-ver chat-ia-exportar",
-      onclick: () => baixarCsv(turno, historica) }, "Exportar CSV"));
+    if (turno.resultados.length) {
+      const aviso = el("small", { role: "status" });
+      const botao = el("button", { type: "button", class: "chat-ia-ver chat-ia-exportar",
+        onclick: async () => {
+          botao.disabled = true;
+          aviso.textContent = "Buscando todos os resultados…";
+          try {
+            const dados = await api.request("GET", `/ia/mensagens/${turno.id}/exportacao`, { prazoMs: 120000 });
+            if (atual !== geracao || !resposta.isConnected) return;
+            baixarCsv(dados, historica);
+            aviso.textContent = "";
+          } catch (erro) {
+            aviso.textContent = erro.message || "Não foi possível exportar.";
+          } finally {
+            botao.disabled = false;
+          }
+        } }, "Exportar CSV completo");
+      resposta.append(botao, aviso);
+    }
     return resposta;
   }
 
