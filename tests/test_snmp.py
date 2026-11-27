@@ -249,6 +249,7 @@ class TestVariosSuprimentos:
     def test_separa_por_indice(self):
         pares = [
             (f"{self.PREFIXO}.6.1.1", "Black Cartridge"),
+            (f"{self.PREFIXO}.5.1.1", 21),
             (f"{self.PREFIXO}.9.1.1", 80),
             (f"{self.PREFIXO}.8.1.1", 100),
             (f"{self.PREFIXO}.6.1.2", "Cyan Cartridge"),
@@ -258,9 +259,12 @@ class TestVariosSuprimentos:
         s = extrair_suprimentos(pares)
         assert len(s) == 2
         assert s[0]["descricao"] == "Black Cartridge"
+        assert s[0]["tipo"] == 21
         assert s[0]["situacao"] == "ok"
         assert s[1]["descricao"] == "Cyan Cartridge"
+        assert s[1]["tipo"] is None
         assert s[1]["situacao"] == "critico"
+        assert alertas_de_suprimento(s)[0]["indice"] == "2"
 
     def test_ignora_oid_de_fora(self):
         assert extrair_suprimentos([("1.3.6.1.2.1.25.3.2.1.3.1", "x")]) == []

@@ -18,7 +18,7 @@
  * │        │  Toner preto   ▓▓▓▓▓░░  68%  │          │
  * │  foto  │  Ciano         ▓▓░░░░░  31%  │ Detalhes │
  * │        │  Magenta       ▓░░░░░░  12%  │          │
- * │        │  Coletor       ▓▓▓▓▓▓▓  94%  │          │
+ * │        │  ▸ Peças                     │          │
  * └────────┴──────────────────────────────┴──────────┘
  * ```
  *
@@ -349,7 +349,10 @@ async function relerSuprimentos(caixa) {
       else delete estado.dataset.online;
       estado.dataset.estado = alerta ? "alerta" : comunicacao === "online" || suprimentos.length ? "lida" : "sem-leitura";
     }
-    alvo.innerHTML = "";
+    const resumoAnterior = alvo.querySelector(".mon-pecas > summary");
+    const pecasAbertas = resumoAnterior?.parentElement.open;
+    const focado = resumoAnterior === document.activeElement;
+    alvo.replaceChildren();
 
     if (r.status === "rejected") {
       alvo.append(el("span", { class: "muted mon-carregando text-error" },
@@ -362,8 +365,54 @@ async function relerSuprimentos(caixa) {
         "A impressora não informou suprimentos (marcas usam OIDs próprios)."));
       return;
     }
-    alvo.append(...sup.map((s) => barraSuprimento(s)));
+    const { toners, pecas } = separarSuprimentos(sup);
+    alvo.append(...toners.map(barraSuprimento));
+    if (!toners.length) alvo.append(el("span", { class: "muted mon-carregando" }, "Sem leitura de toner."));
+    if (pecas.length) {
+      const detalhes = grupoPecas(pecas, pecas.map(barraSuprimento));
+      detalhes.open = Boolean(pecasAbertas);
+      alvo.append(detalhes);
+      if (focado) detalhes.firstElementChild.focus({ preventScroll: true });
+    }
   }
+}
+
+const coresToner = {
+  cyan: "#007ea5", ciano: "#007ea5", magenta: "#c12474", yellow: "#b68100",
+  amarelo: "#b68100", black: "#34403b", preto: "#34403b",
+};
+
+function corDoSuprimento(descricao) {
+  return descricao.match(/\b(cyan|ciano|magenta|yellow|amarelo|black|preto)\b/)?.[0];
+}
+
+function ehToner(s) {
+  // Printer-MIB (RFC 3805): toner(3), tonerCartridge(21), other(1) e unknown(2).
+  if (s.tipo === 3 || s.tipo === 21) return true;
+  if (s.tipo > 2) return false;
+
+  const descricao = normalizarBusca(s.descricao || "");
+  const nomeDePeca = /\b(waste|used|residuos?|residual|coletor|descarte|drum|cilindro|fuser|fusor|fusora|transfer|transferencia|developer|revelador|maintenance|manutencao|ink|tinta|ribbon|fita)\b/;
+  if (nomeDePeca.test(descricao)) return false;
+  if (/\btonn?ers?\b/.test(descricao)) return true;
+  const cor = corDoSuprimento(descricao);
+  return Boolean(cor && (descricao === cor || /\b(cartridge|cartucho)\b/.test(descricao)));
+}
+
+function separarSuprimentos(suprimentos) {
+  const toners = [];
+  const pecas = [];
+  for (const item of suprimentos) (ehToner(item) ? toners : pecas).push(item);
+  return { toners, pecas };
+}
+
+function grupoPecas(pecas, linhas, avisos = null) {
+  const alertas = pecas.filter(s => ["atencao", "critico", "vazio"].includes(s.situacao)).length;
+  return el("details", { class: "mon-pecas" },
+    el("summary", {}, "Peças", el("span", { class: "muted mon-pecas-contagem" }, String(pecas.length)),
+      alertas ? el("span", { class: "mon-sup-pct aviso" }, alertas === 1 ? "1 alerta" : `${alertas} alertas`) : null),
+    el("div", { class: "mon-pecas-corpo" }, avisos,
+      el("div", { class: "mon-suprimentos" }, ...linhas)));
 }
 
 /**
@@ -381,9 +430,8 @@ export function barraSuprimento(s) {
     : ["critico", "vazio"].includes(s.situacao) ? "erro" : "info";
 
   const descricao = normalizarBusca(s.descricao || "");
-  const cor = descricao.match(/\b(cyan|ciano|magenta|yellow|amarelo|black|preto)\b/)?.[0];
-  const cores = { cyan: "#007ea5", ciano: "#007ea5", magenta: "#c12474", yellow: "#b68100", amarelo: "#b68100", black: "#34403b", preto: "#34403b" };
-  return el("div", { class: "mon-sup", style: cor ? `--monitor-toner: ${cores[cor]}` : null },
+  const cor = corDoSuprimento(descricao);
+  return el("div", { class: "mon-sup", style: cor ? `--monitor-toner: ${coresToner[cor]}` : null },
     el("div", { class: "mon-sup-topo" },
       el("span", { class: "mon-sup-nome", title: s.descricao || "" },
         s.descricao || `Suprimento ${s.indice}`),
@@ -462,18 +510,27 @@ export const comunicacaoImpressora = {
 };
 
 function mostrarMonitoramento(corpo, p) {
-  if (p.alertas.length) {
-    corpo.append(secao("Alertas de suprimentos", p.alertas.map(a => [a.descricao, a.mensagem])));
+  const { toners, pecas } = separarSuprimentos(p.suprimentos);
+  const alertasToner = [];
+  const alertasPecas = [];
+  for (const alerta of p.alertas) {
+    const deToner = toners.some(s => alerta.indice != null
+      ? s.indice === alerta.indice
+      : (s.descricao || `Suprimento ${s.indice}`) === alerta.descricao);
+    (deToner ? alertasToner : alertasPecas).push([alerta.descricao, alerta.mensagem]);
   }
-  const suprimentos = el("div", { class: "mon-secao" },
-    el("h3", { class: "mon-secao-titulo" }, "Suprimentos"),
-    p.suprimentos.length ? el("div", { class: "mon-suprimentos" }, ...p.suprimentos.map(s =>
-      el("div", {}, barraSuprimento(s), s.estimativa?.aplicavel
-        ? el("small", { class: "muted" }, `≈ ${s.estimativa.dias_restantes} dia(s) a ${inteiro(s.estimativa.paginas_por_dia)} págs/dia`)
-        : null))) : el("p", { class: "muted" }, p.comunicacao === "online"
-      ? "A impressora respondeu, mas não informou os níveis dos suprimentos."
-      : "Níveis indisponíveis nesta consulta."));
-  corpo.append(suprimentos);
+  const linha = s => el("div", {}, barraSuprimento(s), s.estimativa?.aplicavel
+    ? el("small", { class: "muted" }, `≈ ${s.estimativa.dias_restantes} dia(s) a ${inteiro(s.estimativa.paginas_por_dia)} págs/dia`)
+    : null);
+  corpo.append(el("div", { class: "mon-secao" },
+    el("h3", { class: "mon-secao-titulo" }, "Toners"),
+    alertasToner.length ? secao("Alertas de toner", alertasToner) : null,
+    toners.length ? el("div", { class: "mon-suprimentos" }, ...toners.map(linha))
+      : el("p", { class: "muted" }, p.comunicacao === "online"
+        ? "A impressora não informou os níveis de toner."
+        : "Níveis indisponíveis nesta consulta."),
+    pecas.length || alertasPecas.length ? grupoPecas(pecas, pecas.map(linha),
+      alertasPecas.length ? secao("Alertas de peças", alertasPecas) : null) : null));
 
   // --- 1. Identificação --------------------------------------------------
   corpo.append(secao("Identificação", [

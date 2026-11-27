@@ -165,7 +165,7 @@ def extrair_suprimentos(pares: list[tuple[str, Any]]) -> list[dict]:
     de manutenção. Olhar só o primeiro perderia a cor que acabou.
     """
     por_indice: dict[str, dict[str, Any]] = {}
-    campos = {"9": "nivel", "8": "capacidade", "6": "descricao"}
+    campos = {"9": "nivel", "8": "capacidade", "6": "descricao", "5": "tipo"}
 
     for oid, valor in pares:
         if not oid.startswith(PREFIXO_SUPRIMENTOS):
@@ -190,6 +190,7 @@ def extrair_suprimentos(pares: list[tuple[str, Any]]) -> list[dict]:
         saida.append({
             "indice": indice,
             "descricao": _texto(dados.get("descricao")),
+            "tipo": _inteiro(dados.get("tipo")),
             "nivel": nivel,
             "capacidade": capacidade,
             "percentual": pct,
@@ -210,6 +211,7 @@ def alertas_de_suprimento(suprimentos: list[dict]) -> list[dict]:
         if s["situacao"] not in ordem:
             continue
         alertas.append({
+            "indice": s.get("indice"),
             "descricao": s.get("descricao") or f"Suprimento {s.get('indice')}",
             "percentual": s["percentual"],
             "situacao": s["situacao"],
