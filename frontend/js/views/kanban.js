@@ -29,7 +29,6 @@ let dados = [];
 let busca = "";
 let usuarios = [];
 let filtroPrioridade = "";
-let mostrarConcluidas = true;
 
 // Visualização atual. Só no navegador: qual formato cada pessoa prefere
 // é escolha de quem olha, não dado do quadro.
@@ -256,6 +255,9 @@ export async function renderKanban(root) {
 }
 
 function desenhar(root) {
+  const concluidasAbertas = new Set(Array.from(
+    root.querySelectorAll(".kb-concluidas[open]"), secao => secao.dataset.bucket,
+  ));
   root.querySelector(".kb")?.remove();
   root.querySelector(".kb-carregando")?.remove();
 
@@ -320,14 +322,6 @@ function desenhar(root) {
       campoBusca),
     filtro,
     el("button", {
-      class: "kb-btn pequeno" + (mostrarConcluidas ? " ativo" : ""),
-      title: mostrarConcluidas ? "Ocultar concluídas" : "Mostrar concluídas",
-      onclick: () => {
-        mostrarConcluidas = !mostrarConcluidas;
-        desenhar(root);
-      },
-    }, mostrarConcluidas ? "Concluídas: visíveis" : "Concluídas: ocultas"),
-    el("button", {
       class: "kb-btn pequeno",
       title: "Colunas e atividades fora do quadro",
       onclick: () => abrirArquivados(root),
@@ -371,7 +365,9 @@ function desenhar(root) {
   }
 
   if (vista === "quadro") {
-    for (const bucket of dados) trilho.append(coluna(root, bucket, dados));
+    for (const bucket of dados) {
+      trilho.append(coluna(root, bucket, dados, concluidasAbertas.has(String(bucket.id))));
+    }
     wrap.append(trilho);
   } else {
     const acoes = {
@@ -570,7 +566,7 @@ async function reordenarBuckets(root, todos, arrastadoId, alvoId) {
 }
 
 
-function coluna(root, bucket, todos) {
+function coluna(root, bucket, todos, expandirConcluidas) {
   const recolhidas = colunasRecolhidas();
   const recolhida = recolhidas.has(String(bucket.id));
 
@@ -660,7 +656,6 @@ function coluna(root, bucket, todos) {
   const lista = el("div", { class: "kb-cartoes" });
 
   const filtradas = bucket.atividades.filter((a) => {
-    if (!mostrarConcluidas && a.concluida) return false;
     if (filtroPrioridade && (a.prioridade || "normal") !== filtroPrioridade) return false;
     if (!busca) return true;
     return (a.titulo || "").toLowerCase().includes(busca)
@@ -672,7 +667,21 @@ function coluna(root, bucket, todos) {
       busca || filtroPrioridade ? "Nada encontrado." : "Nenhuma atividade."));
   }
 
-  for (const a of filtradas) lista.append(cartao(root, a));
+  for (const a of filtradas) {
+    if (!a.concluida) lista.append(cartao(root, a));
+  }
+
+  const concluidas = filtradas.filter(a => a.concluida);
+  if (concluidas.length) {
+    lista.append(el("details", {
+      class: "kb-concluidas", "data-bucket": bucket.id, open: expandirConcluidas,
+    },
+      el("summary", { class: "kb-concluidas-controle" },
+        el("span", { class: "kb-concluidas-seta", html: icon("chevron", 16) }),
+        el("span", {}, "Concluídos"),
+        el("span", { class: "kb-concluidas-total" }, String(concluidas.length))),
+      ...concluidas.map(a => cartao(root, a))));
+  }
 
   // No Planner o botão fica logo abaixo do título, não no rodapé da
   // coluna — é o que permite adicionar sem rolar até o fim.

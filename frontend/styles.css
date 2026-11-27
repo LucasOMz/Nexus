@@ -3006,6 +3006,28 @@ body:has(.barra-opcoes-admin) #view { padding-bottom: 120px; }
   display: none;
 }
 
+.kb-concluidas { margin: 4px 0; }
+.kb-concluidas-controle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 6px 9px;
+  border-radius: var(--k-raio);
+  color: var(--k-texto-fraco);
+  font-size: .88rem;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+.kb-concluidas-controle::-webkit-details-marker { display: none; }
+.kb-concluidas-controle:hover { background: var(--k-cartao-hover); color: var(--k-texto); }
+.kb-concluidas-controle:focus-visible { outline: 2px solid var(--k-acento); outline-offset: -2px; }
+.kb-concluidas-seta { display: grid; place-items: center; transform: rotate(-90deg); }
+.kb-concluidas[open] .kb-concluidas-seta { transform: none; }
+.kb-concluidas[open] .kb-concluidas-controle { margin-bottom: 6px; }
+.kb-concluidas-total { font-variant-numeric: tabular-nums; }
+
 /* =====================================================================
    Cartão
    ===================================================================== */
