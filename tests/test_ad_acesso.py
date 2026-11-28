@@ -61,6 +61,48 @@ def _criar_usuario(client, auth_headers, **extra):
     return client.post("/api/v1/usuarios", json=dados, headers=auth_headers)
 
 
+def test_recadastra_conta_excluida_com_validacao_pelo_ad(client, ad_ligado, monkeypatch):
+    from app.models.core import Usuario
+    from tests.conftest import TestingSession
+
+    local = _criar_usuario(client, ad_ligado)
+    assert local.status_code == 201, local.text
+    local_id = local.json()["id"]
+    excluido = client.delete(f"/api/v1/usuarios/{local_id}", headers=ad_ligado)
+    assert excluido.status_code == 204, excluido.text
+
+    rede = _criar_usuario(client, ad_ligado, login_ad="joao.silva", senha=None, exigir_mfa=False)
+    assert rede.status_code == 201, rede.text
+    assert rede.json()["id"] != local_id
+    assert rede.json()["email"] == local.json()["email"]
+    assert rede.json()["origem"] == "ad"
+    with TestingSession() as db:
+        assert db.get(Usuario, local_id).deleted_at is not None
+
+    duplicado = _criar_usuario(client, ad_ligado)
+    assert duplicado.status_code == 409
+    assert duplicado.json()["detail"] == "E-mail já cadastrado"
+
+    _autentica(monkeypatch, login="joao.silva")
+    login = client.post("/api/v1/auth/login", data={"username": "joao.silva", "password": "senha-de-rede"})
+    assert login.status_code == 200, login.text
+    assert login.json()["user"]["id"] == rede.json()["id"]
+
+
+def test_editar_usuario_permite_email_de_conta_excluida(client, auth_headers):
+    antigo = _criar_usuario(client, auth_headers)
+    assert antigo.status_code == 201, antigo.text
+    novo = _criar_usuario(client, auth_headers, email="novo@empresa.com")
+    assert novo.status_code == 201, novo.text
+    excluido = client.delete(f"/api/v1/usuarios/{antigo.json()['id']}", headers=auth_headers)
+    assert excluido.status_code == 204, excluido.text
+
+    editado = client.put(f"/api/v1/usuarios/{novo.json()['id']}",
+                         json={"email": antigo.json()["email"]}, headers=auth_headers)
+    assert editado.status_code == 200, editado.text
+    assert editado.json()["email"] == antigo.json()["email"]
+
+
 class TestRemocaoDoAcessoPorGrupo:
     """O grupo do AD não libera mais nada."""
 

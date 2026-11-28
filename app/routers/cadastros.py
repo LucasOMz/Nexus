@@ -33,7 +33,7 @@ from app.schemas.common import (
     UsuarioOut,
     UsuarioUpdate,
 )
-from app.services import sessoes
+from app.services import sessoes, unicidade
 from app.services.audit_service import audit
 
 router = APIRouter(tags=["cadastros"])
@@ -302,6 +302,12 @@ def delete_categoria(
 # ---------------------------------------------------------------------------
 # Usuários
 # ---------------------------------------------------------------------------
+def _liberar_email_usuario(db: Session, email: str) -> None:
+    if db.query(Usuario.id).filter(Usuario.email == email, Usuario.deleted_at.is_(None)).first():
+        raise HTTPException(409, "E-mail já cadastrado")
+    unicidade.liberar(db, Usuario, "email", email, limite=160)
+
+
 @router.get("/usuarios", response_model=list[UsuarioOut])
 def list_usuarios(db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
     return db.query(Usuario).filter(Usuario.deleted_at.is_(None)).order_by(Usuario.nome).all()
@@ -322,8 +328,6 @@ def create_usuario(
     Em nenhuma delas o acesso é automático: sem este cadastro, alguém com senha
     de rede válida não entra.
     """
-    if db.query(Usuario).filter(Usuario.email == body.email, Usuario.deleted_at.is_(None)).first():
-        raise HTTPException(409, "E-mail já cadastrado")
     if email_da_conta_root(body.email):
         raise HTTPException(403, "O e-mail da conta root é reservado pelo sistema.")
 
@@ -364,6 +368,7 @@ def create_usuario(
         # confirmada, mas não a posse do aparelho — MFA cobre justamente isso.
         mfa_obrigatorio=bool(body.exigir_mfa),
     )
+    _liberar_email_usuario(db, body.email)
     db.add(obj)
     db.flush()
     audit(db, user, "create", "usuario", obj.id, ip=_ip(request),
@@ -391,6 +396,8 @@ def update_usuario(
             raise HTTPException(403, "Apenas a conta root pode alterar suas credenciais e acesso.")
     if "senha" in data:
         data["senha_hash"] = hash_password(data.pop("senha"))
+    if data.get("email") is not None and data["email"] != obj.email:
+        _liberar_email_usuario(db, data["email"])
     if "senha_hash" in data or data.get("ativo") is False or data.get("email", obj.email) != obj.email:
         sessoes.revogar_do_usuario(db, obj)
     for k, v in data.items():
