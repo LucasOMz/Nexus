@@ -683,6 +683,12 @@ Portainer. Veja a **seção 12**.
 
 No Portainer: **Stacks → Add stack → Web editor**, cole o `docker-compose.yml`.
 
+Para uma stack implantada pelo Git, mantenha `docker-compose.yml` como
+**Compose path**. Se a API precisar consultar os DNS corporativos para
+resolver o Active Directory, adicione `docker-compose.dns.yml` em
+**Additional paths** e defina `NEXUS_DNS_1` e `NEXUS_DNS_2` nas variáveis
+da stack. Use os IPs dos dois DNS corporativos acessíveis pelo contêiner.
+
 **Requisitos:**
 
 - Um host Docker **Linux** (ou uma VM Linux). A imagem é `python:3.12-slim`;

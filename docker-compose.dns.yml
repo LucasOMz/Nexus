@@ -1,0 +1,6 @@
+# Use com o docker-compose.yml quando a API precisar dos DNS da rede interna.
+services:
+  api:
+    dns:
+      - "${NEXUS_DNS_1:?Defina NEXUS_DNS_1 com o IP do DNS primario}"
+      - "${NEXUS_DNS_2:?Defina NEXUS_DNS_2 com o IP do DNS secundario}"
