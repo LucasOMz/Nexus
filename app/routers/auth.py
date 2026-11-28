@@ -148,7 +148,10 @@ def login(
         # O AD serve para confirmar QUEM é a pessoa (a senha de rede). Se ela
         # pode entrar, e com qual perfil, é decidido aqui no cadastro.
         if cfg.ldap_ativo:
-            resultado = autenticar(cfg, identificador, form.password)
+            if user is not None and user.login_ad:
+                resultado = autenticar(cfg, user.login_ad, form.password, email_alternativo=user.email)
+            else:
+                resultado = autenticar(cfg, identificador, form.password)
             if resultado.ok:
                 autenticado = user is not None
                 if user is None:

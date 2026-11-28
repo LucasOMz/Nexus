@@ -39,12 +39,12 @@ def ad_ligado(client, auth_headers):
 
 
 def _autentica(monkeypatch, ok=True, nome="João da Silva", login="joao.silva",
-               email="joao.silva@empresa.com"):
+               email="joao.silva@empresa.com", conferir_login=False):
     """Substitui a validação no AD por uma resposta fixa."""
     from app.routers import auth as auth_router
 
-    def falso(cfg, usuario, senha):
-        if not ok:
+    def falso(cfg, usuario, senha, *, email_alternativo=None):
+        if not ok or (conferir_login and usuario != login):
             return ResultadoLDAP(False, "Usuário ou senha inválidos.")
         return ResultadoLDAP(True, "Autenticado.", dn=f"CN={nome},DC=empresa,DC=local",
                              email=email, nome=nome, login=login, grupos=[])
@@ -161,13 +161,16 @@ class TestADNaoLiberaAcesso:
         assert r.status_code == 200, r.text
         assert r.json()["user"]["nome"] == "João da Silva"
 
-    def test_login_funciona_pelo_email_tambem(self, client, ad_ligado, monkeypatch):
-        _criar_usuario(client, ad_ligado, login_ad="joao.silva")
-        _autentica(monkeypatch, ok=True, login="joao.silva")
+    @pytest.mark.parametrize("identificador", ["20110030", "joao.silva@empresa.com"])
+    def test_login_funciona_por_matricula_e_email(self, client, ad_ligado, monkeypatch, identificador):
+        criado = _criar_usuario(client, ad_ligado, login_ad="20110030")
+        assert criado.status_code == 201, criado.text
+        _autentica(monkeypatch, login="20110030", conferir_login=True)
 
         r = client.post("/api/v1/auth/login",
-                        data={"username": "joao.silva@empresa.com", "password": "senha-de-rede"})
+                        data={"username": identificador, "password": "senha-de-rede"})
         assert r.status_code == 200, r.text
+        assert r.json()["user"]["id"] == criado.json()["id"]
 
     def test_nome_acompanha_o_diretorio(self, client, ad_ligado, monkeypatch):
         """O AD manda no nome; o sistema manda no resto."""

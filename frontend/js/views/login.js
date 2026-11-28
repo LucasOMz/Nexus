@@ -25,7 +25,7 @@ export function renderLogin(root, avisoInicial) {
 
   // Credenciais guardadas entre as etapas: a segunda precisa reenviar a senha,
   // e pedir para digitar tudo de novo a cada tentativa seria hostil.
-  const credenciais = { email: "", senha: "" };
+  const credenciais = { identificador: "", senha: "" };
 
   const miolo = el("div");
   const card = el("div", { class: "login-card card elevated" },
@@ -40,21 +40,22 @@ export function renderLogin(root, avisoInicial) {
   // -------------------------------------------------------------------------
   function mostrarSenha(aviso) {
     miolo.innerHTML = "";
-    const email = el("input", { id: "login-email", type: "email",
-      autocomplete: "username", required: "", value: credenciais.email });
+    const identificador = el("input", { id: "login-email", type: "text",
+      autocomplete: "username", autocapitalize: "none", spellcheck: "false",
+      required: "", value: credenciais.identificador });
     const senha = el("input", { id: "login-senha", type: "password",
       autocomplete: "current-password", required: "" });
     const botao = el("button", { class: "btn filled", type: "submit", style: "width:100%" }, "Entrar");
 
     const form = el("form", {},
-      el("div", { class: "field" }, el("label", { for: "login-email" }, "E-mail ou usuário de rede"), email),
+      el("div", { class: "field" }, el("label", { for: "login-email" }, "E-mail ou usuário de rede"), identificador),
       el("div", { class: "field" }, el("label", { for: "login-senha" }, "Senha"), senha),
       aviso ? el("div", { class: "recado info" }, aviso) : null,
       botao,
     );
     form.addEventListener("submit", async (ev) => {
       ev.preventDefault();
-      credenciais.email = email.value.trim();
+      credenciais.identificador = identificador.value.trim();
       credenciais.senha = senha.value;
       botao.disabled = true;
       botao.textContent = "Entrando…";
@@ -64,7 +65,7 @@ export function renderLogin(root, avisoInicial) {
     });
 
     miolo.append(form);
-    setTimeout(() => (credenciais.email ? senha : email).focus(), 60);
+    setTimeout(() => (credenciais.identificador ? senha : identificador).focus(), 60);
   }
 
   // -------------------------------------------------------------------------
@@ -149,7 +150,7 @@ export function renderLogin(root, avisoInicial) {
 
     miolo.append(
       el("p", { class: "muted", style: "margin:0 0 12px;font-size:13px" },
-        `Entrando como ${credenciais.email}`),
+        `Entrando como ${credenciais.identificador}`),
       form,
     );
     setTimeout(() => nova.focus(), 60);
@@ -158,7 +159,7 @@ export function renderLogin(root, avisoInicial) {
   // -------------------------------------------------------------------------
   async function tentar(codigo) {
     try {
-      const body = new URLSearchParams({ username: credenciais.email, password: credenciais.senha });
+      const body = new URLSearchParams({ username: credenciais.identificador, password: credenciais.senha });
       if (codigo) body.set("codigo", codigo);
       const res = await fetch("/api/v1/auth/login", {
         method: "POST",

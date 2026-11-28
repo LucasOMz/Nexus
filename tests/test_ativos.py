@@ -118,7 +118,7 @@ def test_atribuir_colaborador_ad_sem_cadastro_e_sem_liberar_login(client, auth_h
         )).all() == [pessoa.id, pessoa.id]
     termos = client.get(rota + "/termos", headers=auth_headers).json()
     assert len(termos) == 2 and len(list(tmp_path.glob("termos/*.pdf"))) == 2
-    monkeypatch.setattr(auth, "autenticar", lambda *_: ldap_service.ResultadoLDAP(True, "Autenticado"))
+    monkeypatch.setattr(auth, "autenticar", lambda *_, **__: ldap_service.ResultadoLDAP(True, "Autenticado"))
     login = client.post("/api/v1/auth/login", data={"username": "joao.silva", "password": "senha-de-rede"})
     assert login.status_code == 403 and login.json()["detail"] == "Usuário inativo"
 

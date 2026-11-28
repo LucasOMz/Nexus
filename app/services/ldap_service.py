@@ -193,7 +193,9 @@ def _grupo_confere(grupos: list[str], alvo: str) -> bool:
     return False
 
 
-def autenticar(cfg: ConfiguracaoSistema, usuario: str, senha: str) -> ResultadoLDAP:
+def autenticar(
+    cfg: ConfiguracaoSistema, usuario: str, senha: str, *, email_alternativo: str | None = None,
+) -> ResultadoLDAP:
     """Autentica um usuário no AD e verifica o grupo de acesso."""
     if not cfg.ldap_ativo:
         return ResultadoLDAP(False, "Autenticação LDAP está desativada.")
@@ -209,14 +211,28 @@ def autenticar(cfg: ConfiguracaoSistema, usuario: str, senha: str) -> ResultadoL
             return ResultadoLDAP(False, f"Falha na conta de serviço: {_descricao_erro(conn)}")
 
         # 1) Localiza o usuário.
-        filtro = cfg.ldap_filtro_usuario.replace("{usuario}", escape_filter_chars(usuario))
         atributos = ["distinguishedName", "sAMAccountName", "userPrincipalName", "mail", "displayName", "cn", "memberOf"]
-        if not conn.search(cfg.ldap_base_dn, filtro, search_scope=SUBTREE, attributes=atributos, size_limit=2):
-            return ResultadoLDAP(False, "Usuário não encontrado no diretório.")
-        if not conn.entries:
+
+        def buscar(identificador: str) -> list:
+            filtro = cfg.ldap_filtro_usuario.replace("{usuario}", escape_filter_chars(identificador))
+            ok = conn.search(cfg.ldap_base_dn, filtro, search_scope=SUBTREE, attributes=atributos, size_limit=2)
+            return conn.entries if ok else []
+
+        entradas = buscar(usuario)
+        if not entradas and email_alternativo and _normalizar(email_alternativo) != _normalizar(usuario):
+            # Filtros de UPN podem localizar a conta pelo e-mail. Confirme o
+            # vínculo antes de usar o DN do resultado para validar a senha.
+            entradas = [
+                e for e in buscar(email_alternativo)
+                if _normalizar(usuario) in {
+                    _normalizar(_atributo(e, "sAMAccountName")),
+                    _normalizar(_atributo(e, "userPrincipalName")),
+                }
+            ]
+        if len(entradas) != 1:
             return ResultadoLDAP(False, "Usuário não encontrado no diretório.")
 
-        entrada = conn.entries[0]
+        entrada = entradas[0]
         dn_usuario = str(entrada.entry_dn)
         login = _atributo(entrada, "sAMAccountName") or usuario
         nome = _atributo(entrada, "displayName") or _atributo(entrada, "cn") or login

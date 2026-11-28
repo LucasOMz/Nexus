@@ -139,3 +139,22 @@ def test_binds_usam_o_transporte_salvo_e_desabilitam_referencias(monkeypatch, tm
         else:
             assert servidor.tls is None
         assert chamada.kwargs["auto_referrals"] is False
+
+
+@pytest.mark.parametrize("sam", ["20110030", "outra-conta"])
+def test_ldap_so_aceita_upn_alternativo_da_conta_vinculada(monkeypatch, sam):
+    email = "colaborador@empresa.test"
+    entrada = Mock(entry_dn="CN=Colaborador,DC=empresa,DC=test")
+    servico = Mock(entries=[entrada])
+    servico.search.side_effect = lambda base, filtro, **kwargs: filtro == f"(userPrincipalName={email})"
+    connection = Mock(side_effect=[servico, Mock()])
+    monkeypatch.setattr(ldap_service, "Connection", connection)
+    monkeypatch.setattr(ldap_service, "_atributo",
+                        lambda _, nome: {"sAMAccountName": sam, "userPrincipalName": email}.get(nome))
+    monkeypatch.setattr(ldap_service, "_grupos_do_usuario", lambda *_: [])
+    cfg = configuracao_ldap(ldap_filtro_usuario="(userPrincipalName={usuario})")
+
+    resultado = ldap_service.autenticar(cfg, "20110030", "credencial-simulada", email_alternativo=email)
+
+    assert resultado.ok is (sam == "20110030")
+    assert connection.call_count == (2 if resultado.ok else 1)
