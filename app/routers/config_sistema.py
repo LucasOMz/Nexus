@@ -359,6 +359,8 @@ def testar(request: Request, db: Session = Depends(get_db), user: Usuario = Depe
 
     cfg = obter_config(db)
     ok, mensagem = testar_conexao(cfg)
+    # O AD pode devolver um terminador NUL no diagnóstico, que o PostgreSQL rejeita em texto.
+    mensagem = mensagem.replace("\x00", "")
     cfg.ldap_ultimo_teste_ok = datetime.now(timezone.utc).isoformat(timespec="seconds") if ok else None
     cfg.ldap_ultimo_teste_msg = mensagem
     audit(db, user, "testar_ldap", "configuracao", cfg.id,

@@ -54,6 +54,27 @@ def test_admin_pode_selecionar_ldap_sem_tls_e_voltar_para_ldaps(client, auth_hea
     assert resposta.json()["ldap_porta"] == 636
 
 
+def test_diagnostico_ldap_com_nul_e_exibido_e_gravado(client, auth_headers, monkeypatch):
+    caminho = "/api/v1/admin/config"
+    cfg = client.put(caminho, json={
+        "ldap_servidor": "dc01.empresa.test",
+        "ldap_bind_dn": "svc@empresa.test",
+        "ldap_porta": 389,
+        "ldap_tls": False,
+        "ldap_permitir_sem_tls": True,
+    }, headers=auth_headers)
+    assert cfg.status_code == 200
+    conexao = Mock(result={"message": "AcceptSecurityContext error, data 52e\x00"})
+    conexao.bind.return_value = False
+    monkeypatch.setattr(ldap_service, "Connection", Mock(return_value=conexao))
+
+    resposta = client.post(f"{caminho}/testar-ldap", headers=auth_headers)
+    mensagem = "Falha ao autenticar a conta de serviço: AcceptSecurityContext error, data 52e"
+    assert resposta.status_code == 200, resposta.text
+    assert resposta.json() == {"ok": False, "mensagem": mensagem}
+    assert client.get(caminho, headers=auth_headers).json()["ldap_ultimo_teste_msg"] == mensagem
+
+
 def configuracao_ldap(**mudancas):
     dados = {
         "ldap_servidor": "dc01.empresa.test",
