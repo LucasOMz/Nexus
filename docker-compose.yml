@@ -66,6 +66,10 @@ services:
   api:
     build: .
     restart: unless-stopped
+    # DNS corporativos para resolver os nomes internos do Active Directory.
+    dns:
+      - 172.22.4.204
+      - 172.22.4.205
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
